@@ -1,0 +1,2 @@
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; fase de arquitetura, sem código
+- [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, auth só no admin
