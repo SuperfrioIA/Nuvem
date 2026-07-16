@@ -3,8 +3,10 @@
 Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 
 1. [MEMORY.md](MEMORY.md) + `memory/` — estado e decisões vivas do projeto (autoritativo).
-2. [docs/ARQUITETURA.md](docs/ARQUITETURA.md) — desenho técnico fechado.
-3. [docs/HISTORICO.md](docs/HISTORICO.md) — os prompts originais que desenrolaram o
+2. [docs/PLANO.md](docs/PLANO.md) — plano de construção em lotes + status atual de cada
+   lote (onde a construção parou). Ler antes de codar; marcar o check ao fechar um lote.
+3. [docs/ARQUITETURA.md](docs/ARQUITETURA.md) — desenho técnico fechado.
+4. [docs/HISTORICO.md](docs/HISTORICO.md) — os prompts originais que desenrolaram o
    projeto (contexto completo da conversa de origem).
 
 ## Regras para IA

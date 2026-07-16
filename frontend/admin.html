@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<title>Nuvem IA — Admin</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    margin: 0; padding: 0;
+    background: #f4f5f7; color: #1f2430;
+  }
+  header {
+    background: #1f2430; color: #fff;
+    padding: 14px 24px; display: flex; justify-content: space-between; align-items: center;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header button { background: transparent; border: 1px solid #55607a; color: #fff; border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+
+  #login { max-width: 320px; margin: 80px auto; background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  #login h2 { margin-top: 0; font-size: 16px; }
+  #login input { width: 100%; padding: 8px; margin: 6px 0 12px; border: 1px solid #ccc; border-radius: 4px; }
+  #login button { width: 100%; padding: 9px; background: #2a4d8f; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  #loginErro { color: #b3261e; font-size: 13px; min-height: 18px; }
+
+  nav { display: flex; gap: 4px; padding: 12px 24px 0; }
+  nav button {
+    background: #e4e6ea; border: none; padding: 8px 16px; border-radius: 6px 6px 0 0;
+    cursor: pointer; font-size: 13px; color: #444;
+  }
+  nav button.ativo { background: #fff; color: #1f2430; font-weight: 600; }
+
+  main { padding: 20px 24px 60px; }
+  .painel { background: #fff; border-radius: 0 8px 8px 8px; padding: 20px; box-shadow: 0 1px 4px rgba(0,0,0,.06); display: none; }
+  .painel.ativo { display: block; }
+
+  h3 { margin-top: 0; font-size: 15px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; }
+  th { color: #666; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+  .tag-ok { background: #dff3e3; color: #1e7a34; }
+  .tag-erro { background: #fbe1df; color: #b3261e; }
+  .tag-andamento { background: #fff3cd; color: #8a6800; }
+
+  fieldset { border: 1px solid #ddd; border-radius: 6px; margin: 14px 0; padding: 12px; }
+  legend { font-size: 12px; color: #666; padding: 0 6px; }
+  label { font-size: 13px; display: block; margin: 8px 0 3px; }
+  input[type=text], input[type=file], select {
+    padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; min-width: 220px;
+  }
+  button.acao { background: #2a4d8f; color: #fff; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  button.secundaria { background: #eef0f4; color: #333; border: none; padding: 7px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  button.perigo { background: #fbe1df; color: #b3261e; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .linha-metrica { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  .msg { padding: 10px 12px; border-radius: 6px; font-size: 13px; margin-top: 12px; }
+  .msg-ok { background: #dff3e3; color: #1e7a34; }
+  .msg-erro { background: #fbe1df; color: #b3261e; }
+  .oculto { display: none !important; }
+  .ajuda { color: #888; font-size: 12px; margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <h2>Nuvem IA — Admin</h2>
+  <label for="senhaInput">Senha</label>
+  <input type="password" id="senhaInput">
+  <button id="btnEntrar">Entrar</button>
+  <div id="loginErro"></div>
+</div>
+
+<div id="app" class="oculto">
+  <header>
+    <h1>Nuvem IA — Admin</h1>
+    <button id="btnSair">Sair</button>
+  </header>
+
+  <nav>
+    <button data-painel="upload" class="ativo">Upload</button>
+    <button data-painel="depara">De-para</button>
+    <button data-painel="pendencias">Pendências</button>
+    <button data-painel="execucoes">Execuções</button>
+  </nav>
+
+  <main>
+    <!-- UPLOAD -->
+    <section id="painel-upload" class="painel ativo">
+      <h3>Novo upload</h3>
+      <label for="arquivoInput">Arquivo (.xlsx)</label>
+      <input type="file" id="arquivoInput" accept=".xlsx">
+      <div style="margin-top:10px">
+        <button class="acao" id="btnAnalisar">Analisar arquivo</button>
+      </div>
+
+      <div id="blocoMapeamento" class="oculto">
+        <fieldset>
+          <legend>Colunas encontradas</legend>
+          <div id="colunasDetectadas" class="ajuda"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Modelo de importação</legend>
+          <label for="modeloSelect">Usar modelo salvo</label>
+          <select id="modeloSelect"><option value="">— criar novo modelo —</option></select>
+
+          <div id="blocoNovoModelo">
+            <label for="nomeModeloInput">Nome do modelo (pra reusar depois)</label>
+            <input type="text" id="nomeModeloInput" placeholder="ex: Ocupação detalhada RPI">
+
+            <label>Formato do arquivo</label>
+            <select id="formatoSelect">
+              <option value="longo">Longo — 1 linha = 1+ métricas</option>
+              <option value="largo">Largo — armazém na linha, mês nas colunas</option>
+            </select>
+
+            <label>Armazém</label>
+            <div class="linha-metrica">
+              <select id="armazemTipo">
+                <option value="coluna">vem de uma coluna</option>
+                <option value="fixo">valor fixo</option>
+              </select>
+              <select id="armazemColuna"></select>
+              <input type="text" id="armazemFixo" placeholder="ex: GRU" class="oculto">
+            </div>
+
+            <div id="blocoLongo">
+              <label>Competência</label>
+              <div class="linha-metrica">
+                <select id="competenciaTipo">
+                  <option value="coluna">vem de uma coluna</option>
+                  <option value="fixo">valor fixo</option>
+                </select>
+                <select id="competenciaColuna"></select>
+                <input type="text" id="competenciaFixo" placeholder="ex: 2026-06" class="oculto">
+              </div>
+              <div class="ajuda">Data completa, "2026-06" ou "jan/26" são reconhecidos automaticamente.</div>
+
+              <label>Métricas</label>
+              <div id="metricasContainer"></div>
+              <button type="button" class="secundaria" id="btnAddMetrica">+ métrica</button>
+            </div>
+
+            <div id="blocoLargo" class="oculto">
+              <label for="metricaFixaInput">Métrica desta planilha (todas as colunas-mês alimentam ela)</label>
+              <input type="text" id="metricaFixaInput" placeholder="ex: ocupacao_peso_bruto">
+            </div>
+          </div>
+        </fieldset>
+
+        <button class="acao" id="btnProcessar">Processar upload</button>
+      </div>
+
+      <div id="uploadResultado"></div>
+    </section>
+
+    <!-- DE-PARA -->
+    <section id="painel-depara" class="painel">
+      <h3>De-para de armazém</h3>
+      <table id="tabelaDepara">
+        <thead><tr><th>Conector</th><th>Armazém na fonte</th><th>Armazém</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <fieldset>
+        <legend>Novo de-para</legend>
+        <label for="deparaConector">Conector</label>
+        <select id="deparaConector"></select>
+        <label for="deparaFonte">Armazém na fonte</label>
+        <input type="text" id="deparaFonte" placeholder="ex: WMS Unidade = RPI">
+        <label for="deparaArmazem">Armazém</label>
+        <select id="deparaArmazem"></select>
+        <div style="margin-top:8px">
+          <button class="acao" id="btnCriarDepara">Salvar</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Novo armazém</legend>
+        <label for="novoArmazemNome">Nome</label>
+        <input type="text" id="novoArmazemNome" placeholder="ex: Guarulhos">
+        <label for="novoArmazemSigla">Sigla</label>
+        <input type="text" id="novoArmazemSigla" placeholder="ex: GRU">
+        <div style="margin-top:8px">
+          <button class="secundaria" id="btnCriarArmazem">Adicionar armazém</button>
+        </div>
+      </fieldset>
+    </section>
+
+    <!-- PENDENCIAS -->
+    <section id="painel-pendencias" class="painel">
+      <h3>Pendências de de-para</h3>
+      <p class="ajuda">Armazém visto na fonte sem mapeamento — o valor não entra em <code>medidas</code> até ser resolvido.</p>
+      <table id="tabelaPendencias">
+        <thead><tr><th>Conector</th><th>Armazém na fonte</th><th>Última vez</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <!-- EXECUCOES -->
+    <section id="painel-execucoes" class="painel">
+      <h3>Log de execuções</h3>
+      <table id="tabelaExecucoes">
+        <thead><tr><th>Conector</th><th>Origem</th><th>Status</th><th>Início</th><th>Linhas (lidas/gravadas)</th><th>Erro</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+const API = "/api/admin";
+
+async function api(path, options = {}) {
+  const resp = await fetch(API + path, { credentials: "same-origin", ...options });
+  if (resp.status === 401) {
+    mostrarLogin();
+    throw new Error("não autenticado");
+  }
+  if (!resp.ok) {
+    const corpo = await resp.json().catch(() => ({}));
+    throw new Error(corpo.detail || `erro ${resp.status}`);
+  }
+  return resp.status === 204 ? null : resp.json();
+}
+
+function mostrarLogin() {
+  document.getElementById("login").classList.remove("oculto");
+  document.getElementById("app").classList.add("oculto");
+}
+
+function mostrarApp() {
+  document.getElementById("login").classList.add("oculto");
+  document.getElementById("app").classList.remove("oculto");
+  carregarTudo();
+}
+
+async function verificarSessao() {
+  const { autenticado } = await api("/me");
+  if (autenticado) mostrarApp(); else mostrarLogin();
+}
+
+document.getElementById("btnEntrar").addEventListener("click", async () => {
+  const senha = document.getElementById("senhaInput").value;
+  const erro = document.getElementById("loginErro");
+  erro.textContent = "";
+  try {
+    const form = new FormData();
+    form.append("senha", senha);
+    await fetch(API + "/login", { method: "POST", body: form, credentials: "same-origin" })
+      .then(async r => { if (!r.ok) throw new Error((await r.json()).detail || "erro"); });
+    mostrarApp();
+  } catch (e) {
+    erro.textContent = "Senha incorreta.";
+  }
+});
+
+document.getElementById("btnSair").addEventListener("click", async () => {
+  await fetch(API + "/logout", { method: "POST", credentials: "same-origin" });
+  mostrarLogin();
+});
+
+// navegação entre painéis
+document.querySelectorAll("nav button").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll("nav button").forEach(b => b.classList.remove("ativo"));
+    document.querySelectorAll(".painel").forEach(p => p.classList.remove("ativo"));
+    btn.classList.add("ativo");
+    document.getElementById("painel-" + btn.dataset.painel).classList.add("ativo");
+  });
+});
+
+function carregarTudo() {
+  carregarConectores();
+  carregarArmazens();
+  carregarDepara();
+  carregarPendencias();
+  carregarExecucoes();
+}
+
+let conectorUploadManualId = null;
+
+async function carregarConectores() {
+  const conectores = await api("/conectores");
+  const uploadManual = conectores.find(c => c.tipo === "upload_manual");
+  conectorUploadManualId = uploadManual ? uploadManual.id : null;
+
+  const deparaConector = document.getElementById("deparaConector");
+  deparaConector.innerHTML = conectores.map(c => `<option value="${c.id}">${c.nome}</option>`).join("");
+
+  if (conectorUploadManualId) {
+    const modelos = await api("/modelos?conector_id=" + conectorUploadManualId);
+    const sel = document.getElementById("modeloSelect");
+    sel.innerHTML = `<option value="">— criar novo modelo —</option>` +
+      modelos.map(m => `<option value="${m.id}">${m.nome}</option>`).join("");
+  }
+}
+
+async function carregarArmazens() {
+  const armazens = await api("/armazens");
+  const sel = document.getElementById("deparaArmazem");
+  sel.innerHTML = armazens.map(a => `<option value="${a.id}">${a.nome} (${a.sigla})</option>`).join("");
+}
+
+async function carregarDepara() {
+  const linhas = await api("/depara");
+  const tbody = document.querySelector("#tabelaDepara tbody");
+  tbody.innerHTML = linhas.map(l => `
+    <tr>
+      <td>${l.conector_nome}</td>
+      <td>${l.armazem_na_fonte}</td>
+      <td>${l.armazem_nome}</td>
+      <td><button class="perigo" onclick="apagarDepara(${l.id})">excluir</button></td>
+    </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhum de-para cadastrado ainda.</td></tr>`;
+}
+
+async function apagarDepara(id) {
+  await api("/depara/" + id, { method: "DELETE" });
+  carregarDepara();
+}
+
+async function carregarPendencias() {
+  const linhas = await api("/pendencias");
+  const tbody = document.querySelector("#tabelaPendencias tbody");
+  tbody.innerHTML = linhas.map(l => `
+    <tr>
+      <td>${l.conector_nome}</td>
+      <td>${l.armazem_na_fonte}</td>
+      <td>${new Date(l.ultima_vez_em).toLocaleString("pt-BR")}</td>
+      <td><button class="secundaria" onclick="resolverPendencia(${l.conector_id}, '${l.armazem_na_fonte.replace(/'/g, "\\'")}')">resolver</button></td>
+    </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhuma pendência.</td></tr>`;
+}
+
+function resolverPendencia(conectorId, armazemNaFonte) {
+  document.querySelector('nav button[data-painel="depara"]').click();
+  document.getElementById("deparaConector").value = conectorId;
+  document.getElementById("deparaFonte").value = armazemNaFonte;
+  document.getElementById("deparaFonte").scrollIntoView({ behavior: "smooth" });
+}
+
+async function carregarExecucoes() {
+  const linhas = await api("/execucoes");
+  const tbody = document.querySelector("#tabelaExecucoes tbody");
+  tbody.innerHTML = linhas.map(l => `
+    <tr>
+      <td>${l.conector_nome || "-"}</td>
+      <td>${l.origem}</td>
+      <td><span class="tag tag-${l.status === 'ok' ? 'ok' : (l.status === 'erro' ? 'erro' : 'andamento')}">${l.status}</span></td>
+      <td>${new Date(l.iniciado_em).toLocaleString("pt-BR")}</td>
+      <td>${l.linhas_lidas ?? "-"} / ${l.linhas_gravadas ?? "-"}</td>
+      <td>${l.erro || ""}</td>
+      <td>${l.tem_arquivo ? `<a href="${API}/execucoes/${l.id}/arquivo" target="_blank">baixar arquivo</a>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="7" class="ajuda">Nenhuma execução ainda.</td></tr>`;
+}
+
+// -------- de-para / armazém: criação --------
+
+document.getElementById("btnCriarArmazem").addEventListener("click", async () => {
+  const nome = document.getElementById("novoArmazemNome").value.trim();
+  const sigla = document.getElementById("novoArmazemSigla").value.trim();
+  if (!nome || !sigla) return;
+  const form = new FormData();
+  form.append("nome", nome);
+  form.append("sigla", sigla);
+  await api("/armazens", { method: "POST", body: form });
+  document.getElementById("novoArmazemNome").value = "";
+  document.getElementById("novoArmazemSigla").value = "";
+  carregarArmazens();
+});
+
+document.getElementById("btnCriarDepara").addEventListener("click", async () => {
+  const form = new FormData();
+  form.append("conector_id", document.getElementById("deparaConector").value);
+  form.append("armazem_na_fonte", document.getElementById("deparaFonte").value.trim());
+  form.append("armazem_id", document.getElementById("deparaArmazem").value);
+  await api("/depara", { method: "POST", body: form });
+  document.getElementById("deparaFonte").value = "";
+  carregarDepara();
+  carregarPendencias();
+});
+
+// -------- upload: análise + mapeamento --------
+
+let colunasDetectadas = [];
+
+function preencherSelectColunas(select) {
+  select.innerHTML = colunasDetectadas.map(c => `<option value="${c}">${c}</option>`).join("");
+}
+
+function linhaMetrica() {
+  const div = document.createElement("div");
+  div.className = "linha-metrica";
+  div.innerHTML = `
+    <select class="metricaTipo">
+      <option value="soma">soma de uma coluna</option>
+      <option value="razao">razão entre duas colunas</option>
+    </select>
+    <span class="metricaSomaCampos">
+      <select class="metricaColuna"></select>
+    </span>
+    <span class="metricaRazaoCampos oculto">
+      <select class="metricaNumerador"></select> /
+      <select class="metricaDenominador"></select>
+    </span>
+    <input type="text" class="metricaNome" placeholder="nome da métrica (ex: perdas_avaria)">
+    <input type="text" class="metricaIgnorar" placeholder="valores a ignorar (ex: 999999999)" title="separados por vírgula — valor sentinela/placeholder da fonte que não é dado real">
+    <button type="button" class="perigo" onclick="this.parentElement.remove()">remover</button>
+  `;
+  preencherSelectColunas(div.querySelector(".metricaColuna"));
+  preencherSelectColunas(div.querySelector(".metricaNumerador"));
+  preencherSelectColunas(div.querySelector(".metricaDenominador"));
+  div.querySelector(".metricaTipo").addEventListener("change", (e) => {
+    const soma = e.target.value === "soma";
+    div.querySelector(".metricaSomaCampos").classList.toggle("oculto", !soma);
+    div.querySelector(".metricaRazaoCampos").classList.toggle("oculto", soma);
+  });
+  return div;
+}
+
+document.getElementById("btnAddMetrica").addEventListener("click", () => {
+  document.getElementById("metricasContainer").appendChild(linhaMetrica());
+});
+
+document.getElementById("armazemTipo").addEventListener("change", (e) => {
+  document.getElementById("armazemColuna").classList.toggle("oculto", e.target.value !== "coluna");
+  document.getElementById("armazemFixo").classList.toggle("oculto", e.target.value === "coluna");
+});
+document.getElementById("competenciaTipo").addEventListener("change", (e) => {
+  document.getElementById("competenciaColuna").classList.toggle("oculto", e.target.value !== "coluna");
+  document.getElementById("competenciaFixo").classList.toggle("oculto", e.target.value === "coluna");
+});
+document.getElementById("formatoSelect").addEventListener("change", (e) => {
+  const longo = e.target.value === "longo";
+  document.getElementById("blocoLongo").classList.toggle("oculto", !longo);
+  document.getElementById("blocoLargo").classList.toggle("oculto", longo);
+});
+document.getElementById("modeloSelect").addEventListener("change", (e) => {
+  document.getElementById("blocoNovoModelo").classList.toggle("oculto", !!e.target.value);
+});
+
+document.getElementById("btnAnalisar").addEventListener("click", async () => {
+  const arquivoInput = document.getElementById("arquivoInput");
+  if (!arquivoInput.files.length) return;
+  const form = new FormData();
+  form.append("arquivo", arquivoInput.files[0]);
+  const resultadoDiv = document.getElementById("uploadResultado");
+  resultadoDiv.innerHTML = "";
+  try {
+    const dados = await api("/upload/preview", { method: "POST", body: form });
+    colunasDetectadas = dados.colunas;
+    document.getElementById("colunasDetectadas").textContent = colunasDetectadas.join(", ");
+    preencherSelectColunas(document.getElementById("armazemColuna"));
+    preencherSelectColunas(document.getElementById("competenciaColuna"));
+    document.getElementById("metricasContainer").innerHTML = "";
+    document.getElementById("metricasContainer").appendChild(linhaMetrica());
+    document.getElementById("blocoMapeamento").classList.remove("oculto");
+  } catch (e) {
+    resultadoDiv.innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+  }
+});
+
+function montarMapeamento() {
+  const formato = document.getElementById("formatoSelect").value;
+  const armazemTipo = document.getElementById("armazemTipo").value;
+  const armazem = armazemTipo === "coluna"
+    ? { tipo: "coluna", coluna: document.getElementById("armazemColuna").value }
+    : { tipo: "fixo", valor: document.getElementById("armazemFixo").value.trim() };
+
+  const mapeamento = { formato, armazem };
+
+  if (formato === "largo") {
+    mapeamento.metrica_fixa = document.getElementById("metricaFixaInput").value.trim();
+    return mapeamento;
+  }
+
+  const competenciaTipo = document.getElementById("competenciaTipo").value;
+  mapeamento.competencia = competenciaTipo === "coluna"
+    ? { tipo: "coluna", coluna: document.getElementById("competenciaColuna").value }
+    : { tipo: "fixo", valor: document.getElementById("competenciaFixo").value.trim() };
+
+  mapeamento.metricas = [...document.querySelectorAll("#metricasContainer .linha-metrica")].map(div => {
+    const tipo = div.querySelector(".metricaTipo").value;
+    const metrica = div.querySelector(".metricaNome").value.trim();
+    const ignorar_valores = div.querySelector(".metricaIgnorar").value
+      .split(",").map(s => s.trim()).filter(Boolean).map(Number);
+    if (tipo === "soma") {
+      return { tipo: "soma", coluna: div.querySelector(".metricaColuna").value, metrica, ignorar_valores };
+    }
+    return {
+      tipo: "razao",
+      numerador: div.querySelector(".metricaNumerador").value,
+      denominador: div.querySelector(".metricaDenominador").value,
+      metrica,
+      ignorar_valores,
+    };
+  });
+
+  return mapeamento;
+}
+
+document.getElementById("btnProcessar").addEventListener("click", async () => {
+  const arquivoInput = document.getElementById("arquivoInput");
+  const resultadoDiv = document.getElementById("uploadResultado");
+  const modeloId = document.getElementById("modeloSelect").value;
+
+  const form = new FormData();
+  form.append("arquivo", arquivoInput.files[0]);
+
+  if (modeloId) {
+    form.append("modelo_id", modeloId);
+  } else {
+    const nome = document.getElementById("nomeModeloInput").value.trim();
+    if (!nome) {
+      resultadoDiv.innerHTML = `<div class="msg msg-erro">Dê um nome ao modelo antes de processar.</div>`;
+      return;
+    }
+    form.append("nome_novo_modelo", nome);
+    form.append("mapeamento_json", JSON.stringify(montarMapeamento()));
+  }
+
+  try {
+    const resultado = await api("/upload/processar", { method: "POST", body: form });
+    resultadoDiv.innerHTML = `<div class="msg msg-ok">
+      Execução #${resultado.execucao_id}: ${resultado.linhas_lidas} linhas lidas,
+      ${resultado.linhas_gravadas} gravadas em <code>medidas</code>.
+      ${resultado.pendencias > 0 ? `${resultado.pendencias} ficaram como pendência de de-para.` : ""}
+    </div>`;
+    carregarConectores();
+    carregarPendencias();
+    carregarExecucoes();
+  } catch (e) {
+    resultadoDiv.innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+  }
+});
+
+verificarSessao();
+</script>
+</body>
+</html>

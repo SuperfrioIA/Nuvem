@@ -1,2 +1,3 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; fase de arquitetura, sem código
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; construção em lotes (Lote 1 e 3 feitos)
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, auth só no admin
+- Plano de construção em lotes e status vivo: [docs/PLANO.md](docs/PLANO.md) — marcar check ao fechar cada lote
