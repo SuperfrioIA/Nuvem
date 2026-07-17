@@ -7,7 +7,6 @@ data/
 .DS_Store
 Thumbs.db
 
-# dados reais (cliente/operacao) usados pra teste local -- nao vao pro historico do git
-docs/conciliacao_66.csv
-docs/data (2).xlsx
-docs/rpt_dw_occupation_detailed_v01 (2).xlsx
+# dados reais (cliente/operacao) e analise a parte dos relatorios do dw (17/jul/2026)
+# -- exports brutos + saidas (excel, mapa) nao vao pro historico do git
+docs/[Aa]nalise/
