@@ -59,6 +59,15 @@ metadata:
   cenário conhecido — perda e volumetria fora do padrão juntas); ainda não validado com
   dado real (ver docs/PLANO.md, Lote 3).
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026 e 16/jul/2026 — evita rediscutir do zero.
+- Da análise dos relatórios reais do DW (17/jul/2026, `docs/analise/saida/`): **nada de
+  DW novo** — a camada fina segue só com de-para + agregados armazém×competência +
+  scores; relatório bruto fica como arquivo retido do upload, nunca vira tabela. **A
+  POC/MVP fecha só com upload manual** dos exports que já saem hoje; integração com o
+  banco do DW via API (`dw_api`) é degrau pós-MVP (Lote 10). Chave mestra descoberta:
+  `SK_FILIAL` do fato = `FK_FILIAL` das STG (mesma surrogate da DIM_FILIAL); de-para
+  consolidado das 31 filiais SF pronto pra virar seed (Lote 7). O export bruto do fato
+  de volumetria (2021→hoje) é quem valida o motor com dado real (Lote 8).
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026 e 17/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].
