@@ -196,25 +196,47 @@ DW (API) é degrau pós-MVP (Lote 10).
 
 ## Lote 7 — De-para oficial (a camada fina ganha o dado real)
 
-**Status: a fazer** · só dado + admin, sem módulo novo. **Modelo:** Haiku 4.5 (carga
-mecânica; conferência = Sonnet 5).
+**Status: feito** (17/jul/2026) · **Modelo:** Sonnet 5 (a carga virou reconciliação de
+duas fontes divergentes, não só carga mecânica — fugiu do escopo previsto pro Haiku).
 
-Insumo: `docs/analise/saida/depara_e_relacoes.xlsx` — de-para consolidado e validado
-contra capacidade, ocupação e volumetria (fecha 100% das 31 filiais SF).
+Insumo: `docs/analise/saida/depara_e_relacoes.xlsx` (de-para da análise do DW) cruzado
+com `docs/analise/Empresas Grupo Superfrio 5(Filiais Ativas).csv` (cadastro oficial
+Protheus, trazido pela Maria pra dar nome/município às filiais). Conferência 17/jul/2026:
+a aba `depara_filial` tem **32 siglas SF**, não 31 — a diferença é a CWBI (SK_FILIAL 74,
+sem WMS/CNPJ, sem histórico de volumetria, filial nova) — incluída mesmo assim, com
+sigla + código ERP `001995`.
 
-- [ ] Carregar o de-para real em `armazens`/`depara_armazem`: cada filial SF com todos
-      os apelidos que aparecem nas fontes — sigla (RPI), código WMS/JDA (com as
-      traduções ARAP→ARP, LDN→LDNI, SFS1→RPII), código ERP Protheus (`001003`) e CNPJ —
-      todos resolvendo pro mesmo armazém
-- [ ] ICE (Chile) fica fora por ora: não existe de-para ERP×WMS pra elas (nem sigla no
+Achados da reconciliação (ver comentário no topo de `backend/seed_depara.py`):
+- Código ERP da JAC na análise original estava errado (`001007`); oficial é `001008`.
+- 5 filiais têm sigla operacional (WMS) diferente da sigla do cadastro Protheus, mesma
+  empresa (CNPJ e código batendo): CVDI/CVD, MAQ/MAQII, SSA/SSAI, RMSP/RMSPI, POA/POAI
+  — a sigla operacional virou a `sigla` oficial no banco (é como o projeto já fala
+  delas), a do cadastro entrou como apelido extra.
+- RPIII, MRS e CWBI não aparecem no cadastro de filiais ativas. MRS está sem
+  volumetria desde 02/2023 → marcada **inativa** (`ativo=false`; some da lista padrão
+  do admin/tela, mas segue no de-para pra resolver uploads antigos). RPIII e CWBI
+  nunca tiveram volumetria (parecem pré-operacionais) → mantidas ativas.
+- Sem colisão de apelido entre filiais diferentes (102 apelidos, todos únicos).
+
+- [x] Nome = sigla + município (ex.: "Ribeirão Preto/SP"); RPIII/MRS/CWBI sem
+      município na fonte, nome = sigla
+- [x] Carregado o de-para real em `armazens`/`depara_armazem` via
+      `backend/seed_depara.py` (literais no código — `docs/analise/` está no
+      `.gitignore`, a VM não teria acesso ao xlsx/csv em runtime), chamado de
+      `init_db()`; idempotente (`ON CONFLICT ... DO NOTHING` em `armazens`, mesma
+      lógica de conectores/métricas — nunca sobrescreve edição manual)
+- [x] ICE (Chile) fica fora por ora: não existe de-para ERP×WMS pra elas (nem sigla no
       cadastro de capacidade); entra quando houver fonte com apelido resolvível
-- [ ] Dicionário de códigos (temperatura 2=CL/3=CG/4=RF/5=SC; estrutura 2=blocado,
-      3=drive-in, 4=porta-palete; acordo P=posições/L=locação) fica como documentação
-      dos modelos de importação — não vira tabela nova (sem DW)
+- [x] Dicionário de códigos (temperatura 2=CL/3=CG/4=RF/5=SC; estrutura 2=blocado,
+      3=drive-in, 4=porta-palete; acordo P=posições/L=locação) documentado como
+      comentário em `backend/seed_depara.py` — não virou tabela nova (sem DW)
 
-**Check de conclusão:** upload de qualquer relatório das famílias mapeadas resolve
-filial sem pendência manual pras 31 SF; apelido desconhecido segue virando pendência
-(nunca descarte silencioso).
+**Check de conclusão:** validado local (WSL/Docker) com `docker compose up -d --build`
++ restart: 33 armazéns (32 do seed + `CGH` de teste do Lote 3, preservado), MRS inativa
+com seus 3 apelidos, 103 apelidos de-para (102 do seed + `CGH` pré-existente), sem
+colisão, contagens idênticas após um segundo restart (idempotente). **Falta ainda**:
+o teste de ponta a ponta ("upload de relatório real resolve sem pendência") só fecha
+no Lote 8, quando existir modelo de importação pra essas famílias de relatório.
 
 ## Lote 8 — Relatórios reais como fonte (upload, sem integração de banco)
 

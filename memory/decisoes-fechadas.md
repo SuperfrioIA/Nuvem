@@ -68,6 +68,20 @@ metadata:
   consolidado das 31 filiais SF pronto pra virar seed (Lote 7). O export bruto do fato
   de volumetria (2021→hoje) é quem valida o motor com dado real (Lote 8).
 
+- Lote 7 fechado (17/jul/2026): de-para real de 32 filiais SF carregado em
+  `armazens`/`depara_armazem` via `backend/seed_depara.py` (literais no código, chamado
+  de `init_db()` — idempotente, nunca sobrescreve edição manual). Cruzando a análise do
+  DW com o cadastro oficial Protheus (`Empresas Grupo Superfrio`, CSV trazido pela
+  Maria), apareceram divergências reais: código ERP da JAC estava errado na análise
+  original (001007 → correto é 001008); 5 filiais têm sigla operacional (WMS) diferente
+  da sigla do cadastro Protheus, mesma empresa (CVDI/CVD, MAQ/MAQII, SSA/SSAI,
+  RMSP/RMSPI, POA/POAI) — a sigla operacional é a oficial no banco, a do cadastro é
+  apelido extra; MRS não tem volumetria desde 02/2023 e está marcada inativa
+  (`ativo=false`) — some da lista padrão mas segue resolvendo de-para de uploads
+  antigos. RPIII e CWBI não têm histórico de volumetria (pré-operacionais) mas ficam
+  ativas. Nome do armazém = sigla + município (não existe nome fantasia em nenhuma
+  fonte); 3 filiais sem município (RPIII, MRS, CWBI) usam a sigla como nome.
+
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026 e 17/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

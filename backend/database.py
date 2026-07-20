@@ -3,6 +3,8 @@ from contextlib import contextmanager
 
 import psycopg2
 
+from . import seed_depara
+
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 
@@ -150,3 +152,8 @@ def init_db():
                     "INSERT INTO metricas (nome, unidade) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
                     (nome, unidade),
                 )
+
+            # seed: de-para oficial das filiais SF (Lote 7) — ver backend/seed_depara.py
+            cur.execute("SELECT id FROM conectores WHERE tipo = 'upload_manual'")
+            conector_upload_manual_id = cur.fetchone()[0]
+            seed_depara.aplicar(cur, conector_upload_manual_id)
