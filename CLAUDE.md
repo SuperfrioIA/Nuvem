@@ -11,7 +11,8 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 
 ## Regras para IA
 
-- Fase atual: **arquitetura**. Não construir código sem pedido explícito da Maria.
+- Fase atual: **construção em lotes** (deploy validado na VM em 20/jul/2026). Não
+  construir código sem pedido explícito da Maria.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
   explícito. "Beleza" vago não é OK.
 - Commits **sem** co-autor Anthropic (nada de `Co-Authored-By`).

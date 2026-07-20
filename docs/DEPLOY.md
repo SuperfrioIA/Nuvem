@@ -1,0 +1,213 @@
+# Runbook de deploy na VM — Nuvem IA
+
+Primeira subida na VM real (mesma do Conciliador porta 80 e do Hub porta 8001).
+Escopo desta subida: **só o admin** (`/` redireciona pra `/admin`; a nuvem/index.html
+é o Lote 5, ainda não construída). Você roda os passos na VM; me manda a saída de cada
+um antes de seguir pro próximo.
+
+Todos os comandos são pra rodar **na VM** (Linux), no shell dela — não na sua máquina
+Windows. Onde aparece `SUA_...`, troque pelo valor real.
+
+---
+
+## Pré-requisitos
+
+- Docker + Docker Compose já instalados na VM (usados por Conciliador/Hub).
+- Chave SSH da VM autorizada no repo privado `SuperfrioIA/Nuvem` (passo 2).
+- Pasta do projeto: `/home/ubuntu/nuvemIA`, na home junto do Conciliador
+  (`/home/ubuntu/conciliadorEstoque`) e do Hub (`/home/ubuntu/apps/hub`).
+
+---
+
+## Passo 1 — Pré-voo: Docker e portas
+
+Checagens só de leitura, antes de mexer em qualquer coisa. Se algo aqui não bater,
+a gente resolve antes de clonar.
+
+```bash
+docker compose version
+sudo ss -tlnp | grep LISTEN          # panorama: deve aparecer :80 (Conciliador) e :8001 (Hub)
+sudo ss -tlnp | grep ':8002' || echo "8002 livre"
+```
+
+Esperado: uma versão de Compose; `80` e `8001` ocupados (os outros apps); e **8002
+livre**.
+
+A porta 8002 não é escolhida agora — já está fixada na arquitetura (Conciliador=80,
+Hub=8001, Nuvem IA=8002) e no `docker-compose.yml`. Este passo só **confirma** que ela
+está de fato livre. Se 8002 já estiver ocupada, **para aqui** e me manda o que apareceu:
+aí vira decisão (trocar a porta no compose + realinhar o pedido da Valcann).
+
+---
+
+## Passo 2 — Deploy key do repo Nuvem
+
+A VM usa **uma deploy key por repo, com apelido de host** no `~/.ssh/config`
+(`github.com` → Conciliador; `github-hub` → Hub). A chave default só enxerga o
+Conciliador, então o Nuvem precisa da própria — criada no mesmo molde, com apelido
+`github-nuvem`.
+
+> **Cole um bloco de cada vez** (não os três grudados). Se o `ssh-keygen` perguntar
+> `Overwrite (y/n)?`, a chave já existe de uma tentativa anterior — responda `n` e pule.
+> Se o `~/.ssh/config` ficar inválido, o ssh para de ler o arquivo pra **todos** os
+> hosts (Conciliador/Hub inclusive); valide com `ssh -G github-nuvem >/dev/null && echo OK`.
+
+```bash
+# 1) gerar o par de chaves do Nuvem (sem passphrase, como as outras)
+ssh-keygen -t ed25519 -C "nuvem-ia-deploy" -f ~/.ssh/nuvem_deploy -N ""
+
+# 2) registrar o apelido github-nuvem no ~/.ssh/config
+cat >> ~/.ssh/config <<'EOF'
+
+Host github-nuvem
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/nuvem_deploy
+  IdentitiesOnly yes
+EOF
+
+# 3) mostrar a chave PÚBLICA (pra colar no GitHub)
+cat ~/.ssh/nuvem_deploy.pub
+```
+
+**No GitHub** (precisa de admin no repo): `SuperfrioIA/Nuvem` → Settings → Deploy keys →
+Add deploy key. Título `vm-deploy`, cole a chave pública do passo 3 e **deixe "Allow
+write access" desmarcado** (a VM só lê o repo — clona/atualiza, nunca dá push).
+
+Testar pelo apelido novo:
+
+```bash
+ssh -T git@github-nuvem
+```
+
+Esperado: `Hi SuperfrioIA/Nuvem! You've successfully authenticated...`. O "código 1" e o
+"does not provide shell access" são normais. Se vier `conciliadorEstoque` ou
+`Permission denied`, para aqui e me manda a saída.
+
+---
+
+## Passo 3 — Clonar o repo
+
+```bash
+cd /home/ubuntu
+git clone git@github-nuvem:SuperfrioIA/Nuvem.git nuvemIA
+cd nuvemIA
+```
+
+Repare no `git@github-nuvem:` — é o apelido criado no Passo 2, que roteia pra deploy key
+do Nuvem. `git@github.com:` cairia na chave do Conciliador e falharia. O `nuvemIA` no fim
+é o nome da pasta de destino: o `docker-compose.yml` fica direto em
+`/home/ubuntu/nuvemIA/` (padrão do Conciliador/Hub), sem uma pasta `Nuvem` dobrada.
+
+Me manda: a saída do clone e o resultado de `ls` dentro de `nuvemIA` (pra eu confirmar
+que veio `docker-compose.yml`, `Dockerfile`, `backend/`, `frontend/`, `.env.example`).
+
+---
+
+## Passo 4 — Criar o `.env` de produção
+
+**Nunca commitar** este arquivo. Gere segredos novos (não reusar os de teste local).
+
+```bash
+# ainda dentro de /home/ubuntu/nuvemIA
+cat > .env <<EOF
+POSTGRES_PASSWORD=$(openssl rand -hex 16)
+ADMIN_PASSWORD=TROQUE_POR_UMA_SENHA_FORTE
+SECRET_KEY=$(openssl rand -hex 32)
+UPLOADS_HOST_PATH=/home/ubuntu/nuvemIA/data/uploads
+EOF
+chmod 600 .env
+```
+
+Depois **edite o `ADMIN_PASSWORD`** (é a senha que você vai digitar pra logar no
+`/admin` — escolha algo forte e que você guarde):
+
+```bash
+nano .env      # troca só a linha ADMIN_PASSWORD=
+```
+
+Crie a pasta de uploads (fora do container, persistente):
+
+```bash
+mkdir -p /home/ubuntu/nuvemIA/data/uploads
+```
+
+Confirme o `.env` (sem me mandar os valores — só que as 4 chaves existem):
+
+```bash
+cut -d= -f1 .env
+```
+
+Esperado: `POSTGRES_PASSWORD`, `ADMIN_PASSWORD`, `SECRET_KEY`, `UPLOADS_HOST_PATH`.
+Não me mande o conteúdo dos segredos.
+
+---
+
+## Passo 5 — Subir
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Esperado em `ps`: `nuvem-db` como `healthy` e `nuvem-app` como `running`/`up`.
+Me manda a saída do `ps`.
+
+---
+
+## Passo 6 — Validar na própria VM (antes de qualquer rede)
+
+```bash
+# 1) logs sem erro de conexão com o Postgres
+docker compose logs nuvem-app | tail -30
+
+# 2) o admin responde (GET, espera 200) — não usar -I/HEAD: a rota só aceita GET (dá 405)
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8002/admin
+
+# 3) login guardando o cookie (espera 200)
+curl -s -c /tmp/nuvem.cookie -X POST http://localhost:8002/api/admin/login \
+  -F "senha=SUA_ADMIN_PASSWORD" -o /dev/null -w "%{http_code}\n"
+
+# 4) armazéns ativos (espera 31 — 32 semeados, MRS inativa não aparece)
+curl -s -b /tmp/nuvem.cookie http://localhost:8002/api/admin/armazens \
+  | grep -o '"sigla"' | wc -l
+```
+
+Critério de sucesso desta subida:
+- logs sem `connection refused`/erro de Postgres;
+- `/admin` = **200**;
+- login = **200**;
+- armazéns ativos = **31**.
+
+Me manda as 4 saídas. Se as 4 baterem, o app está **rodando e validado na VM**.
+
+---
+
+## Passo 7 — Abrir pra rede
+
+Testa de outra máquina (o endereço que você usa pro Hub, trocando a porta):
+`http://IP_DA_VM:8002/admin`.
+
+- **Se abrir o login do admin:** a porta já está acessível na rede — nada a fazer. Foi o
+  que aconteceu em 20/jul/2026 com a 8002 (a VM é uma EC2; o Security Group aparentemente
+  libera uma faixa de portas, e a 8002 caiu junto com a 8001 do Hub).
+- **Se der timeout:** abrir chamado com a **Valcann** pra liberar a porta na rede interna
+  dessa VM (mesmo processo que liberou a 8001 do Hub), e testar de novo depois.
+
+Lembrete de postura: com a porta acessível na rede, quem protege o console é a
+`ADMIN_PASSWORD` — mantenha-a forte. A nuvem (Lote 5) é aberta na rede interna por desenho.
+
+---
+
+## Comandos úteis / rollback
+
+```bash
+docker compose logs -f nuvem-app      # acompanhar logs ao vivo
+docker compose restart nuvem-app      # reiniciar só o app
+docker compose down                   # derruba os containers (o volume do banco fica)
+docker compose down -v                # derruba E apaga o banco — CUIDADO, perde dados
+git pull && docker compose up -d --build   # atualizar após novo commit
+```
+
+O volume `nuvem_db_data` guarda o banco entre `up`/`down`. `down -v` apaga tudo — só
+usar se quiser começar do zero.

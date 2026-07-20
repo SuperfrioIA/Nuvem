@@ -41,6 +41,14 @@ só onde há julgamento (o motor).
       vale a regra: acumular a partir de agora, 1 foto por competência
 - [ ] Combinar com a TI o destino do `pg_dump` fora da VM (candidato natural: o site
       SharePoint `nuvem-ia`, já criado — falta confirmar)
+- [x] Chave SSH da VM com acesso ao repo `SuperfrioIA/Nuvem` (20/jul/2026): a default era
+      deploy key do Conciliador; criada a `nuvem_deploy` (apelido `github-nuvem` no
+      `~/.ssh/config`) e cadastrada como deploy key read-only no repo. Runbook completo em
+      docs/DEPLOY.md
+- [x] Porta 8002 na rede interna (20/jul/2026): não precisou de chamado — a 8002 já
+      respondeu de outra máquina após o deploy (cai numa faixa/regra do Security Group já
+      liberada na VM, como a 8001 do Hub). Valcann fica de fallback se alguma porta futura
+      não abrir
 
 **Check de conclusão:** pedido protocolado; contrato escrito e combinado; filiais escolhidas.
 
@@ -65,8 +73,9 @@ só onde há julgamento (o motor).
 não tem Docker Desktop; a distro WSL já tem Docker Engine + Compose, dispensa
 Docker Desktop). Sobe limpo na 8002 com `--build`; upload sem de-para grava 0 e vira
 pendência; de-para resolve; reprocesso com modelo salvo grava em `medidas`; execução
-aparece no log com o arquivo original referenciado. **Ainda falta validar na VM real**
-(SuperFrio) — o teste até aqui foi só local.
+aparece no log com o arquivo original referenciado. **Infra validada na VM real em
+20/jul/2026** (sobe na 8002, admin autentica, seed carregado); o fluxo de
+upload/de-para/reprocesso segue validado só local por ora.
 
 Bug de infra achado e corrigido no processo: `nuvem-app` tentava conectar no Postgres
 antes dele aceitar conexão (caía e reiniciava sozinho, disfarçado pelo
@@ -117,8 +126,8 @@ conexão" acusa erro (esperado) e seguimos no upload manual.
 - [x] "Sem dado" ≠ "dentro do padrão": ausência de linha em `medidas`/`scores` (o motor
       não grava nada nesse caso) — o Lote 5 (tela) é quem distingue isso de `normal`
 
-**Check de conclusão:** validado local (mesma ressalva do Lote 1 — falta a VM real) com
-dataset sintético controlado (perdas+volumetria, 12 meses armazém RPI + 3 meses CGH)
+**Check de conclusão:** validado local (infra na VM validada em 20/jul/2026 — ver Lote 1)
+com dataset sintético controlado (perdas+volumetria, 12 meses armazém RPI + 3 meses CGH)
 rodando nos containers de verdade: `historico_curto` nos 6 primeiros meses de RPI (e nos
 3 meses inteiros de CGH, que nunca atinge o mínimo), `normal` no meio da série, e
 `fora_padrao` batendo nas duas métricas juntas em dez/2023 (z=218 perdas, z=-54
@@ -234,9 +243,11 @@ Achados da reconciliação (ver comentário no topo de `backend/seed_depara.py`)
 **Check de conclusão:** validado local (WSL/Docker) com `docker compose up -d --build`
 + restart: 33 armazéns (32 do seed + `CGH` de teste do Lote 3, preservado), MRS inativa
 com seus 3 apelidos, 103 apelidos de-para (102 do seed + `CGH` pré-existente), sem
-colisão, contagens idênticas após um segundo restart (idempotente). **Falta ainda**:
-o teste de ponta a ponta ("upload de relatório real resolve sem pendência") só fecha
-no Lote 8, quando existir modelo de importação pra essas famílias de relatório.
+colisão, contagens idênticas após um segundo restart (idempotente). Em 20/jul/2026,
+confirmado também na VM real (banco novo): `GET /api/admin/armazens` retornou as 31
+filiais ativas. **Falta ainda**: o teste de ponta a ponta ("upload de relatório real
+resolve sem pendência") só fecha no Lote 8, quando existir modelo de importação pra essas
+famílias de relatório.
 
 ## Lote 8 — Relatórios reais como fonte (upload, sem integração de banco)
 

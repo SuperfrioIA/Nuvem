@@ -4,7 +4,9 @@ Junta dados que hoje vivem em silos (sistemas via Pentaho, controles manuais via
 SharePoint) numa **camada fina** de agregados e scores, e mostra tudo numa "nuvem" de
 métricas interligadas que **acendem** quando algo foge do próprio padrão histórico.
 
-**Status: fase de arquitetura — nenhum código construído ainda.**
+**Status: construção em lotes.** Lotes 1 (esqueleto/banco/upload manual), 3 (motor de
+scores) e 7 (de-para das 32 filiais) feitos; deploy validado na VM em 20/jul/2026 (só o
+admin — a nuvem/`index.html` é o Lote 5). Ver [docs/PLANO.md](docs/PLANO.md).
 
 ## Documentos
 

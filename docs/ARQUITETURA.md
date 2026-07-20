@@ -23,6 +23,38 @@ subir o `?v=` no HTML.
 O `nuvem-app` roda com **worker único**: o APScheduler vive no processo da API e, com
 múltiplos workers do uvicorn, a rotina dispararia em duplicata.
 
+## Deploy na VM (checklist)
+
+Validado na VM real em 20/jul/2026 (Lotes 1/3/7): sobe na 8002, admin autentica e o seed
+do Lote 7 traz as 31 filiais ativas. O passo a passo executável fica em docs/DEPLOY.md;
+o checklist abaixo é o resumo com as decisões:
+
+1. **Pré-requisito — deploy key da VM pro repo Nuvem**: a VM usa uma deploy key por repo,
+   com apelido de host no `~/.ssh/config` (a do Conciliador é a default `github.com`).
+   Criada a `nuvem_deploy` com apelido `github-nuvem` (20/jul/2026), cadastrada como
+   deploy key read-only no repo. Detalhe em docs/DEPLOY.md.
+2. `git clone git@github-nuvem:SuperfrioIA/Nuvem.git nuvemIA` em `/home/ubuntu` (mesma VM
+   do Conciliador porta 80 e do Hub porta 8001).
+3. Criar `.env` de produção na VM (**nunca commitado**) com `POSTGRES_PASSWORD`,
+   `ADMIN_PASSWORD`, `SECRET_KEY` reais (gerar novos, não reusar os de teste local) e
+   `UPLOADS_HOST_PATH` apontando pra uma pasta persistente fora do container — ver
+   `.env.example`.
+4. Confirmar Docker + Compose na VM (`docker compose version` — devem já estar, usados
+   por Conciliador/Hub) e que a porta 8002 está livre (`ss -tlnp | grep 8002` ou
+   equivalente).
+5. `docker compose up -d --build`.
+6. Validar **na própria VM antes de abrir pra rede**: `curl http://localhost:8002/admin`
+   (GET; a rota não aceita HEAD/`-I`), `docker compose logs nuvem-app` sem erro de
+   conexão com o Postgres, login no admin funcionando, `GET /api/admin/armazens` trazendo
+   as 31 filiais ativas do Lote 7 (32 semeadas, MRS inativa).
+7. **Só depois de validado**, abrir pra rede. Em 20/jul/2026 a 8002 já respondeu de outra
+   máquina sem chamado — aparentemente cai numa faixa/regra do Security Group já liberada
+   na VM (como a 8001 do Hub). Se uma porta futura não responder, aí sim abrir chamado com
+   a **Valcann** pra liberá-la na rede interna.
+
+Nota: até o Lote 5 (frontend, "a nuvem") ser construído, `/` redireciona pra `/admin` —
+abrir a porta agora dá acesso só ao admin, não à tela final. Não é bug.
+
 ## Conectores (o coração)
 
 Interface única que todo conector implementa:

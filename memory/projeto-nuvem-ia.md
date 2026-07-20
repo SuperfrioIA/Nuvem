@@ -9,10 +9,12 @@ Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem
 de bolinhas-métricas que acendem quando fogem do próprio padrão histórico, por contexto
 (filial × mês). Piloto: Perdas × Volumetria × Ocupação (docs/PILOTO.md). Fase atual
-(17/jul/2026): construção em lotes (ver docs/PLANO.md) — Lote 1 (esqueleto, banco,
+(20/jul/2026): construção em lotes (ver docs/PLANO.md) — Lote 1 (esqueleto, banco,
 upload manual), Lote 3 (motor de scores) e Lote 7 (de-para oficial das 32 filiais SF)
-feitos, validados localmente; Lote 0 (TI/Entra ID) e Lote 2 (conectores
-completos/SharePoint) pendentes; Lote 8 (relatórios reais como fonte) é o próximo passo
+feitos; **primeiro deploy na VM real validado em 20/jul/2026** (só o admin, na 8002,
+acessível na rede interna — runbook em docs/DEPLOY.md). Lote 0 quase fechado (deploy/SSH
+resolvidos; falta o Entra ID e as decisões de negócio); Lote 2 (conectores
+completos/SharePoint) pendente; Lote 8 (relatórios reais como fonte) é o próximo passo
 natural — depende do de-para do Lote 7. Dona: Maria Watanabe (CSC).
 
 **Why:** hoje há milhares de BIs individuais e o cruzamento mora na cabeça das pessoas.
