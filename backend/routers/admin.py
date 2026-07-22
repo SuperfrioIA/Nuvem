@@ -1,4 +1,5 @@
 import json
+import os
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
@@ -9,6 +10,23 @@ from ..conectores import upload_manual
 from ..database import get_conn
 
 router = APIRouter()
+
+
+async def _ler_upload(arquivo: UploadFile) -> bytes:
+    """Le o arquivo do upload respeitando o limite de tamanho (Lote R0).
+
+    Limite configuravel por UPLOAD_MAX_MB (default 50 — o maior arquivo real da
+    POC, o fato de volumetria, tem ~30 MB). Lido aqui (na chamada, nao no
+    import) pra ser ajustavel por ambiente e testavel."""
+    limite_mb = int(os.environ.get("UPLOAD_MAX_MB", "50"))
+    limite = limite_mb * 1024 * 1024
+    conteudo = await arquivo.read(limite + 1)
+    if len(conteudo) > limite:
+        raise HTTPException(
+            status_code=413,
+            detail=f"arquivo maior que o limite de {limite_mb} MB (UPLOAD_MAX_MB)",
+        )
+    return conteudo
 
 
 @router.post("/login")
@@ -167,7 +185,7 @@ def listar_modelos(request: Request, conector_id: int | None = None):
 @router.post("/upload/preview")
 async def upload_preview(request: Request, arquivo: UploadFile = File(...)):
     exigir_login(request)
-    conteudo = await arquivo.read()
+    conteudo = await _ler_upload(arquivo)
     try:
         return upload_manual.preview(conteudo, arquivo.filename)
     except Exception as e:
@@ -183,7 +201,7 @@ async def upload_processar(
     mapeamento_json: str | None = Form(None),
 ):
     exigir_login(request)
-    conteudo = await arquivo.read()
+    conteudo = await _ler_upload(arquivo)
 
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id FROM conectores WHERE tipo = 'upload_manual'")

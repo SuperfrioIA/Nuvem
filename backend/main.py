@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from . import migracao
 from .database import init_db
 from .routers.admin import router as admin_router
 
@@ -10,6 +11,9 @@ app = FastAPI(title="Nuvem IA")
 
 @app.on_event("startup")
 def _startup():
+    # schema primeiro (Alembic: cria banco novo, valida+stampa banco legado,
+    # aplica migrations pendentes), seeds depois — ver backend/migracao.py
+    migracao.migrar()
     init_db()
 
 

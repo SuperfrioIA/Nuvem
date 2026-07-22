@@ -420,6 +420,39 @@ recorte da POC. `GET /catalogo/{id}` com `modelo_id` NULL retorna `execucoes: []
 (não erro), como previsto. Contagens idênticas após restart (idempotente); fluxo de
 upload/de-para existente (31 armazéns ativos, conectores) não foi afetado.
 
+## Lote R0 — Alicerce da revisão arquitetural (testes + Alembic)
+
+**Status: feito** (22/jul/2026) · primeiro lote da revisão arquitetural de 22/jul —
+diagnóstico, matriz de riscos e plano completo (R0–R6) em **docs/DIAGNOSTICO.md**.
+Os lotes R1+ aguardam aprovação; o R1 (fontes lógicas + versionamento real de
+modelos) terá o desenho revisado apresentado antes de construir. **Modelo:** Fable 5.
+
+- [x] Alembic adotado: baseline `0001_baseline` com as 12 tabelas; `init_db()` fica
+      só com os seeds (nada de ALTER estrutural no startup)
+- [x] Startup: migrar → seeds. Banco novo nasce da baseline (`upgrade head`); banco
+      **legado** é validado (12 tabelas + colunas obrigatórias) **antes** do stamp
+      automático — qualquer divergência aborta sem tocar o banco, com erro claro no
+      log e contingência documentada (docs/DEPLOY.md, "Migrations")
+- [x] Limite de tamanho de upload (`UPLOAD_MAX_MB`, default 50 MB, HTTP 413)
+- [x] Suíte pytest com Postgres real (25 testes): parser com os **mapeamentos reais**
+      dos 5 modelos (extraídos do banco do worktree lote-8 — também insumo do seed do
+      R1) sobre arquivos sintéticos; ingestão (de-para/pendência/upsert idempotente);
+      motor (estados/limiar/recálculo idempotente); migração (novo, legado válido,
+      legado divergente aborta, baseline ≡ init_db antigo); 5 fluxos de upload ponta
+      a ponta pela API
+- [x] Docs corrigidos: README (status), ARQUITETURA (12 tabelas, APScheduler é Lote 4,
+      migrations, testes), PILOTO (parcelas de ocupação), DEPLOY (migrations +
+      contingência + como rodar testes)
+- [x] Fora do escopo e não tocado: parsing, ingestão, motor, auth, frontend (além do
+      limite de upload e da conexão do startup)
+
+**Check de conclusão:** suíte verde (25 passed) rodando em container python:3.11 +
+Postgres 16 de teste; banco legado **real** local adotado pelo Alembic no
+`up -d --build` (35 armazéns/30 medidas preservados, stamp aplicado, restart
+idempotente — mesmas contagens); os testes de drift provam que banco divergente não
+recebe stamp. Falta: repetir a adoção na VM real no próximo deploy (mesmo caminho
+validado localmente).
+
 ## Lote 9 — Métrica composta: ocupação real
 
 **Status: a fazer** · derivação em cima de `medidas`; motor e tela inalterados.

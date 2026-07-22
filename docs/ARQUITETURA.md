@@ -13,7 +13,7 @@ Construção em lotes desde então — ver docs/PLANO.md pro status vivo de cada
 
 | Serviço | Conteúdo |
 |---|---|
-| `nuvem-app` | FastAPI (API + estáticos) + APScheduler embutido (rotina 1×/dia + execução manual pelo admin) |
+| `nuvem-app` | FastAPI (API + estáticos); o APScheduler (rotina 1×/dia) entra no Lote 4 — ainda não está no container |
 | `nuvem-db` | Postgres 16, volume nomeado (a camada fina) |
 
 Dockerfile faz `COPY backend/ frontend/` → mudou código = **rebuild**
@@ -135,9 +135,29 @@ plana antes de subir.
 | `scores` | métrica × armazém × mês | média/desvio/z da janela 12–24m + estado; derivado e recalculável (cache de leitura, não fonte de verdade) |
 | `modelos_importacao` | 1/relatório mapeado | conector, nome, mapeamento JSONB (armazém/competência/métricas), ativo — ver seção do `upload_manual` acima |
 | `execucoes` | 1/rodada | início, fim, status, linhas lidas/gravadas, erro, `modelo_id`, referência ao arquivo original retido — exibido no admin |
+| `clientes` (Lote 7.1) | 1/cliente | lista curada dos clientes de catering (nk_erp, nome, flag) — o segmento do DW está errado, não serve de filtro |
+| `catalogo_fontes` (Lote 8.5) | 1/família de relatório | chave estável, descrição, origem no DW, grão — a documentação viva do que o sistema vê |
+| `catalogo_colunas` (Lote 8.5) | coluna × fonte | significado e papel de cada coluna do arquivo bruto no modelo de importação |
+
+**Migrations (Lote R0):** o schema é criado e evoluído pelo **Alembic**
+(`alembic/versions/`, baseline = as 12 tabelas acima); o `init_db()` só roda seeds
+idempotentes. No startup: banco novo nasce da baseline, banco legado é validado
+(tabelas + colunas obrigatórias) antes de receber o stamp — divergência aborta a
+subida com erro claro, sem tocar o banco. Runbook e contingência em docs/DEPLOY.md.
 
 Princípios: persistir o fato, derivar a interpretação; idempotência (rodar 2× não
 corrompe); validação no boundary (Excel/config), confiança interna.
+
+## Testes (Lote R0)
+
+Suíte pytest (`tests/`) com Postgres real, coberta: parser com os **mapeamentos
+reais** dos 5 modelos do Lote 8 sobre arquivos sintéticos, ingestão
+(de-para/pendência/upsert idempotente), motor (estados, limiar, recálculo
+idempotente), migração (banco novo, legado válido, legado divergente aborta) e os
+5 fluxos de upload ponta a ponta pela API, com limite de tamanho
+(`UPLOAD_MAX_MB`, default 50 MB). Como rodar: docs/DEPLOY.md. Os dados de teste
+são sintéticos — provam a mecânica, não substituem a validação visual dos
+relatórios reais.
 
 ## Backup (requisito, não detalhe de implantação)
 

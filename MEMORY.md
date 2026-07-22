@@ -1,3 +1,3 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; POC = catering família RMSP (21/jul); Lotes 1, 3, 7, 7.1 e 8.5 feitos
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; POC = catering família RMSP (21/jul); Lotes 1, 3, 7, 7.1, 8, 8.5 e R0 feitos; próximo = desenho do R1
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, auth só no admin
 - Plano de construção em lotes e status vivo: [docs/PLANO.md](docs/PLANO.md) — marcar check ao fechar cada lote

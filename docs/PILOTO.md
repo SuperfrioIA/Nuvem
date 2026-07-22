@@ -44,7 +44,7 @@ o motor aceita sem mudar nada.
 
 | Métrica | Fonte (export do DW) | Grão |
 |---|---|---|
-| Ocupação física (% s/ total e % s/ disponível), bloqueadas, virtuais | pos_sum | filial × mês |
+| Ocupação física em parcelas: posições ocupadas, virtuais, capacidade total/bloqueada/disponível (decisão do Lote 8 — os %% s/ total e s/ disponível são derivados no Lote 9, não recalculados na carga) | pos_sum | filial × mês |
 | Comercial contratado: vigente e vencido-operando (posições) | comercial + fato (regra dos 60 dias) | filial × mês |
 | Cobertura contratual (comercial ÷ capacidade) | derivada | filial × mês |
 | Volumetria recebimento/expedição (t) | fato (histórico 2021→hoje) | filial × mês |

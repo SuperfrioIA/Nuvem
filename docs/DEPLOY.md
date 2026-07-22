@@ -199,6 +199,65 @@ Lembrete de postura: com a porta acessível na rede, quem protege o console é a
 
 ---
 
+## Migrations (Alembic) — desde o Lote R0
+
+O schema do banco é gerenciado pelo **Alembic** (pasta `alembic/` + `alembic.ini`,
+assados na imagem). O `init_db()` só semeia dados de cadastro; quem cria e evolui
+tabela é migration. Tudo acontece **sozinho no startup** do `nuvem-app`
+(`backend/migracao.py`), em três caminhos:
+
+| Estado do banco | O que o startup faz |
+|---|---|
+| **Gerenciado** (tabela `alembic_version` existe) | aplica migrations pendentes (`upgrade head`) — caso normal de toda atualização |
+| **Novo** (vazio) | cria o schema inteiro pela baseline |
+| **Legado** (tabelas do `init_db` antigo, sem `alembic_version`) | **valida o schema** (12 tabelas + colunas obrigatórias) e, só se bater com a baseline, marca `alembic_version = 0001_baseline` (stamp) e segue. **Se algo divergir, não altera nada**: o app para de subir com o erro no log |
+
+Ou seja: a atualização da VM continua `git pull && docker compose up -d --build`.
+Na primeira subida pós-R0, o banco existente é validado e "adotado" pelo Alembic
+automaticamente (aconteceu validado no ambiente local em 22/jul/2026: dados
+preservados, stamp aplicado, restart idempotente).
+
+### Contingência — o startup abortou com "schema legado divergente"
+
+O log (`docker compose logs nuvem-app`) lista exatamente o que divergiu
+(ex.: `tabela ausente: clientes` ou `colunas ausentes em medidas: ...`). Nada foi
+alterado no banco. Casos:
+
+1. **VM rodando código anterior aos Lotes 7.1/8.5** (faltam `clientes`,
+   `catalogo_fontes`, `catalogo_colunas`): suba uma vez a versão anterior ao R0
+   (`git checkout 387c674 && docker compose up -d --build` — o `init_db` antigo cria
+   as tabelas que faltam), volte pra main (`git checkout main`) e rode o
+   `up -d --build` de novo.
+2. **Divergência inesperada** (coluna faltando, tabela mexida na mão): não force.
+   Confira o log, ajuste o banco manualmente até bater com a baseline
+   (`alembic/versions/0001_baseline.py` é a referência) e reinicie. Só depois de
+   entender a causa, se tiver certeza de que o schema é equivalente, o stamp manual
+   é: `docker compose exec nuvem-app alembic stamp 0001_baseline`.
+
+### Rollback
+
+- Migrations futuras terão `downgrade` quando viável:
+  `docker compose exec nuvem-app alembic downgrade -1`.
+- O `downgrade` da **baseline** apaga todas as tabelas — só faz sentido em dev.
+  Na VM, o caminho de volta é sempre **restaurar o pg_dump** (Lote 4), nunca ele.
+- Conferir a versão aplicada: `docker compose exec nuvem-app alembic current`.
+
+### Testes (desenvolvimento, WSL)
+
+Suíte pytest com Postgres real (nunca mock). Uma vez:
+`docker run -d --name nuvem-teste-db --restart unless-stopped -e POSTGRES_USER=nuvem -e POSTGRES_PASSWORD=teste -e POSTGRES_DB=nuvem_teste postgres:16`
+e uma rede comum (`docker network create nuvem-teste && docker network connect nuvem-teste nuvem-teste-db`). Rodar:
+
+```bash
+docker run --rm --network nuvem-teste \
+  -e TEST_DATABASE_URL=postgresql://nuvem:teste@nuvem-teste-db:5432/nuvem_teste \
+  -v "$PWD":/app -v nuvem-pip-cache:/root/.cache/pip -w /app \
+  python:3.11-slim bash -c "pip install -q -r requirements-dev.txt && pytest -q"
+```
+
+O banco de teste é **zerado** a cada teste — nunca aponte `TEST_DATABASE_URL` pro
+banco de verdade.
+
 ## Comandos úteis / rollback
 
 ```bash

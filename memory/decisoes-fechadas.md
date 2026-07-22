@@ -120,6 +120,23 @@ metadata:
   precisa da tag `!override` do Compose Spec pra sobrescrever `ports` em vez de
   concatenar (mergepadrão do Compose é aditivo em listas).
 
+- Da revisão arquitetural (22/jul/2026, **docs/DIAGNOSTICO.md** — diagnóstico, matriz
+  de riscos e plano R0–R6 aprovado por partes): **R0 fechado** — Alembic (baseline
+  `0001_baseline` com as 12 tabelas; `init_db` só seeds; banco legado recebe stamp
+  **só depois** de validação de schema — divergência aborta sem tocar o banco, nunca
+  stamp automático em banco divergente); limite de upload (`UPLOAD_MAX_MB`, 50 MB);
+  suíte pytest com Postgres real (25 testes — mapeamentos REAIS dos 5 modelos
+  extraídos do banco do worktree lote-8 em `tests/modelos_reais.py`, que também é o
+  insumo do futuro seed do R1; dados de teste sintéticos, não substituem validação
+  visual dos arquivos reais). **Take or pay** (decisão de negócio confirmada):
+  faturável = max(garantia mínima vigente, ocupação física do fechamento) por
+  cliente×filial×mês; ocupação física ≠ ocupação econômica (dashboard corporativo);
+  nenhuma fonte atual tem física por cliente pras RMSP → cálculo indisponível, sem
+  proxy por volumetria, bloqueado pelo relatório detailed do DW (pedido do Lote 0);
+  divergência de 917 no card take-or-pay+locações do Power BI é pendência explícita.
+  R1–R6 não autorizados ainda; R1 (fontes lógicas + versionamento imutável de
+  modelos, editar = nova versão) terá desenho apresentado antes de construir.
+
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].
