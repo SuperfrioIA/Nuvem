@@ -266,21 +266,41 @@ famílias de relatório.
 
 ## Lote 7.1 — Complementos do de-para (POC catering)
 
-**Status: a fazer** · pequeno; toca `backend/seed_depara.py` + uma decisão de forma.
+**Status: feito** (22/jul/2026) · pequeno; tocou `backend/seed_depara.py` + tabela nova.
 **Modelo:** Sonnet 5.
 
-- [ ] RMSPV no seed (nasceu no WMS em 14/jul/2026 — ERP 008009, Log Frio, Barueri;
+- [x] RMSPV no seed (nasceu no WMS em 14/jul/2026 — ERP 008009, Log Frio, Barueri;
       ainda sem capacidade cadastrada, contrato ou volumetria)
-- [ ] RMSPIV registrado como só-cadastro (ERP 008003, nunca apareceu em fonte do DW)
+- [x] RMSPIV registrado como só-cadastro (ERP 008003, nunca apareceu em fonte do DW)
       — não vira armazém ativo
-- [ ] Lista curada dos clientes de catering da família (~12: Sapore, GR, Sodexo,
-      Wyda/Cucinare, Pimenta Verde, Novita, Convida, FLV 7, OG, Neffa, Bimbo, Frimesa
-      — conferir com o comercial) na camada fina; decidir a forma (tabela pequena ou
-      marcação num de-para de clientes). O segmento do DW está errado — não serve de
-      filtro
+- [x] Lista curada dos clientes de catering da família na camada fina: tabela nova
+      `clientes` (`backend/seed_clientes.py`), 11 clientes (não 12 — ver nota abaixo),
+      todos `catering=true`. O segmento do DW está errado — não serve de filtro.
 
-**Check de conclusão:** RMSPV aparece no admin como armazém; lista de catering
-consultável pelo motor e pela tela.
+Forma escolhida: tabela própria (não marcação num de-para de clientes), mesmo padrão
+idempotente do `seed_depara.py`. Fonte: `docs/Analise/clientesDw.csv` (NK_CLIENTE,
+RAZAO_SOCIAL, registro vigente) cruzado com `docs/Analise/ocupacaoComercial.csv`
+(contratos vigentes de RMSPII/RMSPIII) — 8 clientes vieram do contrato direto (Sapore,
+GR, Wyda/Cucinare, Pimenta Verde, Novita, Grupo Neffa, Sodexo, Bimbo); os outros 3
+(Convida, OG do Brasil, FLV 7) não têm contrato vigente na família (achado do
+PILOTO.md) e foram localizados por nome. Não são 12: Tirolez/Delly/Frimesa/Irmãos Boa
+ficaram de fora por instrução explícita (são contratos de locação da RMSP, fora do
+núcleo RMSPII/RMSPIII) — a lista bateu em 11 sem precisar perguntar.
+
+**Check de conclusão:** validado local (WSL/Docker, worktree próprio, porta 8003) com
+`docker compose up -d --build` + restart: 32 armazéns ativos (31 do Lote 7 + RMSPV),
+RMSPIV não aparece; 11 clientes, todos `catering=true`; contagens idênticas após
+restart (idempotente); smoke test de upload (xlsx com RPI + RMSPV, formato longo) —
+2 linhas lidas, 2 gravadas, 0 pendências, confirmando que a tabela nova não quebrou o
+fluxo existente. `GET /api/admin/clientes` no padrão do `listar_armazens`; tabela
+read-only em `admin.html` dentro do `#painel-depara`, carregada em `carregarTudo()`.
+
+Achado de infra (não é bug deste lote): o `docker-compose.override.yml` deste worktree
+tinha `ports` como lista simples — o Compose faz merge (concatena) de listas em vez de
+substituir, então o app tentava subir também na 8002 (porta do worktree main) e
+colidia. Corrigido com a tag `!override` do Compose Spec (suportada a partir da v2.24;
+este ambiente tem v5.1.4) pra sobrescrever a porta em vez de somar. Arquivo não
+versionado (local ao worktree), não precisa de ação na main.
 
 ## Lote 8 — Relatórios reais como fonte (upload, sem integração de banco)
 

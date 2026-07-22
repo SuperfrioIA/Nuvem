@@ -94,6 +94,14 @@ ARMAZENS = [
      "apelidos": ["UDI", "010004", "01456021000421"]},
     {"sigla": "CWBI", "nome": "CWBI", "ativo": True,
      "apelidos": ["CWBI", "001995"]},
+    # Lote 7.1 (21/jul/2026, POC catering RMSP): RMSPV nasceu no WMS em 14/jul/2026,
+    # ainda sem capacidade/contrato/volumetria — ativa e vazia. RMSPIV existe só no
+    # cadastro Protheus, nunca apareceu em fonte do DW — registrada pra resolver
+    # de-para de uploads antigos, mas inativa (mesmo padrão da MRS).
+    {"sigla": "RMSPV", "nome": "Barueri/SP", "ativo": True,
+     "apelidos": ["RMSPV", "008009", "06975242000934"]},
+    {"sigla": "RMSPIV", "nome": "Barueri/SP", "ativo": False,
+     "apelidos": ["RMSPIV", "008003", "06975242000349"]},
 ]
 
 

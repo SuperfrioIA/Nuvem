@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 import psycopg2
 
-from . import seed_depara
+from . import seed_clientes, seed_depara
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -138,6 +138,18 @@ def init_db():
                 """
             )
 
+            # Lote 7.1
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS clientes (
+                    id SERIAL PRIMARY KEY,
+                    nk_erp TEXT UNIQUE NOT NULL,
+                    nome TEXT NOT NULL,
+                    catering BOOLEAN NOT NULL DEFAULT false
+                )
+                """
+            )
+
             # seed: conector upload_manual + métricas do piloto (cadastro cresce
             # conforme aparecem novas métricas nos modelos de importação)
             cur.execute(
@@ -157,3 +169,7 @@ def init_db():
             cur.execute("SELECT id FROM conectores WHERE tipo = 'upload_manual'")
             conector_upload_manual_id = cur.fetchone()[0]
             seed_depara.aplicar(cur, conector_upload_manual_id)
+
+            # seed: clientes de catering da família RMSP (Lote 7.1) — ver
+            # backend/seed_clientes.py
+            seed_clientes.aplicar(cur)

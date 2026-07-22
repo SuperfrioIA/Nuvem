@@ -186,6 +186,12 @@
           <button class="secundaria" id="btnCriarArmazem">Adicionar armazém</button>
         </div>
       </fieldset>
+
+      <h3>Clientes de catering</h3>
+      <table id="tabelaClientes">
+        <thead><tr><th>Nome</th><th>Código ERP</th><th>Catering</th></tr></thead>
+        <tbody></tbody>
+      </table>
     </section>
 
     <!-- PENDENCIAS -->
@@ -275,6 +281,7 @@ function carregarTudo() {
   carregarConectores();
   carregarArmazens();
   carregarDepara();
+  carregarClientes();
   carregarPendencias();
   carregarExecucoes();
 }
@@ -313,6 +320,17 @@ async function carregarDepara() {
       <td>${l.armazem_nome}</td>
       <td><button class="perigo" onclick="apagarDepara(${l.id})">excluir</button></td>
     </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhum de-para cadastrado ainda.</td></tr>`;
+}
+
+async function carregarClientes() {
+  const linhas = await api("/clientes");
+  const tbody = document.querySelector("#tabelaClientes tbody");
+  tbody.innerHTML = linhas.map(l => `
+    <tr>
+      <td>${l.nome}</td>
+      <td>${l.nk_erp}</td>
+      <td>${l.catering ? "sim" : "não"}</td>
+    </tr>`).join("") || `<tr><td colspan="3" class="ajuda">Nenhum cliente cadastrado ainda.</td></tr>`;
 }
 
 async function apagarDepara(id) {

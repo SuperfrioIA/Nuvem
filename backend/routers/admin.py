@@ -57,6 +57,14 @@ def criar_armazem(request: Request, nome: str = Form(...), sigla: str = Form(...
         return {"id": cur.fetchone()[0]}
 
 
+@router.get("/clientes")
+def listar_clientes(request: Request):
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT id, nk_erp, nome, catering FROM clientes ORDER BY nome")
+        return [{"id": r[0], "nk_erp": r[1], "nome": r[2], "catering": r[3]} for r in cur.fetchall()]
+
+
 @router.get("/depara")
 def listar_depara(request: Request):
     exigir_login(request)
