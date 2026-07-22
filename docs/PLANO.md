@@ -542,6 +542,39 @@ duplica nada; os 5 uploads pela versão padrão reproduzem RMSPIII 9.773 posiç�
 ocupadas, RMSPII 16.000 t de recebimento (jun/26) e RMSP 700 posições manuais.
 **Não deployado na VM** — aguarda validação da Maria.
 
+## Lote R2 — Linhagem (recebida × canônica × derivada)
+
+**Status: feito** (22/jul/2026) · terceiro lote da revisão arquitetural
+(docs/DIAGNOSTICO.md). Escopo enxuto pedido pela Maria: estrutura de linhagem, sem
+regra de derivação real, sem UI, sem tocar cálculo dos 5 uploads. **Modelo:** Sonnet 5.
+
+- [x] `medidas_recebidas` (nova, append-only): 1 linha por item agregado publicado por
+      uma execução — `execucao_id`, `modelo_versao_id`/`fonte_id` denormalizados,
+      `armazem_id`, `cliente_id` (reservado), `metrica_id`, `competencia`,
+      `data_referencia`/`unidade`/`dimensoes`/`linha_origem`/`aba_origem`/`arquivo_origem`
+      (reservados, NULL nos 5 modelos atuais), `criado_em`.
+- [x] `medida_linhagem` (nova): N:N entre medida derivada e as medidas/recebidas que a
+      formaram (`medida_origem_tipo`, `medida_origem_id`, `papel_origem`) — pronta pro
+      Lote 9, nenhuma regra real grava aqui ainda.
+- [x] `medidas` ganha `medida_recebida_id`, `origem_tipo`
+      (recebida/derivada/manual/ajuste/legado, CHECK), `regra_codigo`, `regra_versao`,
+      `calculado_em` (CHECK: derivada exige os três preenchidos).
+- [x] `ingestao.gravar_agregados` grava a recebida antes de publicar a canônica
+      (`execucao_id` novo no parâmetro); nova `registrar_medida_derivada` (delete+insert
+      da linhagem) só provada por teste, sem regra real ainda.
+- [x] Migration Alembic **0003**: aditiva; medidas existentes não têm vínculo com
+      execução (nunca tiveram) — vira `origem_tipo='legado'` sem inventar linhagem.
+- [x] Testes: banco novo com R2; banco pré-R2 migra preservando medida como legado;
+      upload novo grava recebida e publica canônica vinculada; reprocesso acumula
+      recebidas mas mantém canônica idempotente; os 5 uploads reais continuam batendo;
+      medida derivada de teste registra regra_codigo/regra_versao/calculado_em +
+      linhagem. **39 testes** verdes (33 do R1.1 + 6 novos).
+
+**Check de conclusão:** rastro completo de um valor do cockpit até o arquivo original
+(medida → recebida → execução/versão/fonte → arquivo retido); reprocesso segue
+idempotente na canônica; nenhuma medida legada ganhou linhagem inventada.
+**Não deployado na VM** — aguarda validação da Maria.
+
 ## Lote 9 — Métrica composta: ocupação real
 
 **Status: a fazer** · derivação em cima de `medidas`; motor e tela inalterados.

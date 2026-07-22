@@ -290,7 +290,7 @@ async def upload_processar(
         raise HTTPException(status_code=400, detail=f"erro ao processar arquivo: {e}")
 
     with get_conn() as conn, conn.cursor() as cur:
-        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, agregados)
+        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, execucao_id, agregados)
         ingestao.finalizar_execucao(cur, execucao_id, "ok", linhas_lidas, linhas_gravadas)
 
     with get_conn() as conn, conn.cursor() as cur:
@@ -347,7 +347,7 @@ def reprocessar_execucao(request: Request, execucao_id: int):
         raise HTTPException(status_code=400, detail=f"erro ao reprocessar arquivo: {e}")
 
     with get_conn() as conn, conn.cursor() as cur:
-        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, agregados)
+        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, nova_execucao_id, agregados)
         ingestao.finalizar_execucao(cur, nova_execucao_id, "ok", linhas_lidas, linhas_gravadas)
 
     with get_conn() as conn, conn.cursor() as cur:

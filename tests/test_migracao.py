@@ -236,6 +236,45 @@ def test_legado_com_tabela_faltando_aborta_sem_stamp(banco_vazio):
     assert _versao_alembic() is None
 
 
+def test_banco_novo_inclui_r2(banco_vazio):
+    """Banco novo sobe pela cadeia completa (baseline + R1 + R2)."""
+    migracao.migrar()
+    assert _versao_alembic() == _head()
+    tabelas = {t for t, *_ in _assinatura()[0]}
+    assert {"medidas_recebidas", "medida_linhagem"} <= tabelas
+
+
+def test_migrar_para_r2_preserva_medidas_como_legado(banco_vazio):
+    """Banco parado na 0002 (pre-R2) com uma medida real: a migration 0003 nao
+    pode perder a linha nem inventar vinculo com execucao que nao existe."""
+    from alembic import command
+
+    command.upgrade(migracao._config(), "0002_versionamento_modelos")
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('upload_manual', 'Upload manual');
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        """
+    )
+    conector_id, armazem_id, metrica_id = (
+        consultar("SELECT id FROM conectores")[0][0],
+        consultar("SELECT id FROM armazens")[0][0],
+        consultar("SELECT id FROM metricas")[0][0],
+    )
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, conector_id) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-01-01', 42, {conector_id})"
+    )
+
+    migracao.migrar()  # banco ja gerenciado (alembic_version na 0002) -> upgrade head
+
+    assert _versao_alembic() == _head()
+    assert consultar("SELECT valor, origem_tipo, medida_recebida_id FROM medidas") == [
+        (42, "legado", None)
+    ]
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

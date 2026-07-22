@@ -24,8 +24,10 @@ pela contingência já prevista em docs/DEPLOY.md). Lote 0 quase fechado
 relatório detailed agora bloqueia o take or pay). **Lotes R1 e R1.1 fechados em
 22/jul/2026** (fontes lógicas + versionamento imutável de modelos + rastreabilidade
 fonte/modelo/versão/execução; R1.1 semeia os 5 modelos canônicos com v1 vinculada —
-banco novo já nasce utilizável; 33 testes; ver [[decisoes-fechadas]]), não deployado na
-VM ainda. Próximo: deploy do R1/R1.1 na VM + decidir R2 (linhagem em `medidas`). Base
+banco novo já nasce utilizável; 33 testes; ver [[decisoes-fechadas]]). **R2 fechado**
+(22/jul/2026, linhagem: `medidas_recebidas` + `medida_linhagem` + origem/regra em
+`medidas`, migration 0003, 39 testes; ver [[decisoes-fechadas]]). R1/R1.1/R2 ainda não
+deployados na VM. Próximo: deploy na VM ou decidir o Lote 9 (ocupação composta). Base
 analítica da POC: `docs/Analise/saida/` (analise_rmsp.xlsx + analise-rmsp/ +
 mapa-dados com tabelas por nó e filtro por filial). Dona: Maria Watanabe (CSC).
 

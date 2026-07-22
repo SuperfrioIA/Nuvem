@@ -76,6 +76,19 @@ def test_os_cinco_fluxos_reais(cliente):
     assert all(status == "ok" and arquivo for status, arquivo in execucoes)
 
 
+def test_medidas_recebidas_populadas_nos_cinco_fluxos(cliente):
+    """R2: cada upload real grava a recebida antes de publicar a canonica, e
+    toda medida de origem 'recebida' sai com medida_recebida_id preenchido."""
+    for chave in arquivos_sinteticos.ARQUIVOS:
+        resposta = _upload(cliente, chave)
+        assert resposta.status_code == 200, chave
+
+    assert consultar("SELECT count(*) FROM medidas_recebidas")[0][0] > 0
+    assert consultar(
+        "SELECT count(*) FROM medidas WHERE origem_tipo = 'recebida' AND medida_recebida_id IS NULL"
+    )[0][0] == 0
+
+
 def test_reprocesso_com_modelo_salvo_e_idempotente(cliente):
     primeira = _upload(cliente, "volumetria_fato")
     assert primeira.status_code == 200

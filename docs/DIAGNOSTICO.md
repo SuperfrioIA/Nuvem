@@ -14,8 +14,13 @@ imutável, `modelos_importacao.fonte_id`, `execucoes.modelo_versao_id`,
 `catalogo_fontes.ativo`, migration 0002 convertendo modelos atuais em v1 (dados
 preservados), upload usando a versão padrão e reprocessamento amarrado à versão
 original; 31 testes verdes + clone do banco R0 real migrado. Adiado no R1 (risco H):
-seed dos 5 modelos canônicos + vínculo `catalogo_fontes.modelo_id`. Detalhes no Lote R1
-do docs/PLANO.md. R2–R6 não autorizados.
+seed dos 5 modelos canônicos + vínculo `catalogo_fontes.modelo_id` — fechado no R1.1.
+**R2 fechado em 22/jul/2026**, escopo enxuto pedido pela Maria (diferente do preview
+original da seção 6 abaixo: sem precedência de fonte, sem validação de data única):
+`medidas_recebidas` (append-only) + `medida_linhagem` (N:N) + colunas de origem em
+`medidas` (`medida_recebida_id`, `origem_tipo`, `regra_codigo`, `regra_versao`,
+`calculado_em`), migration 0003. Detalhes no Lote R2 do docs/PLANO.md. R3–R6 não
+autorizados.
 
 Contexto: revisão pedida a partir do realinhamento estratégico — a Nuvem IA evolui de
 "detector de anomalias com nuvem de bolinhas" para **cockpit corporativo de gestão das

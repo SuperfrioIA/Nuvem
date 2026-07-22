@@ -136,6 +136,8 @@ plana antes de subir.
 | `modelos_importacao` | 1/relatório mapeado | conector, nome, `fonte_id` (fonte lógica, Lote R1), mapeamento JSONB — a partir do R1 é só a identidade + espelho congelado da v1; a config viva mora em `modelo_versoes` |
 | `modelo_versoes` (Lote R1) | modelo × versão | versão **imutável** do modelo: mapeamento JSONB, `hash_config`, `ativo`, `padrao`, `criado_em`. Editar modelo = criar versão nova; ≤1 padrão por modelo (índice único parcial); CHECK padrão ⟹ ativo. Os 5 modelos canônicos da POC são semeados como v1 (Lote R1.1, `backend/seed_modelos.py`) |
 | `execucoes` | 1/rodada | início, fim, status, linhas lidas/gravadas, erro, `modelo_id`, `modelo_versao_id` (versão exata usada, Lote R1), referência ao arquivo original retido — exibido no admin |
+| `medidas_recebidas` (Lote R2) | execução × item agregado | o dado que a execução entregou, **antes** da publicação canônica — append-only (reprocessar cria execução nova; nunca sobrescreve uma recebida existente, então o histórico de conflitos entre fontes fica auditável). `modelo_versao_id`/`fonte_id` denormalizados da execução, pra consulta sem join |
+| `medida_linhagem` (Lote R2) | medida derivada × origem | relação N:N entre uma medida canônica derivada e as medidas/recebidas que a formaram (`medida_origem_tipo` + `medida_origem_id` + `papel_origem`); reprocesso é delete+insert por medida. Estrutura pronta pro Lote 9 (ocupação real = várias parcelas); nenhuma regra real grava aqui ainda |
 | `clientes` (Lote 7.1) | 1/cliente | lista curada dos clientes de catering (nk_erp, nome, flag) — o segmento do DW está errado, não serve de filtro |
 | `catalogo_fontes` (Lote 8.5) | 1/família de relatório | chave estável, descrição, origem no DW, grão, `ativo` (Lote R1: é a **fonte lógica**) — a documentação viva do que o sistema vê |
 | `catalogo_colunas` (Lote 8.5) | coluna × fonte | significado e papel de cada coluna do arquivo bruto no modelo de importação |
@@ -148,6 +150,34 @@ subida com erro claro, sem tocar o banco. Runbook e contingência em docs/DEPLOY
 A migration **0002** (Lote R1) acrescenta `modelo_versoes`, `modelos_importacao.fonte_id`,
 `execucoes.modelo_versao_id` e `catalogo_fontes.ativo`, e converte os modelos atuais em
 v1 preservando os dados — aditiva, roda por cima da baseline no `upgrade head`.
+A migration **0003** (Lote R2) cria `medidas_recebidas`/`medida_linhagem` e acrescenta
+em `medidas`: `medida_recebida_id`, `origem_tipo` (recebida/derivada/manual/ajuste/legado,
+CHECK), `regra_codigo`, `regra_versao`, `calculado_em` (CHECK: derivada exige os três
+preenchidos). `medidas` já existentes não têm vínculo com execução (só tinham
+`conector_id`, sempre o mesmo) — a migration não inventa esse vínculo; toda medida
+anterior ao R2 vira `origem_tipo='legado'`, `medida_recebida_id` NULL.
+
+### Linhagem (Lote R2)
+
+- **Recebida × canônica:** `medidas_recebidas` é o que uma execução entregou (1 linha
+  por item agregado pelo parser, por execução, nunca sobrescrita); `medidas` continua
+  sendo o valor oficial/vigente por métrica×armazém×competência (upsert, como sempre).
+  Uma medida canônica de origem `recebida` aponta pra recebida exata via
+  `medida_recebida_id`.
+- **`medida_recebida_id` vs `regra_codigo`/`regra_versao`:** use `medida_recebida_id`
+  quando o valor canônico vem direto de uma fonte (upload); use
+  `regra_codigo`/`regra_versao`/`calculado_em` (+ `medida_linhagem`) quando o valor é
+  **derivado** de uma ou mais medidas/recebidas por código versionado (ainda sem uso
+  real — a estrutura existe pro Lote 9).
+- **Rastrear um número do cockpit até o arquivo original:** `medidas` →
+  `medida_recebida_id` → `medidas_recebidas` (dá `execucao_id`, `modelo_versao_id`,
+  `fonte_id`) → `execucoes.arquivo_path` (o arquivo retido) + `modelo_versoes.mapeamento`
+  (a regra de limpeza exata usada).
+- **Limites conhecidos:** medidas anteriores ao R2 ficam `legado` sem linhagem (não é
+  reconstruível — não existia vínculo com execução antes). `linha_origem`/`aba_origem`
+  ficam sempre NULL nos 5 modelos atuais (o parser agrega várias linhas num valor só,
+  não há "a linha" de origem a registrar). `data_referencia`/`unidade`/`dimensoes`
+  também ficam NULL — reservadas pra quando existir fonte que entregue isso.
 
 Princípios: persistir o fato, derivar a interpretação; idempotência (rodar 2× não
 corrompe); validação no boundary (Excel/config), confiança interna.

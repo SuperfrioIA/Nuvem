@@ -150,7 +150,20 @@ metadata:
   (`fonte_id` + `catalogo_fontes.modelo_id`) com v1 ativa/padrão; idempotente; literais
   no backend são a fonte única (a imagem Docker só copia `backend/`; `tests/modelos_reais.py`
   re-exporta). Nova versão nasce sempre por `POST /modelos/{id}/versoes`, nunca alterando
-  a v1. 33 testes verdes. R2–R6 não autorizados.
+  a v1. 33 testes verdes. **R2 fechado** (22/jul/2026, escopo enxuto pedido pela Maria —
+  implementação direta, mais estreito que o preview do DIAGNOSTICO.md): `medidas_recebidas`
+  (nova, append-only — 1 linha por item agregado por execução, nunca sobrescrita;
+  reprocesso acumula) com `execucao_id`/`modelo_versao_id`/`fonte_id` denormalizados;
+  `medida_linhagem` (nova, N:N — medida derivada × origens, criada agora porque o Lote 9
+  já precisa de múltiplas origens por valor); `medidas` ganha `medida_recebida_id`,
+  `origem_tipo` (recebida/derivada/manual/ajuste/legado, CHECK),
+  `regra_codigo`/`regra_versao`/`calculado_em` (CHECK: derivada exige os três). Medidas
+  anteriores ao R2 não tinham nenhum vínculo com execução (só `conector_id`, sempre o
+  mesmo) — a migration 0003 não inventa esse vínculo, vira `origem_tipo='legado'` pra
+  100% das medidas existentes (não é parcial). `ingestao.gravar_agregados` grava a
+  recebida antes de publicar a canônica; `registrar_medida_derivada` existe só como
+  estrutura (nenhuma regra real chama ainda — é pro Lote 9). 39 testes verdes. R3–R6 não
+  autorizados.
 
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
