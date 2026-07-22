@@ -168,7 +168,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8002/admin
 curl -s -c /tmp/nuvem.cookie -X POST http://localhost:8002/api/admin/login \
   -F "senha=SUA_ADMIN_PASSWORD" -o /dev/null -w "%{http_code}\n"
 
-# 4) armazéns ativos (espera 31 — 32 semeados, MRS inativa não aparece)
+# 4) armazéns ativos (espera 32 — 34 semeados, MRS e RMSPIV inativas não aparecem)
 curl -s -b /tmp/nuvem.cookie http://localhost:8002/api/admin/armazens \
   | grep -o '"sigla"' | wc -l
 ```
@@ -177,7 +177,7 @@ Critério de sucesso desta subida:
 - logs sem `connection refused`/erro de Postgres;
 - `/admin` = **200**;
 - login = **200**;
-- armazéns ativos = **31**.
+- armazéns ativos = **32** (atualizado no Lote 7.1 — RMSPV entrou, RMSPIV é só cadastro).
 
 Me manda as 4 saídas. Se as 4 baterem, o app está **rodando e validado na VM**.
 
