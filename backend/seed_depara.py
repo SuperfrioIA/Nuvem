@@ -65,7 +65,7 @@ ARMAZENS = [
     {"sigla": "SSA", "nome": "Simões Filho/BA", "ativo": True,
      "apelidos": ["SSA", "SSAI", "007001", "08301904000169"]},
     {"sigla": "RMSP", "nome": "São Paulo/SP", "ativo": True,
-     "apelidos": ["RMSP", "RMSPI", "001020", "02060862002006"]},
+     "apelidos": ["RMSP", "RMSPI", "001020", "02060862002006", "30"]},
     {"sigla": "CGB", "nome": "Cuiabá/MT", "ativo": True,
      "apelidos": ["CGB", "001023", "02060862002340"]},
     {"sigla": "CWBII", "nome": "São José dos Pinhais/PR", "ativo": True,
@@ -77,9 +77,9 @@ ARMAZENS = [
     {"sigla": "CWBIII", "nome": "São José dos Pinhais/PR", "ativo": True,
      "apelidos": ["CWBIII", "001029", "02060862002936"]},
     {"sigla": "RMSPII", "nome": "Barueri/SP", "ativo": True,
-     "apelidos": ["RMSPII", "008001", "06975242000187"]},
+     "apelidos": ["RMSPII", "008001", "06975242000187", "45"]},
     {"sigla": "RMSPIII", "nome": "Barueri/SP", "ativo": True,
-     "apelidos": ["RMSPIII", "008002", "06975242000268"]},
+     "apelidos": ["RMSPIII", "008002", "06975242000268", "46"]},
     {"sigla": "RMRJ", "nome": "Duque de Caxias/RJ", "ativo": True,
      "apelidos": ["RMRJ", "008004", "06975242000420"]},
     {"sigla": "POA", "nome": "Nova Santa Rita/RS", "ativo": True,
@@ -94,6 +94,13 @@ ARMAZENS = [
      "apelidos": ["UDI", "010004", "01456021000421"]},
     {"sigla": "CWBI", "nome": "CWBI", "ativo": True,
      "apelidos": ["CWBI", "001995"]},
+    # Lote 8 (22/jul/2026): "30"/"45"/"46" acima são o FK_FILIAL numérico do DW usado
+    # por ocupacaoComercial.csv e ocupacaoManual.csv (STG_OCUPACAO_COM_V03/
+    # STG_OCUPACAO_MANUAL_V03) -- essas duas fontes não usam a sigla WMS como o fato e
+    # o pos_sum, usam a chave numérica. Confirmado nos dados reais: soma de
+    # OCUPACAO_POSICAO_QTD com FK_FILIAL=46 bate com o achado de 9.773 posições
+    # contratadas da RMSPIII (analise_rmsp.xlsx).
+
     # Lote 7.1 (21/jul/2026, POC catering RMSP): RMSPV nasceu no WMS em 14/jul/2026,
     # ainda sem capacidade/contrato/volumetria — ativa e vazia. RMSPIV existe só no
     # cadastro Protheus, nunca apareceu em fonte do DW — registrada pra resolver

@@ -169,7 +169,7 @@ async def upload_preview(request: Request, arquivo: UploadFile = File(...)):
     exigir_login(request)
     conteudo = await arquivo.read()
     try:
-        return upload_manual.preview(conteudo)
+        return upload_manual.preview(conteudo, arquivo.filename)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"não foi possível ler o arquivo: {e}")
 
@@ -211,7 +211,7 @@ async def upload_processar(
         execucao_id = ingestao.iniciar_execucao(cur, conector_id, modelo_id, "manual", arquivo_path)
 
     try:
-        agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento)
+        agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento, arquivo.filename)
     except Exception as e:
         with get_conn() as conn, conn.cursor() as cur:
             ingestao.finalizar_execucao(cur, execucao_id, "erro", erro=str(e))

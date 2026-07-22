@@ -89,8 +89,8 @@
     <!-- UPLOAD -->
     <section id="painel-upload" class="painel ativo">
       <h3>Novo upload</h3>
-      <label for="arquivoInput">Arquivo (.xlsx)</label>
-      <input type="file" id="arquivoInput" accept=".xlsx">
+      <label for="arquivoInput">Arquivo (.xlsx ou .csv)</label>
+      <input type="file" id="arquivoInput" accept=".xlsx,.csv">
       <div style="margin-top:10px">
         <button class="acao" id="btnAnalisar">Analisar arquivo</button>
       </div>
@@ -127,6 +127,10 @@
             </div>
 
             <div id="blocoLongo">
+              <label>Filtros do modelo (opcional — descarta a linha antes de qualquer métrica)</label>
+              <div id="filtrosModeloContainer"></div>
+              <button type="button" class="secundaria" id="btnAddFiltroModelo">+ filtro</button>
+
               <label>Competência</label>
               <div class="linha-metrica">
                 <select id="competenciaTipo">
@@ -477,9 +481,58 @@ document.getElementById("btnCriarDepara").addEventListener("click", async () => 
 
 let colunasDetectadas = [];
 
-function preencherSelectColunas(select) {
-  select.innerHTML = colunasDetectadas.map(c => `<option value="${c}">${c}</option>`).join("");
+function preencherSelectColunas(select, comOpcaoVazia) {
+  const vazia = comOpcaoVazia ? `<option value="">— sem filtro —</option>` : "";
+  select.innerHTML = vazia + colunasDetectadas.map(c => `<option value="${c}">${c}</option>`).join("");
 }
+
+// -------- filtro de linha (reusado no modelo e, opcionalmente, por métrica) --------
+
+const OPERADORES_FILTRO = [
+  ["igual", "igual a"],
+  ["diferente", "diferente de"],
+  ["vazio", "vazio"],
+  ["nao_vazio", "não vazio"],
+  ["maior_igual", "maior ou igual a"],
+  ["menor_igual", "menor ou igual a"],
+];
+
+function linhaFiltro(comOpcaoVazia) {
+  const div = document.createElement("div");
+  div.className = "linha-metrica linha-filtro";
+  div.innerHTML = `
+    <select class="filtroColuna"></select>
+    <select class="filtroOperador">
+      ${OPERADORES_FILTRO.map(([v, label]) => `<option value="${v}">${label}</option>`).join("")}
+    </select>
+    <input type="text" class="filtroValor" placeholder="valor">
+    ${comOpcaoVazia ? "" : `<button type="button" class="perigo" onclick="this.parentElement.remove()">remover</button>`}
+  `;
+  preencherSelectColunas(div.querySelector(".filtroColuna"), !!comOpcaoVazia);
+  const valorInput = div.querySelector(".filtroValor");
+  div.querySelector(".filtroOperador").addEventListener("change", (e) => {
+    const semValor = e.target.value === "vazio" || e.target.value === "nao_vazio";
+    valorInput.classList.toggle("oculto", semValor);
+  });
+  return div;
+}
+
+function construirFiltro(div) {
+  if (!div) return null;
+  const coluna = div.querySelector(".filtroColuna").value;
+  if (!coluna) return null;
+  const operador = div.querySelector(".filtroOperador").value;
+  const filtro = { coluna, operador };
+  if (operador !== "vazio" && operador !== "nao_vazio") {
+    const bruto = div.querySelector(".filtroValor").value.trim();
+    filtro.valor = (operador === "maior_igual" || operador === "menor_igual") ? Number(bruto) : bruto;
+  }
+  return filtro;
+}
+
+document.getElementById("btnAddFiltroModelo").addEventListener("click", () => {
+  document.getElementById("filtrosModeloContainer").appendChild(linhaFiltro(false));
+});
 
 function linhaMetrica() {
   const div = document.createElement("div");
@@ -487,10 +540,14 @@ function linhaMetrica() {
   div.innerHTML = `
     <select class="metricaTipo">
       <option value="soma">soma de uma coluna</option>
+      <option value="soma_colunas">soma de várias colunas</option>
       <option value="razao">razão entre duas colunas</option>
     </select>
     <span class="metricaSomaCampos">
       <select class="metricaColuna"></select>
+    </span>
+    <span class="metricaSomaColunasCampos oculto">
+      <select class="metricaColunasMultiplas" multiple size="4" title="ctrl/cmd+clique pra escolher várias"></select>
     </span>
     <span class="metricaRazaoCampos oculto">
       <select class="metricaNumerador"></select> /
@@ -498,15 +555,21 @@ function linhaMetrica() {
     </span>
     <input type="text" class="metricaNome" placeholder="nome da métrica (ex: perdas_avaria)">
     <input type="text" class="metricaIgnorar" placeholder="valores a ignorar (ex: 999999999)" title="separados por vírgula — valor sentinela/placeholder da fonte que não é dado real">
+    <input type="text" class="metricaDivisor" placeholder="divisor (opcional, ex: 1000)" title="converte unidade sem alterar o valor bruto — ex: peso em kg dividido por 1000 dá toneladas" style="min-width:120px">
     <button type="button" class="perigo" onclick="this.parentElement.remove()">remover</button>
+    <div class="ajuda" style="width:100%">Filtro desta métrica (opcional — além dos filtros do modelo)</div>
+    <div class="metricaFiltroContainer" style="width:100%"></div>
   `;
   preencherSelectColunas(div.querySelector(".metricaColuna"));
+  preencherSelectColunas(div.querySelector(".metricaColunasMultiplas"));
   preencherSelectColunas(div.querySelector(".metricaNumerador"));
   preencherSelectColunas(div.querySelector(".metricaDenominador"));
+  div.querySelector(".metricaFiltroContainer").appendChild(linhaFiltro(true));
   div.querySelector(".metricaTipo").addEventListener("change", (e) => {
-    const soma = e.target.value === "soma";
-    div.querySelector(".metricaSomaCampos").classList.toggle("oculto", !soma);
-    div.querySelector(".metricaRazaoCampos").classList.toggle("oculto", soma);
+    const tipo = e.target.value;
+    div.querySelector(".metricaSomaCampos").classList.toggle("oculto", tipo !== "soma");
+    div.querySelector(".metricaSomaColunasCampos").classList.toggle("oculto", tipo !== "soma_colunas");
+    div.querySelector(".metricaRazaoCampos").classList.toggle("oculto", tipo !== "razao");
   });
   return div;
 }
@@ -545,6 +608,7 @@ document.getElementById("btnAnalisar").addEventListener("click", async () => {
     document.getElementById("colunasDetectadas").textContent = colunasDetectadas.join(", ");
     preencherSelectColunas(document.getElementById("armazemColuna"));
     preencherSelectColunas(document.getElementById("competenciaColuna"));
+    document.getElementById("filtrosModeloContainer").innerHTML = "";
     document.getElementById("metricasContainer").innerHTML = "";
     document.getElementById("metricasContainer").appendChild(linhaMetrica());
     document.getElementById("blocoMapeamento").classList.remove("oculto");
@@ -567,25 +631,39 @@ function montarMapeamento() {
     return mapeamento;
   }
 
+  mapeamento.filtros = [...document.querySelectorAll("#filtrosModeloContainer .linha-filtro")]
+    .map(construirFiltro).filter(Boolean);
+
   const competenciaTipo = document.getElementById("competenciaTipo").value;
   mapeamento.competencia = competenciaTipo === "coluna"
     ? { tipo: "coluna", coluna: document.getElementById("competenciaColuna").value }
     : { tipo: "fixo", valor: document.getElementById("competenciaFixo").value.trim() };
 
-  mapeamento.metricas = [...document.querySelectorAll("#metricasContainer .linha-metrica")].map(div => {
+  mapeamento.metricas = [...document.querySelectorAll("#metricasContainer > .linha-metrica")].map(div => {
     const tipo = div.querySelector(".metricaTipo").value;
     const metrica = div.querySelector(".metricaNome").value.trim();
     const ignorar_valores = div.querySelector(".metricaIgnorar").value
       .split(",").map(s => s.trim()).filter(Boolean).map(Number);
+    const base = { metrica, ignorar_valores };
+
+    const divisorBruto = div.querySelector(".metricaDivisor").value.trim();
+    if (divisorBruto) base.divisor = Number(divisorBruto);
+
+    const filtroMetrica = construirFiltro(div.querySelector(".metricaFiltroContainer .linha-filtro"));
+    if (filtroMetrica) base.filtros = [filtroMetrica];
+
     if (tipo === "soma") {
-      return { tipo: "soma", coluna: div.querySelector(".metricaColuna").value, metrica, ignorar_valores };
+      return { ...base, tipo: "soma", coluna: div.querySelector(".metricaColuna").value };
+    }
+    if (tipo === "soma_colunas") {
+      const colunas = [...div.querySelector(".metricaColunasMultiplas").selectedOptions].map(o => o.value);
+      return { ...base, tipo: "soma_colunas", colunas };
     }
     return {
+      ...base,
       tipo: "razao",
       numerador: div.querySelector(".metricaNumerador").value,
       denominador: div.querySelector(".metricaDenominador").value,
-      metrica,
-      ignorar_valores,
     };
   });
 

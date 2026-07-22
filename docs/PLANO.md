@@ -304,44 +304,83 @@ versionado (local ao worktree), não precisa de ação na main.
 
 ## Lote 8 — Relatórios reais como fonte (upload, sem integração de banco)
 
-**Status: a fazer** · modelos de importação + evoluções pontuais do parser.
-**Modelo:** Sonnet 5. Depende do Lote 7 (de-para).
+**Status: feito** (22/jul/2026) · modelos de importação + evoluções do parser.
+**Modelo:** Sonnet 5.
 
-Cada família de relatório mapeada na análise vira um modelo de importação salvo, com
-as regras de limpeza aprendidas. Evoluções de parser necessárias (pequenas): aceitar
-csv (hoje só xlsx) e filtro simples de linha por valor de coluna.
+Cada família de relatório mapeada na análise virou um modelo de importação salvo, com
+as regras de limpeza aprendidas. Evoluções do parser (`backend/conectores/upload_manual.py`):
+leitura de csv (além de xlsx — 4 das 5 fontes reais são csv, `;` separador, UTF-8);
+filtro de linha por valor de coluna (`filtros`, nível do modelo e/ou da métrica —
+operadores `igual`/`diferente`/`vazio`/`não_vazio`/`maior_igual`/`menor_igual`); soma de
+várias colunas numa métrica só (`soma_colunas` — necessário pra ocupação manual, que
+quebra a mesma métrica em 5 colunas por estrutura PPA/DRV/BLC/PSH/UNI); `divisor`
+opcional pra conversão de unidade sem chumbar a conta no valor bruto (peso em kg ÷ 1000
+= toneladas). UI do admin ganhou os campos correspondentes (filtros do modelo
+repetíveis, filtro por métrica, tipo "soma de várias colunas", campo divisor).
 
-Recorte da POC (21/jul/2026): filiais alvo = família RMSP; ordem de entrada: fato
-(backfill 2021→hoje de RMSP/RMSPII), pos_sum, capacidade, comercial, manual. As regras
-de limpeza de cada fonte estão documentadas em `docs/Analise/saida/analise_rmsp.xlsx`
-(abas Leia-me, Conferência de fontes e Dicionário).
+Recorte da POC: filiais alvo = família RMSP; ordem de entrada: fato, pos_sum,
+capacidade, comercial, manual. As regras de limpeza de cada fonte vieram de
+`docs/Analise/saida/analise_rmsp.xlsx` (abas Leia-me, Conferência de fontes e
+Dicionário) — mesmo insumo do catálogo do Lote 8.5.
 
-- [ ] **Volumetria (export bruto do fato, csv)** — a fonte mais valiosa: histórico
-      2021→hoje, dia×filial×cliente. Modelo: soma peso bruto por armazém×competência
-      (avaliar métricas separadas de recebimento/expedição via filtro de operação).
-      Limpeza aprendida: fora instância `DW_STG_PRD`, empresa vazia e pesos negativos
-- [ ] **Ocupação física (pos_sum)** — foto do dia, filial×câmara. Modelo: razão
-      posições ocupadas ÷ capacidade total (razão de somas já suportada); sentinelas
-      via `ignorar_valores`. Foto → competência: 1 foto por mês (decidir a regra:
-      último dia?). Posições virtuais (linha sem câmara/capacidade mas com ocupação):
-      decidir se viram métrica própria ("posições virtuais") — é sinal de operação,
-      não sujeira
-- [ ] **Capacidade cadastrada (header por filial)** — posições totais/bloqueadas por
-      filial; denominador da ocupação real. Muda raramente; sobe quando mudar
-- [ ] **Ocupação comercial (contratos)** — posições locadas vigentes por filial (o
-      WMS vê o espaço vazio, mas está vendido). No MVP o recorte de vigência é manual
-      (filtrar antes de subir); filtro por data no parser só se doer na prática
-- [ ] **Ocupação manual (export do STG)** — parcela das filiais fora do WMS (ICE,
-      GYN, UDI, POA...) e casos tipo cross fracionado. Foto diária: mesma regra de
-      competência do pos_sum
-- [ ] **O que não sobe** (confirmado): pivô do Power BI (`data (2)` — subtotal duplica
-      e é só um recorte do próprio fato) e conciliação SKU×lote (fora do grão, sem
-      chave de filial/cliente/data)
+Achado da carga (22/jul/2026): `ocupacaoComercial.csv` e `ocupacaoManual.csv` usam a
+chave numérica do DW pra filial (`FK_FILIAL`), não a sigla WMS — RMSP=30, RMSPII=45,
+RMSPIII=46 (confirmado batendo a soma de `OCUPACAO_POSICAO_QTD` do FK_FILIAL=46 com o
+achado de 9.773 posições da RMSPIII). Esses 3 códigos entraram como apelido novo em
+`backend/seed_depara.py` (idempotente, só adiciona); as demais ~29 filiais fora da
+RMSP ficam sem esse de-para numérico por ora — aparecem em `depara_pendencias`,
+resolvíveis quando entrarem no recorte.
 
-**Check de conclusão:** cada família com modelo salvo e reprocessável (delete+insert
-idempotente); volumetria real 2021→hoje carregada — **fecha a validação do motor com
-dado real que ficou pendente no Lote 3**; ao menos 1 competência real de ocupação
-física gravada nas filiais do piloto.
+- [x] **Volumetria (fato.csv)** — armazém `NK_WMS_FILIAL`, competência `NK_CALENDARIO`.
+      Duas métricas (`volumetria_recebimento`/`volumetria_expedicao`, decisão de
+      22/jul/2026 — filtro por `NK_OPERACAO`, ÷1000 kg→t); filtros do modelo excluem
+      `NK_INSTANCIA=DW_STG_PRD`, `NK_EMPRESA` vazio e peso negativo. Gap aberto (não
+      bloqueia): `NK_OPERACAO="Cross Docking"` (148 linhas de ~143k) não entra em
+      nenhuma das duas métricas — decidir se ganha métrica própria quando doer
+- [x] **Ocupação física (pos_sum.xlsx)** — armazém `Filial`, competência `Data`
+      (`%d/%m/%Y` — é foto do dia, 1 upload = 1 competência, sem ambiguidade de "qual
+      dia escolher"). Métricas separadas em vez de razão única (decisão de construção):
+      `posicoes_ocupadas`, `capacidade_total/_bloqueada/_disponivel` — mantém o dado
+      bruto disponível pra outros usos; a razão (% ocupação) é derivada no Lote 9, não
+      recalculada aqui. `posicoes_virtuais` ganhou métrica própria (decisão de
+      22/jul/2026 — filtro `Local` vazio)
+- [x] **Capacidade cadastrada (capacidade1HDR.csv)** — armazém `WMS_ENTITY_ID`,
+      competência fixa (digitada no upload). Mesmas métricas de capacidade do pos_sum
+      (`capacidade_total/_bloqueada/_disponivel`) — é o mesmo cadastro, upsert
+      substitui o valor mais recente
+- [x] **Ocupação comercial (ocupacaoComercial.csv)** — armazém `FK_FILIAL`, competência
+      fixa. Métrica `comercial_vigente` = soma de `OCUPACAO_POSICAO_QTD` sem filtro de
+      vigência (mantido manual como já combinado — `DATA_INICIAL`/`DATA_FINAL` ficam
+      documentadas no catálogo do Lote 8.5, sem uso no parser ainda)
+- [x] **Ocupação manual (ocupacaoManual.csv)** — armazém `FK_FILIAL`, competência
+      `DW_DATA_INCLUSAO`. Métrica `ocupacao_manual` = `soma_colunas` das 5
+      `OCUPACAO_POSICAO_QTD_*` (PPA/DRV/BLC/PSH/UNI)
+- [x] **O que não sobe** (confirmado, sem mudança): pivô do Power BI e conciliação
+      SKU×lote continuam fora — não entraram modelo nem foram tocados
+- [x] Métricas novas semeadas em `backend/database.py` (mesmo padrão idempotente):
+      `volumetria_recebimento`/`_expedicao` (t), `posicoes_ocupadas`/`_virtuais` (posições),
+      `capacidade_total`/`_bloqueada`/`_disponivel` (posições), `comercial_vigente`
+      (posições), `ocupacao_manual` (posições)
+
+**Check de conclusão:** cada família com modelo salvo e reprocessável (upsert
+idempotente); volumetria real carregada — **fecha a validação do motor com dado real
+que ficou pendente no Lote 3**; competências reais de ocupação física gravadas nas
+filiais do piloto.
+
+Validado local (WSL/Docker, worktree `lote-8`, porta 8005) com `docker compose up -d
+--build` subindo os 5 arquivos reais (via API e, depois, refeito manualmente na tela do
+admin pra confirmar a UI): números batendo exatamente com os achados de
+`analise_rmsp.xlsx` — RMSPIII 80,3%/97,1%/124% (ocupação s/ total, s/ disponível,
+cobertura contratual — calculados na hora a partir de `posicoes_ocupadas`/
+`capacidade_total`/`capacidade_disponivel`/`comercial_vigente`, 578 posições virtuais),
+RMSPII 17,8% de bloqueio e 65,3%/79,4% de ocupação, RMSP com 96% de cobertura
+(Tirolez/Delly), volumetria RMSPII jun/26 ≈ 32 mil t (recebimento+expedição). Restart
+não duplicou nada (34 armazéns, 111 apelidos, 12 métricas — 3 do Lote 1 + 9 novas — após
+o restart, iguais a antes). Achado de testagem: o primeiro teste pela tela do admin
+achou um bug real que a validação via API não pegava — o seletor `#metricasContainer
+.linha-metrica` casava também o filtro aninhado dentro de cada métrica (mesma classe
+CSS reaproveitada), quebrando `montarMapeamento()`; corrigido trocando pra filho direto
+(`#metricasContainer > .linha-metrica`).
 
 ## Lote 8.5 — Catálogo de fontes (tela no admin)
 

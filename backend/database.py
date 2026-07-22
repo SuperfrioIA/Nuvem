@@ -186,7 +186,21 @@ def init_db():
                 WHERE NOT EXISTS (SELECT 1 FROM conectores WHERE tipo = 'upload_manual')
                 """
             )
-            for nome, unidade in (("perdas", "R$"), ("volumetria", "t"), ("ocupacao", "%")):
+            for nome, unidade in (
+                ("perdas", "R$"),
+                ("volumetria", "t"),
+                ("ocupacao", "%"),
+                # Lote 8 — métricas das 5 fontes reais da POC catering (família RMSP)
+                ("volumetria_recebimento", "t"),
+                ("volumetria_expedicao", "t"),
+                ("posicoes_ocupadas", "posições"),
+                ("posicoes_virtuais", "posições"),
+                ("capacidade_total", "posições"),
+                ("capacidade_bloqueada", "posições"),
+                ("capacidade_disponivel", "posições"),
+                ("comercial_vigente", "posições"),
+                ("ocupacao_manual", "posições"),
+            ):
                 cur.execute(
                     "INSERT INTO metricas (nome, unidade) VALUES (%s, %s) ON CONFLICT (nome) DO NOTHING",
                     (nome, unidade),
