@@ -30,11 +30,19 @@ só onde há julgamento (o motor).
       só a concessão de escrita (`write`, não só leitura — o app vai gravar backup do
       `upload_manual` lá além de ler a planilha de ocupação) nesse site: pedido feito a
       quem tem `Sites.FullControl.All`/SharePoint Admin, aguardando aprovação.
+      *21/jul/2026: fora do caminho crítico da apresentação da POC — a demo roda com
+      os dados locais na máquina da Maria; SharePoint entra depois.*
 - [ ] Congelar o contrato da planilha de ocupação (aba + colunas fixas + quem preenche)
-- [ ] Escolher as 1–2 filiais do piloto (insumo novo: painel comparativo de 6 candidatas
-      — RPI, RMSP, RMSPII, RMSPIII, CWBII, BSB — em `docs/analise/saida/painel_piloto.xlsx`,
-      17/jul/2026; atenção: RMSPIII não tem volumetria no DW)
-- [ ] Definir o dono de cada dado (perdas / volumetria / ocupação)
+- [x] Filiais do piloto escolhidas (21/jul/2026): **família RMSP** — a POC é catering
+      (docs/PILOTO.md refeito nessa data; análise completa em `docs/Analise/saida/`).
+      RMSPII/III são o núcleo (clientes de refeição coletiva), RMSP dá o caso Frimesa
+      (anti-dupla contagem) e RMSPV acompanha (nasceu no WMS em 14/jul/2026, vazia)
+- [ ] Definir o dono de cada dado (ocupação / comercial / volumetria) — prioridade:
+      quem responde pelo comercial de Barueri (contratos take-or-pay do catering)
+- [ ] Pedidos ao time do DW que destravam a POC catering: integrar a volumetria da
+      RMSPIII ao fato; gerar o relatório detailed (posição×cliente) pras RMSP (hoje
+      só RPI tem); corrigir o segmento dos clientes de catering (constam como "Ind.
+      Química/Resinas/Tintas" na dimensão de clientes)
 - [ ] Confirmar se ocupação tem histórico retroativo (se não, começa a acumular agora)
       — análise 17/jul: os relatórios de ocupação são foto do dia; o histórico diário
       existe no DW mas só é recuperável via banco/API (Lote 10, pós-MVP). Sem isso,
@@ -99,7 +107,9 @@ valendo como checagem.*
 ## Lote 2 — Conectores plugáveis completos
 
 **Status: a fazer** · camada de conectores + SharePoint. **Modelo:** Sonnet 5.
-Depende do Lote 0 pra testar de verdade.
+Depende do Lote 0 pra testar de verdade. *Não bloqueia a apresentação da POC
+(21/jul/2026): a demo roda com dados locais (upload manual + retenção em pasta
+local, desenho do Lote 1); SharePoint entra depois, sem mudar arquitetura.*
 
 - [ ] Interface única (`testar` / `buscar` / `detalhar`)
 - [ ] Conector `sharepoint_excel` (Microsoft Graph)
@@ -203,6 +213,11 @@ retido como arquivo do upload (drill-down manual), nunca como tabela; **(b) a PO
 termina só com upload manual** dos exports que já saem hoje — integração via banco do
 DW (API) é degrau pós-MVP (Lote 10).
 
+Recorte fechado em 21/jul/2026 (análise da família RMSP —
+`docs/Analise/saida/analise_rmsp.xlsx` + `analise-rmsp/`): a POC é **catering na
+família RMSP** — ver docs/PILOTO.md refeito. Os Lotes 8–9 ganham esse recorte; entram
+o Lote 7.1 (complementos do de-para) e o Lote 9.5 (grão cliente mínimo).
+
 ## Lote 7 — De-para oficial (a camada fina ganha o dado real)
 
 **Status: feito** (17/jul/2026) · **Modelo:** Sonnet 5 (a carga virou reconciliação de
@@ -249,6 +264,24 @@ filiais ativas. **Falta ainda**: o teste de ponta a ponta ("upload de relatório
 resolve sem pendência") só fecha no Lote 8, quando existir modelo de importação pra essas
 famílias de relatório.
 
+## Lote 7.1 — Complementos do de-para (POC catering)
+
+**Status: a fazer** · pequeno; toca `backend/seed_depara.py` + uma decisão de forma.
+**Modelo:** Sonnet 5.
+
+- [ ] RMSPV no seed (nasceu no WMS em 14/jul/2026 — ERP 008009, Log Frio, Barueri;
+      ainda sem capacidade cadastrada, contrato ou volumetria)
+- [ ] RMSPIV registrado como só-cadastro (ERP 008003, nunca apareceu em fonte do DW)
+      — não vira armazém ativo
+- [ ] Lista curada dos clientes de catering da família (~12: Sapore, GR, Sodexo,
+      Wyda/Cucinare, Pimenta Verde, Novita, Convida, FLV 7, OG, Neffa, Bimbo, Frimesa
+      — conferir com o comercial) na camada fina; decidir a forma (tabela pequena ou
+      marcação num de-para de clientes). O segmento do DW está errado — não serve de
+      filtro
+
+**Check de conclusão:** RMSPV aparece no admin como armazém; lista de catering
+consultável pelo motor e pela tela.
+
 ## Lote 8 — Relatórios reais como fonte (upload, sem integração de banco)
 
 **Status: a fazer** · modelos de importação + evoluções pontuais do parser.
@@ -257,6 +290,11 @@ famílias de relatório.
 Cada família de relatório mapeada na análise vira um modelo de importação salvo, com
 as regras de limpeza aprendidas. Evoluções de parser necessárias (pequenas): aceitar
 csv (hoje só xlsx) e filtro simples de linha por valor de coluna.
+
+Recorte da POC (21/jul/2026): filiais alvo = família RMSP; ordem de entrada: fato
+(backfill 2021→hoje de RMSP/RMSPII), pos_sum, capacidade, comercial, manual. As regras
+de limpeza de cada fonte estão documentadas em `docs/Analise/saida/analise_rmsp.xlsx`
+(abas Leia-me, Conferência de fontes e Dicionário).
 
 - [ ] **Volumetria (export bruto do fato, csv)** — a fonte mais valiosa: histórico
       2021→hoje, dia×filial×cliente. Modelo: soma peso bruto por armazém×competência
@@ -285,6 +323,34 @@ idempotente); volumetria real 2021→hoje carregada — **fecha a validação do
 dado real que ficou pendente no Lote 3**; ao menos 1 competência real de ocupação
 física gravada nas filiais do piloto.
 
+## Lote 8.5 — Catálogo de fontes (tela no admin)
+
+**Status: a fazer** · decisão de 21/jul/2026 — transparência do que o sistema vê.
+**Modelo:** Sonnet 5. A estrutura pode nascer antes do Lote 8; fecha junto com ele
+(cada família que vira modelo de importação entra no catálogo).
+
+Tela **dentro do admin** listando todas as planilhas/famílias de relatório que o
+sistema vê, com base no mapeamento da análise (`docs/Analise/saida/analise_rmsp.xlsx`
+abas Leia-me/Conferência/Dicionário + `depara_e_relacoes.xlsx` + mapa-dados).
+
+- [ ] Tabelas `catalogo_fontes` e `catalogo_colunas` na camada fina; seed com literais
+      no código (mesmo padrão do `seed_depara.py` — `docs/Analise/` está no
+      `.gitignore`, a VM não lê os xlsx em runtime). É metadado/documentação, não dado
+      bruto — não fere o "nada de DW novo"
+- [ ] Por fonte: descrição/resumo do que a planilha traz + origem (de qual tabela vem:
+      fato, STG ou dimensão do DW, ou cadastro de banco)
+- [ ] Drill-down de colunas: todas as colunas da planilha, com significado (dicionário
+      da análise) e como cada uma entra no modelo de importação (armazém / competência
+      / métrica / cliente / não mapeada)
+- [ ] Por fonte, lista dos arquivos já subidos dela (vem do log de execuções que já
+      existe — "o sistema viu este arquivo nesta data")
+- [ ] Escopo inicial: famílias do recorte da POC (as 5 do Lote 8); os demais
+      relatórios mapeados na análise entram depois
+
+**Check de conclusão:** admin mostra as fontes com descrição e origem; clicar numa
+fonte abre as colunas com significado e papel no modelo; arquivos subidos aparecem
+por fonte.
+
 ## Lote 9 — Métrica composta: ocupação real
 
 **Status: a fazer** · derivação em cima de `medidas`; motor e tela inalterados.
@@ -298,12 +364,35 @@ estoque em posições virtuais.
 - [ ] Fechar com a Maria a regra de composição: ocupação real = (física + comercial
       vigente + manual) ÷ capacidade, com regra anti-dupla contagem (ex.: Frimesa na
       RMSP aparece no contrato E na digitação manual)
+- [ ] Insumos prontos da análise de 21/jul/2026: mostrar as duas % (sobre a capacidade
+      total e sobre a disponível, descontando bloqueadas); "vencido-operando" (contrato
+      vencido + cliente com movimento nos últimos 60 dias no fato, pela chave ERP) vira
+      métrica derivada por código; posições virtuais somam na física (RMSPIII: 578);
+      cobertura contratual (comercial ÷ capacidade) como métrica própria (RMSPIII: 124%)
 - [ ] Implementar como métrica derivada pós-ingestão (mesmo gatilho dos scores),
       gravada em `medidas` como métrica normal — o motor avalia sem mudar nada
 
 **Check de conclusão:** ocupação real por armazém×competência onde as parcelas existem;
 o caso RMSP sai de ~12% pra um número que faz sentido; dupla contagem testada com o
 caso Frimesa.
+
+## Lote 9.5 — Grão cliente mínimo (catering)
+
+**Status: a fazer** · decisão de 21/jul/2026 — revisão pontual do "cliente = v2".
+**Modelo:** Sonnet 5. Depende dos Lotes 7.1 (lista de catering) e 8 (fontes com cliente).
+
+- [ ] Tabela `medidas_cliente` (cliente × armazém × competência) — a segunda tabela-fato
+      já prevista na revisão de escalabilidade, criada agora mas **só pros clientes da
+      lista de catering** da família RMSP
+- [ ] Métricas por cliente: posições contratadas (comercial), status do contrato
+      (vigente / vencido-operando / sem contrato) e volumetria (t)
+- [ ] Motor de scores idêntico rodando sobre `medidas_cliente`
+- [ ] Na tela (junto do Lote 5): clicar na bolinha comercial abre a tabela de clientes
+      embaixo — mesmo padrão validado no mapa-dados em 21/jul/2026
+
+**Check de conclusão:** as 3 perguntas do PILOTO.md respondidas na tela, incluindo a
+nº 3 (uso × contratado por cliente); Sapore, Sodexo e Convida visíveis com o status
+correto (vigente / vencido-operando / sem contrato).
 
 ## Lote 10 — Conector `dw_api` (pós-MVP)
 
@@ -320,6 +409,8 @@ o antigo `pentaho_sql` da lista de fora-de-escopo.
 
 ## Fora de escopo (confirmado — degraus seguintes)
 
-Previsão/sazonalidade · padrão por cliente (v2 = tabela-fato `medidas_cliente`) · alertas
-/ e-mail · IA narradora · integração via banco do DW (virou o Lote 10 `dw_api`, pós-MVP)
+Previsão/sazonalidade · padrão por cliente na rede toda (a POC tem só o recorte mínimo
+do Lote 9.5 — clientes de catering da família RMSP) · perdas (métrica do piloto
+original — volta pós-POC; o motor aceita métrica nova sem mudança) · alertas / e-mail
+· IA narradora · integração via banco do DW (virou o Lote 10 `dw_api`, pós-MVP)
 · drill-down ao vivo (`detalhar()` só quando existir fonte de grão fino).

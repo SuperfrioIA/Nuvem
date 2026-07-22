@@ -82,6 +82,31 @@ metadata:
   ativas. Nome do armazém = sigla + município (não existe nome fantasia em nenhuma
   fonte); 3 filiais sem município (RPIII, MRS, CWBI) usam a sigla como nome.
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026 e 17/jul/2026 — evita rediscutir do zero.
+- Da análise da família RMSP (21/jul/2026, `docs/Analise/saida/`: `analise_rmsp.xlsx`
+  + página `analise-rmsp/` + mapa-dados com tabelas por nó e filtro por filial): **a
+  POC é catering na família RMSP** (docs/PILOTO.md refeito nessa data). Filiais =
+  família toda: RMSPII/III núcleo (Sapore, GR, Sodexo, Wyda/Cucinare, Pimenta Verde,
+  Novita, Convida, FLV 7, OG, Bimbo), RMSP dá o caso Frimesa (anti-dupla contagem),
+  RMSPV acompanha (nasceu no WMS em 14/jul/2026, vazia, fora do de-para — Lote 7.1).
+  **Grão cliente mínimo entra na POC** (revisão pontual do "cliente = v2"):
+  `medidas_cliente` só pros ~12 clientes de catering, com posições contratadas, status
+  do contrato e volumetria — Lote 9.5. **Perdas fica fora da POC** (volta depois como
+  métrica nova). "Vencido-operando" = contrato vencido + cliente com movimento nos
+  últimos 60 dias no fato (chave ERP `NK_CLIENTE`, nunca o nome WMS — vem vazio pra
+  vários). Segmento dos clientes de catering está errado no DW ("Ind. Química/Resinas/
+  Tintas") — lista curada na camada fina, não filtrar por segmento.
+
+- Apresentação da POC (21/jul/2026): os dados ficam na máquina da Maria (upload manual
+  + retenção em pasta local, desenho que o Lote 1 já entrega) — SharePoint (conector do
+  Lote 2 e a concessão de escrita pendente do Lote 0) **sai do caminho crítico da demo**
+  e entra depois, sem mudar arquitetura (já era plugável). Requisito novo na mesma data:
+  tela **catálogo de fontes, dentro do admin** (Lote 8.5) — lista todas as planilhas que
+  o sistema vê, com descrição/resumo, origem (de qual tabela vem: fato/STG/dimensão do
+  DW ou cadastro de banco, conforme o mapeamento da análise) e drill-down de colunas
+  (significado + papel no modelo de importação); metadados em
+  `catalogo_fontes`/`catalogo_colunas` com seed em literais no código (padrão
+  `seed_depara.py`, porque `docs/Analise/` está no `.gitignore`).
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026 e 21/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].
