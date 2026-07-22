@@ -61,14 +61,14 @@ def gravar_agregados(cur, conector_id: int, agregados: list[dict]) -> int:
     return gravadas
 
 
-def iniciar_execucao(cur, conector_id: int, modelo_id, origem: str, arquivo_path) -> int:
+def iniciar_execucao(cur, conector_id: int, modelo_id, modelo_versao_id, origem: str, arquivo_path) -> int:
     cur.execute(
         """
-        INSERT INTO execucoes (conector_id, modelo_id, origem, status, arquivo_path)
-        VALUES (%s, %s, %s, 'em_andamento', %s)
+        INSERT INTO execucoes (conector_id, modelo_id, modelo_versao_id, origem, status, arquivo_path)
+        VALUES (%s, %s, %s, %s, 'em_andamento', %s)
         RETURNING id
         """,
-        (conector_id, modelo_id, origem, arquivo_path),
+        (conector_id, modelo_id, modelo_versao_id, origem, arquivo_path),
     )
     return cur.fetchone()[0]
 

@@ -1,10 +1,11 @@
 import json
 import os
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
-from .. import armazenamento, ingestao, motor
+from .. import armazenamento, ingestao, motor, versoes
 from ..auth import autenticado, criar_sessao, encerrar_sessao, exigir_login, senha_confere
 from ..conectores import upload_manual
 from ..database import get_conn
@@ -174,12 +175,54 @@ def listar_modelos(request: Request, conector_id: int | None = None):
     with get_conn() as conn, conn.cursor() as cur:
         if conector_id:
             cur.execute(
-                "SELECT id, nome, mapeamento FROM modelos_importacao WHERE ativo AND conector_id = %s ORDER BY nome",
+                "SELECT id, nome, mapeamento, fonte_id FROM modelos_importacao WHERE ativo AND conector_id = %s ORDER BY nome",
                 (conector_id,),
             )
         else:
-            cur.execute("SELECT id, nome, mapeamento FROM modelos_importacao WHERE ativo ORDER BY nome")
-        return [{"id": r[0], "nome": r[1], "mapeamento": r[2]} for r in cur.fetchall()]
+            cur.execute("SELECT id, nome, mapeamento, fonte_id FROM modelos_importacao WHERE ativo ORDER BY nome")
+        return [{"id": r[0], "nome": r[1], "mapeamento": r[2], "fonte_id": r[3]} for r in cur.fetchall()]
+
+
+@router.get("/modelos/{modelo_id}/versoes")
+def listar_versoes(request: Request, modelo_id: int):
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, versao, hash_config, ativo, padrao, criado_em
+            FROM modelo_versoes WHERE modelo_id = %s ORDER BY versao DESC
+            """,
+            (modelo_id,),
+        )
+        return [
+            {
+                "id": r[0],
+                "versao": r[1],
+                "hash_config": r[2],
+                "ativo": r[3],
+                "padrao": r[4],
+                "criado_em": r[5].isoformat() if r[5] else None,
+            }
+            for r in cur.fetchall()
+        ]
+
+
+@router.post("/modelos/{modelo_id}/versoes")
+def criar_versao_modelo(request: Request, modelo_id: int, mapeamento_json: str = Form(...)):
+    """Editar um modelo = criar uma versao nova. A configuracao historica nunca e
+    alterada; a versao nova vira a padrao (usada por uploads novos). Execucoes
+    antigas seguem apontando pra versao que usaram (nao muda resultado historico)."""
+    exigir_login(request)
+    try:
+        mapeamento = json.loads(mapeamento_json)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"mapeamento_json invalido: {e}")
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM modelos_importacao WHERE id = %s", (modelo_id,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="modelo nao encontrado")
+        versao_id, numero = versoes.criar_versao(cur, modelo_id, mapeamento, padrao=True)
+    return {"versao_id": versao_id, "versao": numero}
 
 
 @router.post("/upload/preview")
@@ -199,6 +242,7 @@ async def upload_processar(
     modelo_id: int | None = Form(None),
     nome_novo_modelo: str | None = Form(None),
     mapeamento_json: str | None = Form(None),
+    fonte_id: int | None = Form(None),
 ):
     exigir_login(request)
     conteudo = await _ler_upload(arquivo)
@@ -208,11 +252,11 @@ async def upload_processar(
         conector_id = cur.fetchone()[0]
 
         if modelo_id:
-            cur.execute("SELECT mapeamento FROM modelos_importacao WHERE id = %s", (modelo_id,))
-            row = cur.fetchone()
-            if not row:
-                raise HTTPException(status_code=404, detail="modelo não encontrado")
-            mapeamento = row[0]
+            # upload novo com modelo salvo: usa a versao ativa/padrao do modelo
+            versao = versoes.resolver_versao_padrao(cur, modelo_id)
+            if versao is None:
+                raise HTTPException(status_code=404, detail="modelo nao encontrado ou sem versao ativa/padrao")
+            modelo_versao_id, mapeamento = versao
         else:
             if not mapeamento_json or not nome_novo_modelo:
                 raise HTTPException(
@@ -220,13 +264,23 @@ async def upload_processar(
                 )
             mapeamento = json.loads(mapeamento_json)
             cur.execute(
-                "INSERT INTO modelos_importacao (conector_id, nome, mapeamento) VALUES (%s, %s, %s) RETURNING id",
-                (conector_id, nome_novo_modelo, json.dumps(mapeamento)),
+                "INSERT INTO modelos_importacao (conector_id, nome, mapeamento, fonte_id) VALUES (%s, %s, %s, %s) RETURNING id",
+                (conector_id, nome_novo_modelo, json.dumps(mapeamento), fonte_id),
             )
             modelo_id = cur.fetchone()[0]
+            # modelo novo nasce com a versao 1 (ativa e padrao)
+            modelo_versao_id, _ = versoes.criar_versao(cur, modelo_id, mapeamento, padrao=True)
+            # se veio ligado a uma fonte logica, o catalogo passa a listar as execucoes
+            if fonte_id:
+                cur.execute(
+                    "UPDATE catalogo_fontes SET modelo_id = %s WHERE id = %s AND modelo_id IS NULL",
+                    (modelo_id, fonte_id),
+                )
 
         arquivo_path = armazenamento.salvar_arquivo(conteudo, arquivo.filename)
-        execucao_id = ingestao.iniciar_execucao(cur, conector_id, modelo_id, "manual", arquivo_path)
+        execucao_id = ingestao.iniciar_execucao(
+            cur, conector_id, modelo_id, modelo_versao_id, "manual", arquivo_path
+        )
 
     try:
         agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento, arquivo.filename)
@@ -245,9 +299,67 @@ async def upload_processar(
     return {
         "execucao_id": execucao_id,
         "modelo_id": modelo_id,
+        "modelo_versao_id": modelo_versao_id,
         "linhas_lidas": linhas_lidas,
         "linhas_gravadas": linhas_gravadas,
         "pendencias": linhas_lidas - linhas_gravadas if linhas_lidas else 0,
+    }
+
+
+@router.post("/execucoes/{execucao_id}/reprocessar")
+def reprocessar_execucao(request: Request, execucao_id: int):
+    """Reprocessa uma execucao antiga a partir do arquivo retido, usando a MESMA
+    versao de modelo que ela usou originalmente — nunca a versao mais nova. Criar
+    uma versao nova (v2, v3...) portanto nao muda o resultado de reprocessar uma
+    execucao antiga. Gera uma execucao nova (origem 'reprocessamento') amarrada a
+    versao original."""
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT conector_id, modelo_id, modelo_versao_id, arquivo_path FROM execucoes WHERE id = %s",
+            (execucao_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="execucao nao encontrada")
+        conector_id, modelo_id, modelo_versao_id, arquivo_path = row
+        if modelo_versao_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="execucao sem versao registrada (anterior ao R1) — reprocessamento exige a versao original",
+            )
+        if not arquivo_path:
+            raise HTTPException(status_code=404, detail="execucao sem arquivo retido para reprocessar")
+        mapeamento = versoes.carregar_versao(cur, modelo_versao_id)
+        if mapeamento is None:
+            raise HTTPException(status_code=404, detail="versao do modelo nao encontrada")
+        nova_execucao_id = ingestao.iniciar_execucao(
+            cur, conector_id, modelo_id, modelo_versao_id, "reprocessamento", arquivo_path
+        )
+
+    nome_arquivo = Path(arquivo_path).name
+    try:
+        conteudo = armazenamento.ler_arquivo(arquivo_path)
+        agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento, nome_arquivo)
+    except Exception as e:
+        with get_conn() as conn, conn.cursor() as cur:
+            ingestao.finalizar_execucao(cur, nova_execucao_id, "erro", erro=str(e))
+        raise HTTPException(status_code=400, detail=f"erro ao reprocessar arquivo: {e}")
+
+    with get_conn() as conn, conn.cursor() as cur:
+        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, agregados)
+        ingestao.finalizar_execucao(cur, nova_execucao_id, "ok", linhas_lidas, linhas_gravadas)
+
+    with get_conn() as conn, conn.cursor() as cur:
+        motor.calcular_scores(cur)
+
+    return {
+        "execucao_id": nova_execucao_id,
+        "reprocessou": execucao_id,
+        "modelo_id": modelo_id,
+        "modelo_versao_id": modelo_versao_id,
+        "linhas_lidas": linhas_lidas,
+        "linhas_gravadas": linhas_gravadas,
     }
 
 

@@ -6,9 +6,17 @@ import os
 
 import psycopg2
 import pytest
+from alembic.script import ScriptDirectory
 
 from backend import migracao
 from tests.conftest import consultar
+
+
+def _head() -> str:
+    """A revisao de topo do Alembic (muda a cada migration nova — R0 era a
+    baseline, R1 acrescentou a 0002). Os testes de migracao comparam contra o
+    head, nao contra a baseline fixa."""
+    return ScriptDirectory.from_config(migracao._config()).get_current_head()
 
 # DDL EXATO do init_db antigo (backend/database.py ate o Lote 8.5, antes do
 # R0) — usado pra simular um banco legado real, como o da VM.
@@ -161,10 +169,13 @@ def _versao_alembic():
 
 
 def test_banco_novo_cria_pela_baseline(banco_vazio):
+    """Banco novo sobe pela cadeia de migrations ate o head (baseline + R1).
+    As tabelas da baseline seguem todas presentes; o head so acrescenta."""
     migracao.migrar()
-    assert _versao_alembic() == migracao.BASELINE
+    assert _versao_alembic() == _head()
     tabelas = {t for t, *_ in _assinatura()[0]}
-    assert tabelas == set(migracao.SCHEMA_ESPERADO)
+    assert set(migracao.SCHEMA_ESPERADO) <= tabelas
+    assert "modelo_versoes" in tabelas  # tabela nova do R1
 
 
 def test_migrar_e_idempotente(banco_vazio):
@@ -176,12 +187,15 @@ def test_migrar_e_idempotente(banco_vazio):
 
 def test_baseline_identica_ao_init_db_antigo(banco_vazio):
     """A prova de que a baseline reproduz exatamente o schema legado: mesmo
-    conjunto de colunas (nome/tipo/nulidade) e mesmas constraints."""
+    conjunto de colunas (nome/tipo/nulidade) e mesmas constraints. Compara so
+    ate a BASELINE (nao o head) — o head diverge de proposito a partir do R1."""
+    from alembic import command
+
     _executar(LEGADO_DDL)
     assinatura_legado = _assinatura()
 
     _executar("DROP SCHEMA public CASCADE; CREATE SCHEMA public")
-    migracao.migrar()
+    command.upgrade(migracao._config(), migracao.BASELINE)
     assinatura_baseline = _assinatura()
 
     assert assinatura_baseline == assinatura_legado
@@ -193,8 +207,11 @@ def test_legado_valido_recebe_stamp_sem_tocar_dados(banco_vazio):
 
     migracao.migrar()
 
-    assert _versao_alembic() == migracao.BASELINE
+    # legado valido: stamp da baseline + upgrade ate o head (0002/R1)
+    assert _versao_alembic() == _head()
     assert consultar("SELECT nome FROM armazens WHERE sigla = 'TST'") == [("Teste",)]
+    # a migration R1 rodou por cima do legado sem perder o dado existente
+    assert consultar("SELECT to_regclass('public.modelo_versoes') IS NOT NULL")[0][0] is True
 
 
 def test_legado_com_coluna_faltando_aborta_sem_stamp(banco_vazio):
