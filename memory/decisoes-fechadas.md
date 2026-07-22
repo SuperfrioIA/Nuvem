@@ -134,8 +134,23 @@ metadata:
   nenhuma fonte atual tem física por cliente pras RMSP → cálculo indisponível, sem
   proxy por volumetria, bloqueado pelo relatório detailed do DW (pedido do Lote 0);
   divergência de 917 no card take-or-pay+locações do Power BI é pendência explícita.
-  R1–R6 não autorizados ainda; R1 (fontes lógicas + versionamento imutável de
-  modelos, editar = nova versão) terá desenho apresentado antes de construir.
+  **R1 fechado** (22/jul/2026, escopo mínimo pedido pela Maria — "acelerar sem plano
+  longo"): fonte lógica = `catalogo_fontes` (ganhou `ativo`); `modelos_importacao`
+  ganhou `fonte_id`; nova `modelo_versoes` imutável (mapeamento JSONB, hash_config,
+  ativo/padrao, ≤1 padrão por modelo, CHECK padrão⟹ativo); `execucoes.modelo_versao_id`
+  grava a versão exata. Editar modelo = criar versão nova (a antiga nunca muda); upload
+  novo usa a versão padrão; reprocessamento (`POST /execucoes/{id}/reprocessar`) usa a
+  versão da execução original, não a mais nova. Migration 0002 converte modelos atuais
+  em v1 e faz backfill das execuções, preservando dados (validado em clone do banco R0
+  real). 31 testes verdes (3 de migração do R0 ajustados: fixavam head==baseline).
+  **R1.1 fechado** (22/jul/2026, fecha o risco H): `backend/seed_modelos.py` semeia os
+  5 modelos canônicos da POC (Ocupação física/pos_sum→`ocupacao_fisica`, Capacidade
+  HDR→`capacidade`, Ocupação comercial→`ocupacao_comercial`, Ocupação manual→
+  `ocupacao_manual`, Volumetria fato→`volumetria`), cada um ligado à fonte lógica
+  (`fonte_id` + `catalogo_fontes.modelo_id`) com v1 ativa/padrão; idempotente; literais
+  no backend são a fonte única (a imagem Docker só copia `backend/`; `tests/modelos_reais.py`
+  re-exporta). Nova versão nasce sempre por `POST /modelos/{id}/versoes`, nunca alterando
+  a v1. 33 testes verdes. R2–R6 não autorizados.
 
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões

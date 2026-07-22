@@ -133,10 +133,11 @@ plana antes de subir.
 | `metricas` | 1/métrica | nome, unidade |
 | `medidas` | métrica × armazém × mês | **o fato.** unique na chave → upsert idempotente |
 | `scores` | métrica × armazém × mês | média/desvio/z da janela 12–24m + estado; derivado e recalculável (cache de leitura, não fonte de verdade) |
-| `modelos_importacao` | 1/relatório mapeado | conector, nome, mapeamento JSONB (armazém/competência/métricas), ativo — ver seção do `upload_manual` acima |
-| `execucoes` | 1/rodada | início, fim, status, linhas lidas/gravadas, erro, `modelo_id`, referência ao arquivo original retido — exibido no admin |
+| `modelos_importacao` | 1/relatório mapeado | conector, nome, `fonte_id` (fonte lógica, Lote R1), mapeamento JSONB — a partir do R1 é só a identidade + espelho congelado da v1; a config viva mora em `modelo_versoes` |
+| `modelo_versoes` (Lote R1) | modelo × versão | versão **imutável** do modelo: mapeamento JSONB, `hash_config`, `ativo`, `padrao`, `criado_em`. Editar modelo = criar versão nova; ≤1 padrão por modelo (índice único parcial); CHECK padrão ⟹ ativo. Os 5 modelos canônicos da POC são semeados como v1 (Lote R1.1, `backend/seed_modelos.py`) |
+| `execucoes` | 1/rodada | início, fim, status, linhas lidas/gravadas, erro, `modelo_id`, `modelo_versao_id` (versão exata usada, Lote R1), referência ao arquivo original retido — exibido no admin |
 | `clientes` (Lote 7.1) | 1/cliente | lista curada dos clientes de catering (nk_erp, nome, flag) — o segmento do DW está errado, não serve de filtro |
-| `catalogo_fontes` (Lote 8.5) | 1/família de relatório | chave estável, descrição, origem no DW, grão — a documentação viva do que o sistema vê |
+| `catalogo_fontes` (Lote 8.5) | 1/família de relatório | chave estável, descrição, origem no DW, grão, `ativo` (Lote R1: é a **fonte lógica**) — a documentação viva do que o sistema vê |
 | `catalogo_colunas` (Lote 8.5) | coluna × fonte | significado e papel de cada coluna do arquivo bruto no modelo de importação |
 
 **Migrations (Lote R0):** o schema é criado e evoluído pelo **Alembic**
@@ -144,6 +145,9 @@ plana antes de subir.
 idempotentes. No startup: banco novo nasce da baseline, banco legado é validado
 (tabelas + colunas obrigatórias) antes de receber o stamp — divergência aborta a
 subida com erro claro, sem tocar o banco. Runbook e contingência em docs/DEPLOY.md.
+A migration **0002** (Lote R1) acrescenta `modelo_versoes`, `modelos_importacao.fonte_id`,
+`execucoes.modelo_versao_id` e `catalogo_fontes.ativo`, e converte os modelos atuais em
+v1 preservando os dados — aditiva, roda por cima da baseline no `upgrade head`.
 
 Princípios: persistir o fato, derivar a interpretação; idempotência (rodar 2× não
 corrompe); validação no boundary (Excel/config), confiança interna.

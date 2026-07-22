@@ -450,8 +450,97 @@ modelos) terá o desenho revisado apresentado antes de construir. **Modelo:** Fa
 Postgres 16 de teste; banco legado **real** local adotado pelo Alembic no
 `up -d --build` (35 armazéns/30 medidas preservados, stamp aplicado, restart
 idempotente — mesmas contagens); os testes de drift provam que banco divergente não
-recebe stamp. Falta: repetir a adoção na VM real no próximo deploy (mesmo caminho
-validado localmente).
+recebe stamp. **Adoção repetida na VM real em 22/jul/2026**, com um achado: a VM
+ainda rodava o código de antes dos Lotes 7.1/8/8.5 (não tinha passado por
+`git pull` desde o primeiro deploy em 20/jul), então o banco legado abortou o
+stamp automático por faltar `clientes`/`catalogo_fontes`/`catalogo_colunas` —
+exatamente o caminho de contingência já documentado em docs/DEPLOY.md ("Caso 1").
+Resolvido subindo uma vez a versão anterior ao R0 (`git checkout 387c674`, o
+`init_db` antigo cria as 3 tabelas que faltavam) e voltando pra `main` em seguida;
+o stamp passou na sequência e os dados reais foram confirmados intactos (32
+armazéns, login ok). Nada foi perdido — o abort automático funcionou como
+projetado.
+
+## Lote R1 — Fontes lógicas + versionamento real dos modelos
+
+**Status: feito** (22/jul/2026) · segundo lote da revisão arquitetural (docs/DIAGNOSTICO.md).
+Escopo mínimo e seguro pedido pela Maria: rastreabilidade real de
+fonte/modelo/versão/execução, sem governança pesada. **Modelo:** Sonnet 5.
+
+- [x] `catalogo_fontes` como **fonte lógica**: ganhou `ativo` (a `chave` já era o
+      código estável; nome/descrição já existiam). `modelos_importacao` ganhou
+      `fonte_id` apontando pra cá.
+- [x] `modelo_versoes` (nova): versão **imutável** por modelo — `mapeamento` JSONB,
+      `hash_config` (sha256 canônico), `ativo`, `padrao`, `criado_em`; unique
+      (modelo_id, versão), índice único parcial garantindo **uma padrão por modelo**,
+      e CHECK `padrao_exige_ativo` (padrão ⟹ ativo). Editar modelo = criar versão nova
+      e mover o ponteiro `padrao`; versão antiga nunca muda.
+- [x] `execucoes.modelo_versao_id` (novo): toda execução nova grava a versão **exata**
+      usada; execuções antigas preservadas.
+- [x] Migration Alembic **0002** (preserva dados de produção): converte cada modelo
+      atual em **v1** (ativa/padrão); backfill de `execucoes.modelo_versao_id` pra v1
+      do seu modelo quando há modelo; execução sem modelo fica NULL. Mapeamento
+      inválido **aborta** com erro claro sem tocar o banco (roda na transação do
+      Alembic). `catalogo_fontes` ganha `ativo` e `modelos_importacao` ganha `fonte_id`
+      no mesmo passo.
+- [x] Upload/reprocessamento: **upload novo** com modelo salvo usa a versão
+      **ativa/padrão**; **reprocessamento** (`POST /execucoes/{id}/reprocessar`, a
+      partir do arquivo retido) usa a **mesma versão da execução original**, nunca a
+      mais nova — criar versão nova não muda resultado histórico. Endpoints novos:
+      `POST /modelos/{id}/versoes` (editar = nova versão), `GET /modelos/{id}/versoes`.
+- [x] Testes: banco novo sobe com R0+R1; banco R0 migra pra R1; modelos existentes
+      viram v1; upload grava modelo_versao_id; reprocessamento usa a versão original;
+      versão nova não altera execução antiga; versão inativa não vira padrão. **31
+      testes** (25 do R0 + 6 novos) verdes; 3 testes de migração do R0 ajustados
+      (fixavam "head == baseline", que qualquer migration nova invalida — intenção
+      preservada).
+- [x] ~~Adiado: seed dos 5 modelos canônicos + vínculo `catalogo_fontes.modelo_id`~~ →
+      **fechado no Lote R1.1** (abaixo). Tela de edição de versões, workflow de
+      aprovação, comparação de versões: seguem fora do escopo, como combinado.
+
+**Check de conclusão:** suíte verde (31 passed) em container python:3.11 + Postgres 16;
+**clone do banco dev/R0 real** (0001_baseline, 1 modelo, 1 execução, 33 armazéns)
+migrado pra 0002 com dados preservados — o modelo virou v1 (ativo/padrão), a execução
+ganhou a versão, `catalogo_fontes.ativo` populado, restart idempotente (não duplica
+versão). Fluxo end-to-end provado: v1 dá 16.000 t; nova versão (v2, divisor diferente)
+daria 8.000 t; reprocessar a execução da v1 reproduz 16.000 t; upload novo com o modelo
+usa a v2 (8.000 t). **Não deployado na VM** — aguarda validação da Maria.
+
+## Lote R1.1 — Seed dos modelos canônicos (fecha o risco H)
+
+**Status: feito** (22/jul/2026) · complemento curto do R1. **Modelo:** Sonnet 5.
+Objetivo: banco novo já nasce utilizável (fontes lógicas + modelos + v1 vinculados),
+sem criação manual na VM.
+
+Os **5 modelos canônicos da POC** (`backend/seed_modelos.py`, literais = fonte única da
+verdade dos mapeamentos; `tests/modelos_reais.py` re-exporta de lá — a imagem Docker só
+copia `backend/`), cada um ligado à sua fonte lógica e com **versão v1 ativa/padrão**:
+
+| Fonte lógica (`catalogo_fontes.chave`) | Modelo (`modelos_importacao.nome`) | Versão |
+|---|---|---|
+| `ocupacao_fisica` | Ocupação física (pos_sum) | v1 ativa/padrão |
+| `capacidade` | Capacidade cadastrada (HDR) | v1 ativa/padrão |
+| `ocupacao_comercial` | Ocupação comercial (contratos) | v1 ativa/padrão |
+| `ocupacao_manual` | Ocupação manual | v1 ativa/padrão |
+| `volumetria` | Volumetria (fato) | v1 ativa/padrão |
+
+- [x] Seed idempotente (padrão `seed_depara`/`seed_catalogo`): só cria o modelo se a
+      fonte ainda não tem um vinculado; nunca sobrescreve edição manual nem duplica
+      versão. Roda no `init_db()` depois do `seed_catalogo` (precisa das fontes).
+- [x] Vínculo nos dois sentidos: `modelos_importacao.fonte_id` → fonte e
+      `catalogo_fontes.modelo_id` → modelo (o catálogo passa a listar execuções por fonte).
+- [x] A config da v1 é **idêntica** ao mapeamento dos testes/fixtures (mesmo objeto
+      importado). **Regra:** novas versões nascem por `POST /modelos/{id}/versoes`,
+      **nunca alterando a v1** — a v1 é imutável (ver Lote R1).
+- [x] Testes: `count(modelos)==1` corrigido pra delta-zero; banco novo prova
+      fonte→modelo→v1 ativa/padrão (+ idempotência); os 5 uploads contra os modelos
+      semeados usam a v1 padrão e batem os números conferidos. **33 testes** verdes.
+
+**Check de conclusão:** banco novo do zero (migrar+init_db) lista as 5 fontes ativas,
+cada uma com modelo vinculado e uma única versão v1 ativa/padrão; segundo `init_db` não
+duplica nada; os 5 uploads pela versão padrão reproduzem RMSPIII 9.773 posições
+ocupadas, RMSPII 16.000 t de recebimento (jun/26) e RMSP 700 posições manuais.
+**Não deployado na VM** — aguarda validação da Maria.
 
 ## Lote 9 — Métrica composta: ocupação real
 

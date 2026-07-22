@@ -7,11 +7,15 @@ incorporadas: Alembic no lugar de ALTERs no init_db, versionamento real de model
 fonte lógica separada do modelo, linhagem canônica por medida recebida, ocorrências
 idempotentes, identidade de contratos por vigência, validação de foto por modelo/fonte.
 
-Status: **Lote R0 revisado implementado em 22/jul/2026** (testes + Alembic + baseline
-+ validação anti-drift antes do stamp + correções documentais + limite de upload;
-suíte com 25 testes verde, banco legado local real adotado pelo Alembic com dados
-preservados — detalhes no Lote R0 do docs/PLANO.md). R1–R6 não autorizados; o desenho
-revisado do R1 será apresentado antes de construir.
+Status: **Lotes R0 e R1 implementados em 22/jul/2026.** R0 = testes + Alembic +
+baseline + validação anti-drift + limite de upload (25 testes). **R1 = fontes lógicas
++ versionamento real dos modelos** (escopo mínimo pedido pela Maria): `modelo_versoes`
+imutável, `modelos_importacao.fonte_id`, `execucoes.modelo_versao_id`,
+`catalogo_fontes.ativo`, migration 0002 convertendo modelos atuais em v1 (dados
+preservados), upload usando a versão padrão e reprocessamento amarrado à versão
+original; 31 testes verdes + clone do banco R0 real migrado. Adiado no R1 (risco H):
+seed dos 5 modelos canônicos + vínculo `catalogo_fontes.modelo_id`. Detalhes no Lote R1
+do docs/PLANO.md. R2–R6 não autorizados.
 
 Contexto: revisão pedida a partir do realinhamento estratégico — a Nuvem IA evolui de
 "detector de anomalias com nuvem de bolinhas" para **cockpit corporativo de gestão das

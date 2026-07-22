@@ -81,14 +81,16 @@ def test_reprocesso_com_modelo_salvo_e_idempotente(cliente):
     assert primeira.status_code == 200
     modelo_id = primeira.json()["modelo_id"]
     antes = _medidas()
+    modelos_antes = consultar("SELECT count(*) FROM modelos_importacao")[0][0]
 
     segunda = _upload(cliente, "volumetria_fato", modelo_id=modelo_id)
     assert segunda.status_code == 200
     assert segunda.json()["modelo_id"] == modelo_id
 
     assert _medidas() == antes  # mesmos valores, nada duplicado
-    # modelo reutilizado, nao recriado
-    assert consultar("SELECT count(*) FROM modelos_importacao")[0][0] == 1
+    # modelo reutilizado, nao recriado (delta zero — robusto aos modelos canonicos
+    # semeados no startup a partir do Lote R1.1)
+    assert consultar("SELECT count(*) FROM modelos_importacao")[0][0] == modelos_antes
 
 
 def test_armazem_sem_depara_vira_pendencia(cliente):

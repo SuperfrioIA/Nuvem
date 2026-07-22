@@ -16,10 +16,16 @@ docs/PLANO.md) — Lotes 1 (esqueleto, banco, upload manual), 3 (motor de scores
 (modelos de importação das 5 fontes reais), 8.5 (catálogo de fontes no admin) e R0
 (testes + Alembic — primeiro lote da revisão arquitetural de 22/jul/2026,
 docs/DIAGNOSTICO.md) feitos; **primeiro deploy na VM real validado em 20/jul/2026**
-(só o admin, na 8002, rede interna — runbook em docs/DEPLOY.md). Lote 0 quase fechado
+(só o admin, na 8002, rede interna — runbook em docs/DEPLOY.md) e **R0 deployado na
+VM real em 22/jul/2026** (adoção do Alembic no banco legado, 32 armazéns
+preservados — achado: VM estava desatualizada desde o deploy de 20/jul, resolvido
+pela contingência já prevista em docs/DEPLOY.md). Lote 0 quase fechado
 (filiais escolhidas em 21/jul; falta Entra ID, donos do dado e pedidos ao DW — o
-relatório detailed agora bloqueia o take or pay). Próximo: desenho revisado do Lote R1
-(fontes lógicas + versionamento de modelos), a apresentar antes de construir. Base
+relatório detailed agora bloqueia o take or pay). **Lotes R1 e R1.1 fechados em
+22/jul/2026** (fontes lógicas + versionamento imutável de modelos + rastreabilidade
+fonte/modelo/versão/execução; R1.1 semeia os 5 modelos canônicos com v1 vinculada —
+banco novo já nasce utilizável; 33 testes; ver [[decisoes-fechadas]]), não deployado na
+VM ainda. Próximo: deploy do R1/R1.1 na VM + decidir R2 (linhagem em `medidas`). Base
 analítica da POC: `docs/Analise/saida/` (analise_rmsp.xlsx + analise-rmsp/ +
 mapa-dados com tabelas por nó e filtro por filial). Dona: Maria Watanabe (CSC).
 
