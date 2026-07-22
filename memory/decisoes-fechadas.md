@@ -107,6 +107,19 @@ metadata:
   `catalogo_fontes`/`catalogo_colunas` com seed em literais no código (padrão
   `seed_depara.py`, porque `docs/Analise/` está no `.gitignore`).
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026 e 21/jul/2026 — evita rediscutir do zero.
+- Lotes 7.1 e 8.5 fechados (22/jul/2026), construídos em paralelo em worktrees
+  isolados (branches `lote-7.1`/`lote-8.5`) e mesclados na main sem drama (único
+  conflito foi textual, em `database.py`, resolvido lado a lado). RMSPV ativa no
+  seed (nasceu no WMS 14/jul); RMSPIV inativa (só-cadastro). Tabela `clientes` com
+  os 11 clientes de catering da família RMSP (não 12 — Tirolez/Delly/Frimesa/Irmãos
+  Boa são contrato de locação da RMSP, fora do núcleo RMSPII/RMSPIII, excluídos por
+  instrução explícita). Catálogo de fontes (`catalogo_fontes`/`catalogo_colunas`)
+  documenta a planilha bruta inteira das 5 famílias da POC, não só o dicionário
+  curado — `modelo_id` fica `NULL` até o Lote 8 criar os modelos de importação de
+  verdade. Achado de infra (não é bug do projeto): `docker-compose.override.yml`
+  precisa da tag `!override` do Compose Spec pra sobrescrever `ports` em vez de
+  concatenar (mergepadrão do Compose é aditivo em listas).
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

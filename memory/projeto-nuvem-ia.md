@@ -11,12 +11,13 @@ de bolinhas-métricas que acendem quando fogem do próprio padrão histórico, p
 (filial × mês). **POC fechada em 21/jul/2026: catering na família RMSP**
 (docs/PILOTO.md refeito) — ocupação + contratos take-or-pay + volumetria, com grão
 cliente mínimo (Lote 9.5) e perdas fora por ora. Fase atual: construção em lotes (ver
-docs/PLANO.md) — Lotes 1 (esqueleto, banco, upload manual), 3 (motor de scores) e 7
-(de-para oficial das 32 filiais SF) feitos; **primeiro deploy na VM real validado em
+docs/PLANO.md) — Lotes 1 (esqueleto, banco, upload manual), 3 (motor de scores), 7
+(de-para oficial das 32 filiais SF), 7.1 (RMSPV/RMSPIV + clientes de catering) e 8.5
+(catálogo de fontes no admin) feitos; **primeiro deploy na VM real validado em
 20/jul/2026** (só o admin, na 8002, rede interna — runbook em docs/DEPLOY.md). Lote 0
 quase fechado (filiais escolhidas em 21/jul; falta Entra ID, donos do dado e pedidos ao
-DW); próximos: Lote 7.1 (RMSPV + lista catering no de-para) e Lote 8 (relatórios reais
-como fonte, recorte RMSP). Base analítica da POC: `docs/Analise/saida/`
+DW); próximo: Lote 8 (relatórios reais como fonte, recorte RMSP — modelos de importação
+pras 5 famílias já catalogadas no 8.5). Base analítica da POC: `docs/Analise/saida/`
 (analise_rmsp.xlsx + analise-rmsp/ + mapa-dados com tabelas por nó e filtro por
 filial). Dona: Maria Watanabe (CSC).
 
