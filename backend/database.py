@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 import psycopg2
 
-from . import seed_depara
+from . import seed_catalogo, seed_depara
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -138,6 +138,33 @@ def init_db():
                 """
             )
 
+            # Lote 8.5
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS catalogo_fontes (
+                    id SERIAL PRIMARY KEY,
+                    chave TEXT UNIQUE NOT NULL,
+                    nome TEXT NOT NULL,
+                    descricao TEXT NOT NULL,
+                    tabela_origem TEXT NOT NULL,
+                    tipo_origem TEXT NOT NULL,
+                    grao TEXT NOT NULL,
+                    modelo_id INTEGER REFERENCES modelos_importacao(id)
+                )
+                """
+            )
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS catalogo_colunas (
+                    id SERIAL PRIMARY KEY,
+                    fonte_id INTEGER NOT NULL REFERENCES catalogo_fontes(id),
+                    coluna TEXT NOT NULL,
+                    significado TEXT,
+                    papel TEXT
+                )
+                """
+            )
+
             # seed: conector upload_manual + métricas do piloto (cadastro cresce
             # conforme aparecem novas métricas nos modelos de importação)
             cur.execute(
@@ -157,3 +184,6 @@ def init_db():
             cur.execute("SELECT id FROM conectores WHERE tipo = 'upload_manual'")
             conector_upload_manual_id = cur.fetchone()[0]
             seed_depara.aplicar(cur, conector_upload_manual_id)
+
+            # seed: catálogo de fontes (Lote 8.5) — ver backend/seed_catalogo.py
+            seed_catalogo.aplicar(cur)

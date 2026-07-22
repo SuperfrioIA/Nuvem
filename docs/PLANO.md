@@ -325,31 +325,41 @@ física gravada nas filiais do piloto.
 
 ## Lote 8.5 — Catálogo de fontes (tela no admin)
 
-**Status: a fazer** · decisão de 21/jul/2026 — transparência do que o sistema vê.
-**Modelo:** Sonnet 5. A estrutura pode nascer antes do Lote 8; fecha junto com ele
-(cada família que vira modelo de importação entra no catálogo).
+**Status: feito** (22/jul/2026) · decisão de 21/jul/2026 — transparência do que o
+sistema vê. **Modelo:** Sonnet 5. A estrutura nasceu antes do Lote 8; modelo_id fica
+NULL em todas as fontes até o Lote 8 criar os modelos de importação de verdade — aí
+cada família ganha o vínculo e passa a listar execuções.
 
 Tela **dentro do admin** listando todas as planilhas/famílias de relatório que o
 sistema vê, com base no mapeamento da análise (`docs/Analise/saida/analise_rmsp.xlsx`
 abas Leia-me/Conferência/Dicionário + `depara_e_relacoes.xlsx` + mapa-dados).
 
-- [ ] Tabelas `catalogo_fontes` e `catalogo_colunas` na camada fina; seed com literais
+- [x] Tabelas `catalogo_fontes` e `catalogo_colunas` na camada fina; seed com literais
       no código (mesmo padrão do `seed_depara.py` — `docs/Analise/` está no
       `.gitignore`, a VM não lê os xlsx em runtime). É metadado/documentação, não dado
       bruto — não fere o "nada de DW novo"
-- [ ] Por fonte: descrição/resumo do que a planilha traz + origem (de qual tabela vem:
+- [x] Por fonte: descrição/resumo do que a planilha traz + origem (de qual tabela vem:
       fato, STG ou dimensão do DW, ou cadastro de banco)
-- [ ] Drill-down de colunas: todas as colunas da planilha, com significado (dicionário
+- [x] Drill-down de colunas: todas as colunas da planilha, com significado (dicionário
       da análise) e como cada uma entra no modelo de importação (armazém / competência
       / métrica / cliente / não mapeada)
-- [ ] Por fonte, lista dos arquivos já subidos dela (vem do log de execuções que já
+- [x] Por fonte, lista dos arquivos já subidos dela (vem do log de execuções que já
       existe — "o sistema viu este arquivo nesta data")
-- [ ] Escopo inicial: famílias do recorte da POC (as 5 do Lote 8); os demais
+- [x] Escopo inicial: famílias do recorte da POC (as 5 do Lote 8); os demais
       relatórios mapeados na análise entram depois
 
 **Check de conclusão:** admin mostra as fontes com descrição e origem; clicar numa
 fonte abre as colunas com significado e papel no modelo; arquivos subidos aparecem
 por fonte.
+
+Validado local (WSL/Docker) com `docker compose up -d --build` + restart: 5 fontes
+(volumetria/fato, ocupação física/pos_sum, capacidade/HDR, ocupação comercial,
+ocupação manual) com todas as colunas reais dos arquivos brutos de
+`docs/Analise/saida/` — não só as citadas no dicionário curado, a planilha inteira,
+com papel `nao_mapeada` explícito pras chaves técnicas do DW e métricas fora do
+recorte da POC. `GET /catalogo/{id}` com `modelo_id` NULL retorna `execucoes: []`
+(não erro), como previsto. Contagens idênticas após restart (idempotente); fluxo de
+upload/de-para existente (31 armazéns ativos, conectores) não foi afetado.
 
 ## Lote 9 — Métrica composta: ocupação real
 
