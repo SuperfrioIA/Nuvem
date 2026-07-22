@@ -302,6 +302,97 @@ def listar_scores(request: Request):
         ]
 
 
+@router.get("/catalogo")
+def listar_catalogo(request: Request):
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, chave, nome, descricao, tabela_origem, tipo_origem, grao, modelo_id
+            FROM catalogo_fontes
+            ORDER BY nome
+            """
+        )
+        return [
+            {
+                "id": r[0],
+                "chave": r[1],
+                "nome": r[2],
+                "descricao": r[3],
+                "tabela_origem": r[4],
+                "tipo_origem": r[5],
+                "grao": r[6],
+                "modelo_id": r[7],
+            }
+            for r in cur.fetchall()
+        ]
+
+
+@router.get("/catalogo/{fonte_id}")
+def detalhe_catalogo(request: Request, fonte_id: int):
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, chave, nome, descricao, tabela_origem, tipo_origem, grao, modelo_id
+            FROM catalogo_fontes
+            WHERE id = %s
+            """,
+            (fonte_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="fonte não encontrada")
+        fonte = {
+            "id": row[0],
+            "chave": row[1],
+            "nome": row[2],
+            "descricao": row[3],
+            "tabela_origem": row[4],
+            "tipo_origem": row[5],
+            "grao": row[6],
+            "modelo_id": row[7],
+        }
+
+        cur.execute(
+            "SELECT id, coluna, significado, papel FROM catalogo_colunas WHERE fonte_id = %s ORDER BY id",
+            (fonte_id,),
+        )
+        fonte["colunas"] = [
+            {"id": r[0], "coluna": r[1], "significado": r[2], "papel": r[3]} for r in cur.fetchall()
+        ]
+
+        if fonte["modelo_id"]:
+            cur.execute(
+                """
+                SELECT id, origem, status, iniciado_em, finalizado_em,
+                       linhas_lidas, linhas_gravadas, erro, arquivo_path
+                FROM execucoes
+                WHERE modelo_id = %s
+                ORDER BY iniciado_em DESC
+                """,
+                (fonte["modelo_id"],),
+            )
+            fonte["execucoes"] = [
+                {
+                    "id": r[0],
+                    "origem": r[1],
+                    "status": r[2],
+                    "iniciado_em": r[3].isoformat() if r[3] else None,
+                    "finalizado_em": r[4].isoformat() if r[4] else None,
+                    "linhas_lidas": r[5],
+                    "linhas_gravadas": r[6],
+                    "erro": r[7],
+                    "tem_arquivo": bool(r[8]),
+                }
+                for r in cur.fetchall()
+            ]
+        else:
+            fonte["execucoes"] = []
+
+        return fonte
+
+
 @router.get("/execucoes/{execucao_id}/arquivo")
 def baixar_arquivo_execucao(request: Request, execucao_id: int):
     exigir_login(request)

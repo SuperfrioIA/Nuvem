@@ -82,6 +82,7 @@
     <button data-painel="depara">De-para</button>
     <button data-painel="pendencias">Pendências</button>
     <button data-painel="execucoes">Execuções</button>
+    <button data-painel="catalogo">Catálogo</button>
   </nav>
 
   <main>
@@ -212,6 +213,37 @@
         <tbody></tbody>
       </table>
     </section>
+
+    <!-- CATALOGO -->
+    <section id="painel-catalogo" class="painel">
+      <h3>Catálogo de fontes</h3>
+      <p class="ajuda">Tudo que o sistema vê hoje — de onde vem, o que cada coluna significa e quais arquivos já foram processados.</p>
+      <table id="tabelaCatalogo">
+        <thead><tr><th>Fonte</th><th>Origem</th><th>Grão</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div id="catalogoDetalhe" class="oculto">
+        <h3 id="catalogoDetalheNome"></h3>
+        <p id="catalogoDetalheDescricao" class="ajuda"></p>
+
+        <fieldset>
+          <legend>Colunas</legend>
+          <table id="tabelaCatalogoColunas">
+            <thead><tr><th>Coluna</th><th>Significado</th><th>Papel</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+
+        <fieldset>
+          <legend>Arquivos já subidos dessa fonte</legend>
+          <table id="tabelaCatalogoExecucoes">
+            <thead><tr><th>Status</th><th>Início</th><th>Linhas (lidas/gravadas)</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -284,6 +316,7 @@ function carregarTudo() {
   carregarClientes();
   carregarPendencias();
   carregarExecucoes();
+  carregarCatalogo();
 }
 
 let conectorUploadManualId = null;
@@ -370,6 +403,48 @@ async function carregarExecucoes() {
       <td>${l.erro || ""}</td>
       <td>${l.tem_arquivo ? `<a href="${API}/execucoes/${l.id}/arquivo" target="_blank">baixar arquivo</a>` : ""}</td>
     </tr>`).join("") || `<tr><td colspan="7" class="ajuda">Nenhuma execução ainda.</td></tr>`;
+}
+
+async function carregarCatalogo() {
+  const fontes = await api("/catalogo");
+  const tbody = document.querySelector("#tabelaCatalogo tbody");
+  tbody.innerHTML = fontes.map(f => `
+    <tr class="linha-catalogo" data-id="${f.id}" style="cursor:pointer">
+      <td>${f.nome}</td>
+      <td>${f.tipo_origem} · ${f.tabela_origem}</td>
+      <td>${f.grao}</td>
+      <td>ver colunas ›</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhuma fonte cadastrada ainda.</td></tr>`;
+  tbody.querySelectorAll(".linha-catalogo").forEach(tr => {
+    tr.addEventListener("click", () => abrirCatalogoFonte(tr.dataset.id));
+  });
+}
+
+async function abrirCatalogoFonte(id) {
+  const fonte = await api("/catalogo/" + id);
+
+  document.getElementById("catalogoDetalhe").classList.remove("oculto");
+  document.getElementById("catalogoDetalheNome").textContent = fonte.nome;
+  document.getElementById("catalogoDetalheDescricao").textContent = fonte.descricao;
+
+  const colunasBody = document.querySelector("#tabelaCatalogoColunas tbody");
+  colunasBody.innerHTML = fonte.colunas.map(c => `
+    <tr>
+      <td>${c.coluna}</td>
+      <td>${c.significado || ""}</td>
+      <td>${c.papel || "-"}</td>
+    </tr>`).join("") || `<tr><td colspan="3" class="ajuda">Sem colunas cadastradas.</td></tr>`;
+
+  const execBody = document.querySelector("#tabelaCatalogoExecucoes tbody");
+  execBody.innerHTML = fonte.execucoes.map(e => `
+    <tr>
+      <td><span class="tag tag-${e.status === 'ok' ? 'ok' : (e.status === 'erro' ? 'erro' : 'andamento')}">${e.status}</span></td>
+      <td>${new Date(e.iniciado_em).toLocaleString("pt-BR")}</td>
+      <td>${e.linhas_lidas ?? "-"} / ${e.linhas_gravadas ?? "-"}</td>
+      <td>${e.tem_arquivo ? `<a href="${API}/execucoes/${e.id}/arquivo" target="_blank">baixar arquivo</a>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhum arquivo subido ainda pra essa fonte (aguardando o modelo de importação do Lote 8).</td></tr>`;
+
+  document.getElementById("catalogoDetalhe").scrollIntoView({ behavior: "smooth" });
 }
 
 // -------- de-para / armazém: criação --------
