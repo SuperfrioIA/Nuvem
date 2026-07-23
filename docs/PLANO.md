@@ -575,6 +575,48 @@ regra de derivação real, sem UI, sem tocar cálculo dos 5 uploads. **Modelo:**
 idempotente na canônica; nenhuma medida legada ganhou linhagem inventada.
 **Não deployado na VM** — aguarda validação da Maria.
 
+## Lote R3 — Catálogo semântico de métricas
+
+**Status: feito** (22/jul/2026) · quarto lote da revisão arquitetural
+(docs/DIAGNOSTICO.md). Escopo pedido pela Maria — mais amplo que o preview
+original da seção 6 do DIAGNOSTICO (só descrição/direção/agregação/ativo):
+domínio, granularidade esperada, periodicidade e comparabilidade entraram
+junto. **Modelo:** Sonnet 5.
+
+- [x] `metricas` ganha `nome_executivo`, `dominio`, `descricao`,
+      `granularidade_esperada`, `periodicidade`, `tipo` (CHECK:
+      absoluta/percentual/indice/quantidade/valor_financeiro), `direcao_risco`
+      (CHECK: maior_pior/menor_pior/ambos/informativo), `agregacao_padrao`
+      (CHECK: soma/media/ultimo/maximo/minimo), `comparabilidade` (texto livre
+      — lista aberta), `ativo`. Migration 0004, aditiva. `nome` continua a
+      chave estável e `unidade` a unidade padrão — nenhuma das duas foi
+      renomeada.
+- [x] `backend/seed_metricas.py` (novo): preenche os campos semânticos das 12
+      métricas atuais — idempotente (sentinela `dominio IS NULL`, nunca
+      sobrescreve edição manual), mesmo padrão de `seed_depara`/`seed_catalogo`.
+- [x] Fim da criação implícita: `get_or_create_metrica` virou
+      `resolver_metrica_governada` (só SELECT) — nome de métrica fora do
+      catálogo dá `ValueError` claro em vez de criar métrica fantasma.
+- [x] `admin.py`: os dois pontos de gravação (`upload/processar` e
+      `reprocessar`) ganharam try/except pra esse erro, finalizando a execução
+      como `erro` com a mensagem (mesmo padrão já usado pro erro de parser) —
+      antes desse lote essa gravação não tinha proteção nenhuma. Endpoint novo
+      `GET /metricas` (read-only).
+- [x] `admin.html`: painel "Métricas" read-only (mesmo padrão do catálogo de
+      fontes).
+- [x] Testes: seed idempotente e não-destrutivo de edição manual; métrica não
+      governada não vira linha fantasma (nem via `ingestao` direto, nem via
+      upload pela API — execução fica com status `erro`); os 5 uploads reais
+      seguem batendo; teste de medida derivada ajustado (métrica de teste
+      passa a ser inserida direto via SQL, não mais via app). **44 testes**
+      verdes (39 do R2 + 5 novos).
+
+**Check de conclusão:** modelo referenciando métrica inexistente é rejeitado
+com mensagem clara (upload e reprocesso); catálogo de métricas visível no
+admin com os campos semânticos; as 12 métricas atuais (3 do piloto original +
+9 da POC catering, Lote 8) classificadas; nenhum valor calculado mudou. **Não
+deployado na VM** — aguarda validação da Maria.
+
 ## Lote 9 — Métrica composta: ocupação real
 
 **Status: a fazer** · derivação em cima de `medidas`; motor e tela inalterados.

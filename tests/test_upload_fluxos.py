@@ -7,6 +7,7 @@ estabilidade tecnica do fluxo, nao substituem a validacao visual dos
 relatorios reais.
 """
 
+import copy
 import json
 
 import pytest
@@ -104,6 +105,31 @@ def test_reprocesso_com_modelo_salvo_e_idempotente(cliente):
     # modelo reutilizado, nao recriado (delta zero — robusto aos modelos canonicos
     # semeados no startup a partir do Lote R1.1)
     assert consultar("SELECT count(*) FROM modelos_importacao")[0][0] == modelos_antes
+
+
+def test_upload_com_metrica_nao_governada_fica_com_execucao_em_erro(cliente):
+    """R3: modelo referenciando metrica fora do catalogo e rejeitado com
+    mensagem clara -- a execucao fica com status 'erro', nada e gravado."""
+    mapeamento = copy.deepcopy(modelos_reais.VOLUMETRIA_FATO)
+    mapeamento["metricas"][0]["metrica"] = "metrica_fantasma_upload_teste"
+
+    nome_arquivo, gerador = arquivos_sinteticos.ARQUIVOS["volumetria_fato"]
+    resposta = cliente.post(
+        "/api/admin/upload/processar",
+        files={"arquivo": (nome_arquivo, gerador(), "text/csv")},
+        data={"nome_novo_modelo": "volumetria_fato_com_metrica_fantasma",
+              "mapeamento_json": json.dumps(mapeamento)},
+    )
+    assert resposta.status_code == 400
+    assert "metrica_fantasma_upload_teste" in resposta.json()["detail"]
+
+    execucoes = consultar("SELECT status, erro FROM execucoes ORDER BY id DESC LIMIT 1")
+    assert execucoes[0][0] == "erro"
+    assert "metrica_fantasma_upload_teste" in execucoes[0][1]
+
+    assert consultar("SELECT count(*) FROM metricas WHERE nome = %s",
+                      ("metrica_fantasma_upload_teste",))[0][0] == 0
+    assert consultar("SELECT count(*) FROM medidas")[0][0] == 0
 
 
 def test_armazem_sem_depara_vira_pendencia(cliente):

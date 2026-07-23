@@ -6,13 +6,17 @@ upload_manual.
 """
 
 
-def get_or_create_metrica(cur, nome: str) -> int:
+def resolver_metrica_governada(cur, nome: str) -> int:
+    """So resolve metrica ja cadastrada no catalogo (Lote R3) -- fim da criacao
+    implicita. Um modelo de importacao referenciando um nome de metrica
+    inexistente e um erro de configuracao, nao uma metrica nova; deixa de
+    criar metrica fantasma e sobe erro claro pro chamador tratar (upload/
+    reprocesso finalizam a execucao como 'erro')."""
     cur.execute("SELECT id FROM metricas WHERE nome = %s", (nome,))
     row = cur.fetchone()
-    if row:
-        return row[0]
-    cur.execute("INSERT INTO metricas (nome) VALUES (%s) RETURNING id", (nome,))
-    return cur.fetchone()[0]
+    if row is None:
+        raise ValueError(f"metrica nao cadastrada no catalogo: {nome!r}")
+    return row[0]
 
 
 def resolver_armazem(cur, conector_id: int, armazem_na_fonte: str):
@@ -87,7 +91,7 @@ def gravar_agregados(cur, conector_id: int, execucao_id: int, agregados: list[di
         if armazem_id is None:
             registrar_pendencia(cur, conector_id, item["armazem_na_fonte"])
             continue
-        metrica_id = get_or_create_metrica(cur, item["metrica"])
+        metrica_id = resolver_metrica_governada(cur, item["metrica"])
         medida_recebida_id = registrar_medida_recebida(
             cur, execucao_id, armazem_id, metrica_id, item["competencia"], item["valor"]
         )

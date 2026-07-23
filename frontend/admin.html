@@ -83,6 +83,7 @@
     <button data-painel="pendencias">Pendências</button>
     <button data-painel="execucoes">Execuções</button>
     <button data-painel="catalogo">Catálogo</button>
+    <button data-painel="metricas">Métricas</button>
   </nav>
 
   <main>
@@ -248,6 +249,16 @@
         </fieldset>
       </div>
     </section>
+
+    <!-- METRICAS -->
+    <section id="painel-metricas" class="painel">
+      <h3>Catálogo de métricas</h3>
+      <p class="ajuda">O que cada métrica significa, como interpretar e comparar — governa o que os modelos de importação podem gravar (nome não cadastrado aqui não é aceito no upload).</p>
+      <table id="tabelaMetricas">
+        <thead><tr><th>Métrica</th><th>Domínio</th><th>Unidade</th><th>Tipo</th><th>Direção de risco</th><th>Agregação padrão</th><th>Comparabilidade</th><th>Ativo</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </section>
   </main>
 </div>
 
@@ -321,6 +332,7 @@ function carregarTudo() {
   carregarPendencias();
   carregarExecucoes();
   carregarCatalogo();
+  carregarMetricas();
 }
 
 let conectorUploadManualId = null;
@@ -449,6 +461,22 @@ async function abrirCatalogoFonte(id) {
     </tr>`).join("") || `<tr><td colspan="4" class="ajuda">Nenhum arquivo subido ainda pra essa fonte (aguardando o modelo de importação do Lote 8).</td></tr>`;
 
   document.getElementById("catalogoDetalhe").scrollIntoView({ behavior: "smooth" });
+}
+
+async function carregarMetricas() {
+  const linhas = await api("/metricas");
+  const tbody = document.querySelector("#tabelaMetricas tbody");
+  tbody.innerHTML = linhas.map(m => `
+    <tr>
+      <td title="${(m.descricao || "").replace(/"/g, "&quot;")}"><strong>${m.nome_executivo || m.nome}</strong><br><span class="ajuda">${m.nome}</span></td>
+      <td>${m.dominio || "-"}</td>
+      <td>${m.unidade || "-"}</td>
+      <td>${m.tipo || "-"}</td>
+      <td>${m.direcao_risco || "-"}</td>
+      <td>${m.agregacao_padrao || "-"}</td>
+      <td>${m.comparabilidade || "-"}</td>
+      <td>${m.ativo ? "sim" : "não"}</td>
+    </tr>`).join("") || `<tr><td colspan="8" class="ajuda">Nenhuma métrica cadastrada ainda.</td></tr>`;
 }
 
 // -------- de-para / armazém: criação --------

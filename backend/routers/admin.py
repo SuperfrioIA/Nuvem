@@ -289,9 +289,14 @@ async def upload_processar(
             ingestao.finalizar_execucao(cur, execucao_id, "erro", erro=str(e))
         raise HTTPException(status_code=400, detail=f"erro ao processar arquivo: {e}")
 
-    with get_conn() as conn, conn.cursor() as cur:
-        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, execucao_id, agregados)
-        ingestao.finalizar_execucao(cur, execucao_id, "ok", linhas_lidas, linhas_gravadas)
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, execucao_id, agregados)
+            ingestao.finalizar_execucao(cur, execucao_id, "ok", linhas_lidas, linhas_gravadas)
+    except ValueError as e:
+        with get_conn() as conn, conn.cursor() as cur:
+            ingestao.finalizar_execucao(cur, execucao_id, "erro", erro=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
     with get_conn() as conn, conn.cursor() as cur:
         motor.calcular_scores(cur)
@@ -346,9 +351,14 @@ def reprocessar_execucao(request: Request, execucao_id: int):
             ingestao.finalizar_execucao(cur, nova_execucao_id, "erro", erro=str(e))
         raise HTTPException(status_code=400, detail=f"erro ao reprocessar arquivo: {e}")
 
-    with get_conn() as conn, conn.cursor() as cur:
-        linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, nova_execucao_id, agregados)
-        ingestao.finalizar_execucao(cur, nova_execucao_id, "ok", linhas_lidas, linhas_gravadas)
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            linhas_gravadas = ingestao.gravar_agregados(cur, conector_id, nova_execucao_id, agregados)
+            ingestao.finalizar_execucao(cur, nova_execucao_id, "ok", linhas_lidas, linhas_gravadas)
+    except ValueError as e:
+        with get_conn() as conn, conn.cursor() as cur:
+            ingestao.finalizar_execucao(cur, nova_execucao_id, "erro", erro=str(e))
+        raise HTTPException(status_code=400, detail=str(e))
 
     with get_conn() as conn, conn.cursor() as cur:
         motor.calcular_scores(cur)
@@ -427,6 +437,40 @@ def listar_scores(request: Request):
                 "z_score": float(r[6]) if r[6] is not None else None,
                 "estado": r[7],
                 "calculado_em": r[8].isoformat(),
+            }
+            for r in cur.fetchall()
+        ]
+
+
+@router.get("/metricas")
+def listar_metricas(request: Request):
+    """Catalogo semantico das metricas (Lote R3) — read-only."""
+    exigir_login(request)
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, nome, nome_executivo, unidade, dominio, descricao,
+                   granularidade_esperada, periodicidade, tipo, direcao_risco,
+                   agregacao_padrao, comparabilidade, ativo
+            FROM metricas
+            ORDER BY dominio NULLS LAST, nome
+            """
+        )
+        return [
+            {
+                "id": r[0],
+                "nome": r[1],
+                "nome_executivo": r[2],
+                "unidade": r[3],
+                "dominio": r[4],
+                "descricao": r[5],
+                "granularidade_esperada": r[6],
+                "periodicidade": r[7],
+                "tipo": r[8],
+                "direcao_risco": r[9],
+                "agregacao_padrao": r[10],
+                "comparabilidade": r[11],
+                "ativo": r[12],
             }
             for r in cur.fetchall()
         ]

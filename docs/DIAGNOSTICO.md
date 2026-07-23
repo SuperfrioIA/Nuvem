@@ -19,8 +19,12 @@ seed dos 5 modelos canônicos + vínculo `catalogo_fontes.modelo_id` — fechado
 original da seção 6 abaixo: sem precedência de fonte, sem validação de data única):
 `medidas_recebidas` (append-only) + `medida_linhagem` (N:N) + colunas de origem em
 `medidas` (`medida_recebida_id`, `origem_tipo`, `regra_codigo`, `regra_versao`,
-`calculado_em`), migration 0003. Detalhes no Lote R2 do docs/PLANO.md. R3–R6 não
-autorizados.
+`calculado_em`), migration 0003. **R3 fechado em 22/jul/2026**, escopo pedido pela
+Maria (mais amplo que o preview da seção 6 abaixo — domínio, granularidade esperada,
+periodicidade e comparabilidade entraram junto com descrição/direção/agregação/ativo):
+catálogo semântico em `metricas` (migration 0004), seed idempotente das 12 métricas
+atuais, fim da criação implícita de métrica (`resolver_metrica_governada`), painel
+read-only no admin. Detalhes no Lote R3 do docs/PLANO.md. R4–R6 não autorizados.
 
 Contexto: revisão pedida a partir do realinhamento estratégico — a Nuvem IA evolui de
 "detector de anomalias com nuvem de bolinhas" para **cockpit corporativo de gestão das

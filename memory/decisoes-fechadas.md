@@ -162,7 +162,21 @@ metadata:
   mesmo) — a migration 0003 não inventa esse vínculo, vira `origem_tipo='legado'` pra
   100% das medidas existentes (não é parcial). `ingestao.gravar_agregados` grava a
   recebida antes de publicar a canônica; `registrar_medida_derivada` existe só como
-  estrutura (nenhuma regra real chama ainda — é pro Lote 9). 39 testes verdes. R3–R6 não
+  estrutura (nenhuma regra real chama ainda — é pro Lote 9). 39 testes verdes. **R3
+  fechado** (22/jul/2026, escopo pedido pela Maria — mais amplo que o preview do
+  DIAGNOSTICO.md: alem de descricao/direcao/agregacao/ativo, entraram dominio,
+  granularidade esperada, periodicidade e comparabilidade): `metricas` ganha
+  `nome_executivo`, `dominio`, `descricao`, `granularidade_esperada`, `periodicidade`,
+  `tipo`/`direcao_risco`/`agregacao_padrao` (CHECK com as enumeracoes fechadas),
+  `comparabilidade` (texto livre), `ativo` — migration 0004, `nome` continua a chave
+  estavel e `unidade` a unidade padrao, nenhuma renomeada. `backend/seed_metricas.py`
+  preenche os campos semanticos das 12 metricas atuais (idempotente, sentinela
+  `dominio IS NULL`, nunca sobrescreve edicao manual). Fim da criacao implicita:
+  `get_or_create_metrica` virou `resolver_metrica_governada` (so SELECT) — metrica fora
+  do catalogo da erro claro em vez de virar linha fantasma; `admin.py` ganhou try/except
+  nos dois pontos de gravacao (upload e reprocesso, que antes nao tinham protecao
+  nenhuma) pra finalizar a execucao como `erro` com a mensagem; endpoint `GET /metricas`
+  e painel read-only no admin. 44 testes verdes (39 do R2 + 5 novos). R4–R6 não
   autorizados.
 
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
