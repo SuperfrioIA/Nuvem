@@ -8,8 +8,13 @@ depois da POC.
 
 Permissao concedida (ver docs/FONTES_DATAHUB.md): Sites.Selected (aplicacao) +
 concessao `read` no site DataHub -- o Graph recusa qualquer escrita nesse
-papel, por construcao. Este modulo so faz chamadas GET; nenhum metodo de
-escrita existe aqui.
+papel, por construcao. Este modulo so faz chamadas GET ao Graph; o unico POST
+e a troca de token no login.microsoftonline.com.
+
+Somente leitura tambem esta travado na suite: a secao "guarda de somente-leitura"
+de tests/test_graph_datahub.py reprova qualquer put/patch/delete introduzido aqui
+e qualquer POST fora de obter_token. Escrever no SharePoint exigiria decisao
+explicita de projeto -- mudar aqueles testes E a concessao no Graph.
 
 Responsabilidades minimas (Lote P1): obter_token() / testar_conexao() /
 listar_itens(). Nunca loga o client secret nem o token.

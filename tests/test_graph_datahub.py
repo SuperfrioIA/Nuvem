@@ -1,6 +1,12 @@
 """Testes do cliente Graph do DataHub (Lote P1). Tudo mockado -- nenhum teste
 aqui faz uma chamada real ao SharePoint/Microsoft Graph.
+
+Inclui a guarda de somente-leitura (secao final): trava no codigo a garantia que
+hoje depende da permissao concedida no Graph (papel `read`).
 """
+
+import ast
+import pathlib
 
 import httpx
 import pytest
@@ -319,3 +325,94 @@ def test_testar_conexao_sem_configuracao_nao_levanta_excecao(monkeypatch):
     assert resultado["ok"] is False
     assert "GRAPH_CLIENT_SECRET" in resultado["mensagem"]
     assert "segredo-fake-nao-usar" not in resultado["mensagem"]
+
+
+# --- guarda de somente-leitura ------------------------------------------------
+#
+# Hoje o SharePoint esta protegido pela permissao concedida no Graph (papel `read`
+# no site DataHub -- o proprio Graph recusa escrita). Estes dois testes travam a
+# mesma garantia no codigo, pra que ela nao dependa so da configuracao remota:
+# se alguem introduzir escrita aqui, a suite quebra antes de qualquer deploy.
+
+_METODOS_DE_ESCRITA = {"put", "patch", "delete"}
+
+
+def _arvore_do_modulo() -> ast.Module:
+    caminho = pathlib.Path(graph_datahub.__file__)
+    return ast.parse(caminho.read_text(encoding="utf-8"))
+
+
+def _metodos_chamados(arvore: ast.Module) -> set[str]:
+    """Nome de todo metodo invocado como `objeto.metodo(...)` no modulo."""
+    return {
+        no.func.attr
+        for no in ast.walk(arvore)
+        if isinstance(no, ast.Call) and isinstance(no.func, ast.Attribute)
+    }
+
+
+def _funcoes_que_chamam(arvore: ast.Module, metodo: str) -> set[str]:
+    """Funcoes do modulo que invocam `objeto.<metodo>(...)`."""
+    funcoes = set()
+    for no in ast.walk(arvore):
+        if not isinstance(no, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for interno in ast.walk(no):
+            if (
+                isinstance(interno, ast.Call)
+                and isinstance(interno.func, ast.Attribute)
+                and interno.func.attr == metodo
+            ):
+                funcoes.add(no.name)
+    return funcoes
+
+
+def test_modulo_nao_chama_nenhum_verbo_de_escrita():
+    """Guarda estatica: nenhum put/patch/delete em lugar nenhum do modulo.
+
+    Vale pra qualquer objeto (`httpx.put`, `cliente.delete`, ...), nao so pro httpx.
+    Se um dia o projeto precisar escrever no SharePoint, isso tem que ser uma
+    decisao explicita -- comecando por mudar este teste e a concessao no Graph.
+    """
+    encontrados = _metodos_chamados(_arvore_do_modulo()) & _METODOS_DE_ESCRITA
+    assert not encontrados, (
+        "verbo de escrita introduzido no cliente do DataHub: "
+        + ", ".join(sorted(encontrados))
+        + " -- o acesso ao SharePoint e somente leitura por decisao de projeto"
+    )
+
+
+def test_unico_post_do_modulo_e_a_troca_de_token():
+    """O POST legitimo do modulo e o do endpoint de token da Microsoft, dentro de
+    obter_token. Qualquer outro POST (que no Graph seria criacao de item) reprova."""
+    assert _funcoes_que_chamam(_arvore_do_modulo(), "post") == {"obter_token"}
+
+
+def test_nenhuma_chamada_de_escrita_chega_no_graph(monkeypatch):
+    """Guarda de runtime: exercita os caminhos reais do modulo com put/patch/delete
+    minados e com o POST vigiado -- o unico POST tolerado e o login.microsoftonline.com.
+    Complementa a guarda estatica, que nao veria uma escrita feita por outro caminho.
+    """
+
+    def _minar(metodo):
+        def _fake(url, *args, **kwargs):
+            raise AssertionError(f"chamada de escrita inesperada: {metodo} {url}")
+
+        return _fake
+
+    for metodo in sorted(_METODOS_DE_ESCRITA):
+        monkeypatch.setattr(graph_datahub.httpx, metodo, _minar(metodo), raising=False)
+
+    def _post_vigiado(url, **kwargs):
+        assert "graph.microsoft.com" not in url, f"POST para o Graph: {url}"
+        assert url.startswith("https://login.microsoftonline.com/"), f"POST inesperado: {url}"
+        return _resposta_token_ok()
+
+    monkeypatch.setattr(graph_datahub.httpx, "post", _post_vigiado)
+    monkeypatch.setattr(
+        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
+    )
+
+    graph_datahub.listar_itens()
+    graph_datahub.listar_itens(item_id="01ABCDEF")
+    assert graph_datahub.testar_conexao()["ok"] is True
