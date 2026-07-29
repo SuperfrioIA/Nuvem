@@ -9,6 +9,11 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       UPLOADS_DIR: /app/data/uploads
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-50}
+      GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
+      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+      GRAPH_SITE_PATH: ${GRAPH_SITE_PATH:-}
+      GRAPH_PASTA: ${GRAPH_PASTA:-}
     volumes:
       - ${UPLOADS_HOST_PATH:-./data/uploads}:/app/data/uploads
     depends_on:
