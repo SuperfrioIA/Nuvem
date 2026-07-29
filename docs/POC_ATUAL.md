@@ -90,6 +90,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 |---|---|---|
 | P0 | Diagnóstico e organização segura do repositório | **feito** (29/jul/2026) |
 | **P1** | Configuração + cliente mínimo do Microsoft Graph (`backend/config.py`, `backend/services/graph_datahub.py`) | **feito** (29/jul/2026) |
+| **P1.1** | Correções do P1 achadas em revisão: cache de token, URL de subpasta, erro de configuração na hierarquia `GraphError` | **feito** (29/jul/2026) |
 | P2 | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | a fazer |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
@@ -106,12 +107,16 @@ seção 8. Resumo de cada um:
 - **P2** — `GET /api/admin/datahub/status`, `POST /api/admin/datahub/sincronizar`,
   `GET /api/admin/datahub/resumo`; listagem recursiva; inventário em cache de
   processo (não criar tabela salvo necessidade clara); tela com status/contadores/
-  lista de pastas e arquivos recentes.
+  lista de pastas e arquivos recentes. O cliente Graph é síncrono (`httpx.get`) —
+  declarar os endpoints como `def` comum, **não** `async def`, senão a
+  sincronização bloqueia o event loop do FastAPI durante toda a varredura.
 - **P3** — download por `item_id` (nunca URL arbitrária), validação de
   nome/extensão/tamanho, leitura com `openpyxl`, metadados obrigatórios (arquivo,
   competência/filial inferidas, linhas lidas/válidas/descartadas, % qualidade).
   Colunas localizadas **por nome**, via dicionário cabeçalho→índice montado na
-  leitura — nunca índice chumbado (ver decisões técnicas).
+  leitura — nunca índice chumbado (ver decisões técnicas). O timeout de 10 s do
+  cliente Graph serve pra listar, não pra baixar arquivo: usar timeout próprio,
+  maior, no download.
 - **P4** — 3 a 5 KPIs entre os candidatos (registros, clientes, volume, peso
   líquido/bruto, UAs, valor movimentado); tela "KPIs da POC" com auditoria por KPI.
 - **P5** — template determinístico do resumo; `docs/DEMO_POC.md` com roteiro e
@@ -166,6 +171,26 @@ cobre os 8 cenários pedidos + 404/429/falha de rede, tudo mockado. `requirement
 ganhou `httpx`; `docker-compose.yml` repassa os 5 `GRAPH_*` ao `nuvem-app` (default
 vazio — não quebra quem ainda não configurou). Nenhum endpoint/rota criado ainda
 (fica pro P2). Suíte: 64 passed (44 + 20 novos, Docker/WSL, Postgres real).
+
+29/jul/2026 — **P1.1 fechado** (correções de revisão do P1, sem escopo novo):
+
+- **Cache de token de processo** (`obter_token`): o token vale ~1h e era pedido a
+  cada `listar_itens()`. Na listagem recursiva do P2 isso seria uma autenticação
+  por pasta (a árvore do DataHub passa de 20 com as subpastas por cliente) —
+  lentidão visível e risco de 429. Renovação com margem de 5 min; 401 do Graph
+  descarta o cache pra próxima chamada reautenticar.
+- **URL de subpasta corrigida**: faltava o `:` que fecha o caminho do site antes do
+  sub-recurso (`.../sites/DataHub:/drive/items/{id}/children`). Sem ele o Graph lê
+  `/sites/DataHub/drive/...` como caminho do site e responde 400/404 — quebraria na
+  primeira subpasta da listagem recursiva do P2.
+- **Falta de configuração entrou na hierarquia `GraphError`**: `config.py` levanta
+  `ConfiguracaoGraphIncompletaError` (subclasse de `RuntimeError`, compatível) e o
+  serviço traduz pra `GraphConfiguracaoIncompletaError`. Antes, `.env` sem os
+  `GRAPH_*` fazia `testar_conexao()` estourar exceção — contra a própria promessa da
+  função — e viraria erro 500 no painel do P2 em vez de "faltam as variáveis: …".
+
+Suíte: **70 passed** (64 + 6 novos: config fora da hierarquia, URL de subpasta,
+reaproveitamento/renovação/invalidação de token, `testar_conexao` sem configuração).
 
 ## Próximo lote autorizado
 

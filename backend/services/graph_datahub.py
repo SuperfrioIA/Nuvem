@@ -15,12 +15,20 @@ Responsabilidades minimas (Lote P1): obter_token() / testar_conexao() /
 listar_itens(). Nunca loga o client secret nem o token.
 """
 
+import time
+
 import httpx
 
-from backend.config import obter_configuracao_graph
+from backend.config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
 
 _GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 _TIMEOUT_SEGUNDOS = 10.0
+# O token do Graph vale ~1h. Renovamos com folga pra nao usar um token que expira
+# no meio de uma listagem recursiva longa.
+_MARGEM_RENOVACAO_SEGUNDOS = 300.0
+
+_token_em_cache: str | None = None
+_token_expira_em: float = 0.0
 
 
 class GraphError(Exception):
@@ -52,9 +60,41 @@ class GraphRespostaInvalidaError(GraphError):
     """Resposta HTTP 2xx mas o corpo nao e o JSON esperado."""
 
 
+class GraphConfiguracaoIncompletaError(GraphError):
+    """Variaveis GRAPH_* ausentes -- nenhuma chamada foi feita. Entra na hierarquia
+    GraphError de proposito: quem captura GraphError (ex: testar_conexao, endpoints
+    do painel) trata falta de configuracao como qualquer outra falha, com mensagem
+    clara na tela em vez de erro 500."""
+
+
+def _configuracao():
+    """Le a configuracao traduzindo o erro pra hierarquia GraphError."""
+    try:
+        return obter_configuracao_graph()
+    except ConfiguracaoGraphIncompletaError as exc:
+        raise GraphConfiguracaoIncompletaError(str(exc)) from exc
+
+
+def _invalidar_token() -> None:
+    """Descarta o token em cache (usado quando o Graph o rejeita, e nos testes)."""
+    global _token_em_cache, _token_expira_em
+    _token_em_cache = None
+    _token_expira_em = 0.0
+
+
 def obter_token() -> str:
-    """Autentica via Client Credentials (app-only, sem usuario logado)."""
-    config = obter_configuracao_graph()
+    """Autentica via Client Credentials (app-only, sem usuario logado).
+
+    O token fica em cache de processo ate perto do vencimento: uma listagem
+    recursiva percorre dezenas de pastas e nao pode autenticar a cada uma -- seria
+    uma ida desnecessaria ao login.microsoftonline.com por pasta, lentidao visivel
+    na sincronizacao e risco de throttling (429).
+    """
+    global _token_em_cache, _token_expira_em
+    if _token_em_cache is not None and time.monotonic() < _token_expira_em:
+        return _token_em_cache
+
+    config = _configuracao()
     url = f"https://login.microsoftonline.com/{config.tenant_id}/oauth2/v2.0/token"
     dados = {
         "grant_type": "client_credentials",
@@ -80,9 +120,17 @@ def obter_token() -> str:
 
     try:
         corpo = resposta.json()
-        return corpo["access_token"]
+        token = corpo["access_token"]
     except (ValueError, KeyError) as exc:
         raise GraphRespostaInvalidaError("resposta de token do Graph sem access_token") from exc
+
+    try:
+        validade = float(corpo.get("expires_in", 3600))
+    except (TypeError, ValueError):
+        validade = 3600.0
+    _token_em_cache = token
+    _token_expira_em = time.monotonic() + max(validade - _MARGEM_RENOVACAO_SEGUNDOS, 0.0)
+    return token
 
 
 def _requisitar(url: str, token: str) -> dict:
@@ -95,6 +143,9 @@ def _requisitar(url: str, token: str) -> dict:
         raise GraphIndisponivelError("falha de rede ao consultar o Graph") from exc
 
     if resposta.status_code == 401:
+        # Token rejeitado: descarta o cache pra proxima chamada reautenticar em vez
+        # de insistir com um token que o Graph ja recusou.
+        _invalidar_token()
         raise GraphAutenticacaoInvalidaError("token rejeitado pelo Graph (HTTP 401)")
     if resposta.status_code == 403:
         raise GraphAcessoNegadoError(
@@ -125,12 +176,16 @@ def listar_itens(item_id: str | None = None) -> list[dict]:
     serve pra quem ja tem um id descoberto numa chamada anterior descer numa
     subpasta (uso futuro do Lote P2, listagem recursiva).
     """
-    config = obter_configuracao_graph()
+    config = _configuracao()
     token = obter_token()
     if item_id is None:
         url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}:/drive/root:/{config.pasta}:/children"
     else:
-        url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}/drive/items/{item_id}/children"
+        # O `:` que fecha o caminho do site e obrigatorio antes de seguir pro
+        # sub-recurso: GRAPH_SITE_PATH e do tipo `host:/sites/DataHub`, e sem esse
+        # fechamento o Graph le `/sites/DataHub/drive/...` como parte do caminho do
+        # site e responde 400/404.
+        url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}:/drive/items/{item_id}/children"
 
     itens: list[dict] = []
     while url:

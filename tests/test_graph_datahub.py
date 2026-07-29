@@ -16,6 +16,11 @@ def variaveis_graph(monkeypatch):
     monkeypatch.setenv("GRAPH_CLIENT_SECRET", "segredo-fake-nao-usar")
     monkeypatch.setenv("GRAPH_SITE_PATH", "empresa.sharepoint.com:/sites/DataHub")
     monkeypatch.setenv("GRAPH_PASTA", "00.Dados/00.Bronze/00.Dados_Sistemicos")
+    # O token vive em cache de processo (Lote P1.1) -- zerar antes e depois, senao
+    # um teste herda o token do anterior e o mock de autenticacao nunca e exercido.
+    graph_datahub._invalidar_token()
+    yield
+    graph_datahub._invalidar_token()
 
 
 def _resposta_token_ok(token="token-fake-123"):
@@ -41,6 +46,14 @@ def test_config_completa():
     cfg = config.obter_configuracao_graph()
     assert cfg.tenant_id == "tenant-fake"
     assert cfg.pasta == "00.Dados/00.Bronze/00.Dados_Sistemicos"
+
+
+def test_config_incompleta_entra_na_hierarquia_graph(monkeypatch):
+    """Falta de configuracao tem que ser capturavel como GraphError, senao vira
+    erro 500 no painel em vez de mensagem clara (Lote P1.1)."""
+    monkeypatch.delenv("GRAPH_PASTA", raising=False)
+    with pytest.raises(graph_datahub.GraphConfiguracaoIncompletaError, match="GRAPH_PASTA"):
+        graph_datahub.listar_itens()
 
 
 # --- obter_token() ------------------------------------------------------------
@@ -101,6 +114,25 @@ def test_listar_itens_url_da_pasta_configurada(monkeypatch):
     assert urls_chamadas == [
         "https://graph.microsoft.com/v1.0/sites/empresa.sharepoint.com:/sites/DataHub"
         ":/drive/root:/00.Dados/00.Bronze/00.Dados_Sistemicos:/children"
+    ]
+
+
+def test_listar_itens_url_de_subpasta(monkeypatch):
+    """A URL de subpasta precisa fechar o caminho do site com `:` antes de seguir
+    pro sub-recurso -- sem isso o Graph responde 400/404 (Lote P1.1). E o caminho
+    que a listagem recursiva do P2 usa."""
+    _mock_post_token_ok(monkeypatch)
+    urls_chamadas = []
+
+    def _fake_get(url, **kwargs):
+        urls_chamadas.append(url)
+        return httpx.Response(200, json={"value": []})
+
+    monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
+    graph_datahub.listar_itens(item_id="01ABCDEF")
+    assert urls_chamadas == [
+        "https://graph.microsoft.com/v1.0/sites/empresa.sharepoint.com:/sites/DataHub"
+        ":/drive/items/01ABCDEF/children"
     ]
 
 
@@ -202,6 +234,62 @@ def test_listar_itens_resposta_sem_campo_value(monkeypatch):
         graph_datahub.listar_itens()
 
 
+# --- cache de token (Lote P1.1) -----------------------------------------------
+
+
+def _contar_autenticacoes(monkeypatch):
+    """Mocka a autenticacao contando quantas vezes ela e realmente chamada."""
+    chamadas = []
+
+    def _fake_post(url, **kwargs):
+        chamadas.append(url)
+        return _resposta_token_ok()
+
+    monkeypatch.setattr(graph_datahub.httpx, "post", _fake_post)
+    return chamadas
+
+
+def test_token_reaproveitado_entre_chamadas(monkeypatch):
+    """Listagem recursiva percorre dezenas de pastas: uma autenticacao por pasta
+    seria ida desnecessaria ao login.microsoftonline.com e risco de 429."""
+    autenticacoes = _contar_autenticacoes(monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
+    )
+    graph_datahub.listar_itens()
+    graph_datahub.listar_itens()
+    graph_datahub.listar_itens()
+    assert len(autenticacoes) == 1
+
+
+def test_token_renovado_quando_expira(monkeypatch):
+    autenticacoes = _contar_autenticacoes(monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
+    )
+    graph_datahub.listar_itens()
+    graph_datahub._token_expira_em = 0.0  # simula vencimento
+    graph_datahub.listar_itens()
+    assert len(autenticacoes) == 2
+
+
+def test_token_invalidado_apos_401(monkeypatch):
+    """Token recusado pelo Graph nao pode ficar no cache -- a proxima chamada
+    precisa reautenticar em vez de insistir com ele."""
+    autenticacoes = _contar_autenticacoes(monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(401, json={})
+    )
+    with pytest.raises(graph_datahub.GraphAutenticacaoInvalidaError):
+        graph_datahub.listar_itens()
+
+    monkeypatch.setattr(
+        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
+    )
+    graph_datahub.listar_itens()
+    assert len(autenticacoes) == 2
+
+
 # --- testar_conexao() ---------------------------------------------------------
 
 
@@ -220,3 +308,14 @@ def test_testar_conexao_erro_nunca_levanta_excecao(monkeypatch):
     resultado = graph_datahub.testar_conexao()
     assert resultado["ok"] is False
     assert "403" in resultado["mensagem"]
+
+
+def test_testar_conexao_sem_configuracao_nao_levanta_excecao(monkeypatch):
+    """Caso mais provavel na pratica: .env sem os GRAPH_*. Antes do P1.1 isso
+    estourava RuntimeError (viraria erro 500 no painel do P2); agora devolve
+    ok=False nomeando a variavel que falta."""
+    monkeypatch.delenv("GRAPH_CLIENT_SECRET", raising=False)
+    resultado = graph_datahub.testar_conexao()
+    assert resultado["ok"] is False
+    assert "GRAPH_CLIENT_SECRET" in resultado["mensagem"]
+    assert "segredo-fake-nao-usar" not in resultado["mensagem"]

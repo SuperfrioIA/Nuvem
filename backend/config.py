@@ -18,6 +18,16 @@ _VARIAVEIS_OBRIGATORIAS = (
 )
 
 
+class ConfiguracaoGraphIncompletaError(RuntimeError):
+    """Variaveis GRAPH_* ausentes no ambiente -- nada foi chamado no Graph.
+
+    Subclasse de RuntimeError por compatibilidade (quem faz `except RuntimeError`
+    continua funcionando). O servico Graph traduz esta excecao pra
+    GraphConfiguracaoIncompletaError, pra que o chamador tenha uma hierarquia unica
+    pra capturar -- ver backend/services/graph_datahub.py.
+    """
+
+
 @dataclass(frozen=True)
 class ConfiguracaoGraph:
     tenant_id: str
@@ -30,12 +40,13 @@ class ConfiguracaoGraph:
 def obter_configuracao_graph() -> ConfiguracaoGraph:
     """Le e valida as variaveis GRAPH_* do ambiente.
 
-    Levanta RuntimeError com os NOMES das variaveis faltando (nunca valores)
-    se alguma nao estiver definida -- nunca monta configuracao parcial.
+    Levanta ConfiguracaoGraphIncompletaError com os NOMES das variaveis faltando
+    (nunca valores) se alguma nao estiver definida -- nunca monta configuracao
+    parcial.
     """
     faltando = [nome for nome in _VARIAVEIS_OBRIGATORIAS if not os.environ.get(nome)]
     if faltando:
-        raise RuntimeError(
+        raise ConfiguracaoGraphIncompletaError(
             "configuracao do Graph incompleta -- faltam as variaveis: " + ", ".join(faltando)
         )
     return ConfiguracaoGraph(
