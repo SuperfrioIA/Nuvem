@@ -88,8 +88,8 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 
 | Lote | Objetivo | Status |
 |---|---|---|
-| **P0** | Diagnóstico e organização segura do repositório (este lote) | **em andamento** |
-| P1 | Configuração + cliente mínimo do Microsoft Graph (`backend/config.py`, `backend/services/graph_datahub.py`) | a fazer |
+| P0 | Diagnóstico e organização segura do repositório | **feito** (29/jul/2026) |
+| **P1** | Configuração + cliente mínimo do Microsoft Graph (`backend/config.py`, `backend/services/graph_datahub.py`) | **feito** (29/jul/2026) |
 | P2 | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | a fazer |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
@@ -145,11 +145,18 @@ seção 8. Resumo de cada um:
 
 ## Status atualizado
 
-29/jul/2026 — Lote P0 em andamento: criação deste documento, do inventário do
-repositório e organização/atualização de referências. Nenhum lote de código (P1+)
-começou.
+29/jul/2026 — **P0 fechado** (organização segura do repositório, sem alterar
+comportamento). **P1 fechado**: `backend/config.py` (leitura preguiçosa das
+variáveis `GRAPH_*`) e `backend/services/graph_datahub.py` (cliente somente
+leitura — `obter_token`/`testar_conexao`/`listar_itens`, Client Credentials,
+paginação por `@odata.nextLink`, trata 401/403/404/429/timeout/falha de
+rede/resposta inválida, nunca loga segredo ou token); `tests/test_graph_datahub.py`
+cobre os 8 cenários pedidos + 404/429/falha de rede, tudo mockado. `requirements.txt`
+ganhou `httpx`; `docker-compose.yml` repassa os 5 `GRAPH_*` ao `nuvem-app` (default
+vazio — não quebra quem ainda não configurou). Nenhum endpoint/rota criado ainda
+(fica pro P2). Suíte: 64 passed (44 + 20 novos, Docker/WSL, Postgres real).
 
 ## Próximo lote autorizado
 
-Nenhum lote de código foi autorizado ainda. **P1 só começa após validação explícita
-da Maria ao final do P0.**
+Nenhum lote além do P1 foi autorizado. **P2 só começa após validação explícita da
+Maria.**
