@@ -91,7 +91,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | P0 | Diagnóstico e organização segura do repositório | **feito** (29/jul/2026) |
 | **P1** | Configuração + cliente mínimo do Microsoft Graph (`backend/config.py`, `backend/services/graph_datahub.py`) | **feito** (29/jul/2026) |
 | **P1.1** | Correções do P1 achadas em revisão: cache de token, URL de subpasta, erro de configuração na hierarquia `GraphError` | **feito** (29/jul/2026) |
-| P2 | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | a fazer |
+| **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
@@ -192,7 +192,23 @@ vazio — não quebra quem ainda não configurou). Nenhum endpoint/rota criado a
 Suíte: **70 passed** (64 + 6 novos: config fora da hierarquia, URL de subpasta,
 reaproveitamento/renovação/invalidação de token, `testar_conexao` sem configuração).
 
+29/jul/2026 — **P2 fechado**: `backend/services/inventario_datahub.py` (cache em
+memória do processo, reconstruído só em `sincronizar()` — `status()` nunca chama o
+Graph); percorre a pasta configurada **recursivamente** (desce em cada `item_id` de
+pasta retornado pelo próprio Graph, nunca por caminho digitado) e monta total de
+arquivos/pastas, contagem por extensão, lista de pastas e os 10 arquivos mais
+recentes. Falha de sincronização preserva o último resumo bom no cache.
+`backend/routers/datahub.py`: **2 endpoints** (`GET /status`, `POST /sincronizar`,
+ambos `def` comum) em vez dos 3 do desenho original — o resumo já vai dentro da
+resposta, sem endpoint `/resumo` separado. `backend/main.py` registra o router.
+`frontend/admin.html` ganhou o painel "DataHub" (mesmo padrão dos painéis de
+Catálogo/Métricas): status da conexão, pasta configurada, última sincronização,
+cards de contagem, extensões, pastas e arquivos recentes, botão "Sincronizar agora"
+com estado de carregamento. Nenhuma tabela nova no banco; nenhum arquivo do P1/P1.1
+alterado. Suíte: **86 passed** (70 + 16 novos, `tests/test_inventario_datahub.py` e
+`tests/test_datahub_router.py`, tudo mockado — nenhuma chamada real ao SharePoint).
+
 ## Próximo lote autorizado
 
-Nenhum lote além do P1 foi autorizado. **P2 só começa após validação explícita da
+Nenhum lote além do P2 foi autorizado. **P3 só começa após validação explícita da
 Maria.**

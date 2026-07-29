@@ -59,6 +59,12 @@
   .msg-erro { background: #fbe1df; color: #b3261e; }
   .oculto { display: none !important; }
   .ajuda { color: #888; font-size: 12px; margin-top: 2px; }
+  .datahub-info { font-size: 13px; margin: 10px 0; }
+  .datahub-info div { margin-bottom: 4px; }
+  .datahub-stats { display: flex; gap: 16px; margin: 14px 0; }
+  .stat { background: #f4f5f7; border-radius: 6px; padding: 10px 18px; text-align: center; }
+  .stat-numero { display: block; font-size: 22px; font-weight: 700; color: #2a4d8f; }
+  .stat-label { display: block; font-size: 11px; color: #666; text-transform: uppercase; }
 </style>
 </head>
 <body>
@@ -84,6 +90,7 @@
     <button data-painel="execucoes">Execuções</button>
     <button data-painel="catalogo">Catálogo</button>
     <button data-painel="metricas">Métricas</button>
+    <button data-painel="datahub">DataHub</button>
   </nav>
 
   <main>
@@ -259,6 +266,49 @@
         <tbody></tbody>
       </table>
     </section>
+
+    <!-- DATAHUB -->
+    <section id="painel-datahub" class="painel">
+      <h3>SharePoint DataHub</h3>
+      <p class="ajuda">Conexão somente leitura com a pasta do DataHub — sincronização manual, sem agendamento automático.</p>
+
+      <div id="datahubStatusMsg"></div>
+
+      <div class="datahub-info">
+        <div><strong>Pasta configurada:</strong> <span id="datahubPasta">—</span></div>
+        <div><strong>Última sincronização:</strong> <span id="datahubUltimaSync">nunca sincronizado</span></div>
+      </div>
+
+      <button class="acao" id="btnSincronizarDatahub">Sincronizar agora</button>
+
+      <div id="datahubResumo" class="oculto">
+        <div class="datahub-stats">
+          <div class="stat"><span class="stat-numero" id="datahubTotalArquivos">0</span><span class="stat-label">arquivos</span></div>
+          <div class="stat"><span class="stat-numero" id="datahubTotalPastas">0</span><span class="stat-label">pastas</span></div>
+        </div>
+
+        <fieldset>
+          <legend>Arquivos por extensão</legend>
+          <table id="tabelaDatahubExtensoes">
+            <thead><tr><th>Extensão</th><th>Quantidade</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+
+        <fieldset>
+          <legend>Pastas encontradas</legend>
+          <div id="datahubPastasLista" class="ajuda"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Arquivos mais recentes</legend>
+          <table id="tabelaDatahubRecentes">
+            <thead><tr><th>Arquivo</th><th>Caminho</th><th>Modificado em</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -333,6 +383,7 @@ function carregarTudo() {
   carregarExecucoes();
   carregarCatalogo();
   carregarMetricas();
+  carregarDatahubStatus();
 }
 
 let conectorUploadManualId = null;
@@ -478,6 +529,78 @@ async function carregarMetricas() {
       <td>${m.ativo ? "sim" : "não"}</td>
     </tr>`).join("") || `<tr><td colspan="8" class="ajuda">Nenhuma métrica cadastrada ainda.</td></tr>`;
 }
+
+// -------- datahub --------
+
+async function carregarDatahubStatus() {
+  try {
+    const dados = await api("/datahub/status");
+    renderizarDatahub(dados);
+  } catch (e) {
+    document.getElementById("datahubStatusMsg").innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+  }
+}
+
+function renderizarDatahub(dados) {
+  document.getElementById("datahubPasta").textContent = dados.pasta_configurada || "não configurado";
+  document.getElementById("datahubUltimaSync").textContent = dados.sincronizado_em
+    ? new Date(dados.sincronizado_em).toLocaleString("pt-BR")
+    : "nunca sincronizado";
+
+  const msgDiv = document.getElementById("datahubStatusMsg");
+  if (dados.ok === null) {
+    msgDiv.innerHTML = `<div class="msg">Ainda não sincronizado — clique em "Sincronizar agora".</div>`;
+  } else if (dados.ok) {
+    msgDiv.innerHTML = `<div class="msg msg-ok">Conexão com o DataHub OK.</div>`;
+  } else {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${dados.mensagem_erro}</div>`;
+  }
+
+  const resumoDiv = document.getElementById("datahubResumo");
+  if (!dados.resumo) {
+    resumoDiv.classList.add("oculto");
+    return;
+  }
+  resumoDiv.classList.remove("oculto");
+
+  document.getElementById("datahubTotalArquivos").textContent = dados.resumo.total_arquivos;
+  document.getElementById("datahubTotalPastas").textContent = dados.resumo.total_pastas;
+
+  const extBody = document.querySelector("#tabelaDatahubExtensoes tbody");
+  const extensoes = Object.entries(dados.resumo.extensoes).sort((a, b) => b[1] - a[1]);
+  extBody.innerHTML = extensoes.map(([ext, qtd]) => `
+    <tr><td>${ext || "(sem extensão)"}</td><td>${qtd}</td></tr>`).join("") ||
+    `<tr><td colspan="2" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
+
+  document.getElementById("datahubPastasLista").textContent = dados.resumo.pastas.length
+    ? dados.resumo.pastas.join(" · ")
+    : "Nenhuma pasta encontrada.";
+
+  const recentesBody = document.querySelector("#tabelaDatahubRecentes tbody");
+  recentesBody.innerHTML = dados.resumo.arquivos_recentes.map(a => `
+    <tr>
+      <td>${a.nome}</td>
+      <td>${a.caminho}</td>
+      <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
+    </tr>`).join("") || `<tr><td colspan="3" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
+}
+
+document.getElementById("btnSincronizarDatahub").addEventListener("click", async () => {
+  const btn = document.getElementById("btnSincronizarDatahub");
+  const msgDiv = document.getElementById("datahubStatusMsg");
+  btn.disabled = true;
+  btn.textContent = "Sincronizando...";
+  msgDiv.innerHTML = "";
+  try {
+    const dados = await api("/datahub/sincronizar", { method: "POST" });
+    renderizarDatahub(dados);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sincronizar agora";
+  }
+});
 
 // -------- de-para / armazém: criação --------
 
