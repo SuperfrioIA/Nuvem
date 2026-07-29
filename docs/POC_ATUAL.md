@@ -93,9 +93,11 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P1.1** | Correções do P1 achadas em revisão: cache de token, URL de subpasta, erro de configuração na hierarquia `GraphError` | **feito** (29/jul/2026) |
 | **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
 | **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
+| P2.1 | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | a fazer |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
+| P5.5 | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | a fazer |
 | P6 | Revisão final e limpeza pós-POC | a fazer |
 
 Especificação técnica completa de cada lote (endpoints, requisitos de segurança,
@@ -111,6 +113,15 @@ seção 8. Resumo de cada um:
   lista de pastas e arquivos recentes. O cliente Graph é síncrono (`httpx.get`) —
   declarar os endpoints como `def` comum, **não** `async def`, senão a
   sincronização bloqueia o event loop do FastAPI durante toda a varredura.
+- **P2.1** — o `children` do Graph já devolve `webUrl` e `id` por item, e o
+  inventário do P2 descarta os dois. Carregar ambos no dicionário de arquivo
+  (`backend/services/inventario_datahub.py`) e transformar o nome do arquivo em
+  link (`target="_blank"`) na lista do painel. O `id` é o `item_id` que o P3 vai
+  precisar pro download — entra na mesma alteração pra poupar retrabalho. Nenhuma
+  chamada nova ao Graph, nenhuma permissão nova. O link abre o SharePoint **como a
+  pessoa que clicou**, com as credenciais dela: quem não tem acesso ao site DataHub
+  vê o "acesso negado" do próprio SharePoint (comportamento aceito em 29/jul/2026 —
+  o app não empresta acesso a ninguém).
 - **P3** — download por `item_id` (nunca URL arbitrária), validação de
   nome/extensão/tamanho, leitura com `openpyxl`, metadados obrigatórios (arquivo,
   competência/filial inferidas, linhas lidas/válidas/descartadas, % qualidade).
@@ -122,6 +133,27 @@ seção 8. Resumo de cada um:
   líquido/bruto, UAs, valor movimentado); tela "KPIs da POC" com auditoria por KPI.
 - **P5** — template determinístico do resumo; `docs/DEMO_POC.md` com roteiro e
   checklist de preparação.
+- **P5.5** — **Nuvem do DataHub** (decisão de 29/jul/2026). Página **própria**
+  (`frontend/nuvem.html`), fora do `admin.html` — o admin é ferramenta de
+  administração, a nuvem é o produto. Fica **atrás da mesma sessão/senha** enquanto
+  mostrar grão fino (ver decisões técnicas). Escopo:
+  - **Bolinha = família do DataHub** (as 8 do inventário, agrupadas nas 4 áreas:
+    ENTRADA, SAIDA, ENTREGAS, ESTOQUE). Tamanho por nº de arquivos ou MB; estado
+    visual: integrada / mapeada mas não lida / só PDF.
+  - Nenhuma leitura nova de arquivo pra desenhar o grafo — usa o inventário que o
+    P2 já mantém em cache.
+  - **Clique na bolinha → área de baixo**: lista de arquivos daquela família (nome
+    com link pro SharePoint via `web_url` do P2.1, competência, filial, tamanho,
+    última modificação).
+  - **Só na família integrada** (`ENTRADA_MERCADORIAS`): além da lista, os cards de
+    KPI do P4 e **prévia de ~100 linhas** validadas, renderizadas na hora, sem
+    persistir nada (respeita "nada de dado bruto na camada fina"). Nas outras
+    bolinhas, metadado só — arquivos de SAIDA/ESTOQUE têm vários MB e a prévia
+    exigiria streaming com cuidado.
+  - **Sem bolinha acendendo** nesta versão (ver decisões técnicas). A bolinha é
+    mapa do que existe, não semáforo de risco.
+  - Frontend vanilla (HTML/JS/SVG), padrão do `mapa-dados` já validado em
+    21/jul/2026 — sem framework novo.
 - **P6** — limpeza de código temporário/prints/endpoints inseguros; suíte
   completa; `docs/ENTREGA_POC.md` com objetivo comprovado, limitações e riscos.
 
@@ -150,6 +182,27 @@ seção 8. Resumo de cada um:
   para o código novo).
 - Não criar tabela nova para o inventário do DataHub salvo necessidade clara
   (comparação entre sincronizações, rastreabilidade) — decisão fica para o P2.
+- **Nuvem em página própria, mas autenticada** (29/jul/2026): a decisão antiga do
+  projeto é "senha só no `/admin`, nuvem aberta na rede interna" — mas ela foi tomada
+  quando a nuvem mostraria só agregados e scores. O P5.5 exibe prévia de planilha com
+  nome de cliente, CNPJ, pesos e valores; numa página sem senha isso ficaria aberto a
+  qualquer pessoa da rede interna. Então: página separada do admin (organização), com
+  senha (exposição de dado). Bônus prático: os endpoints já vivem em
+  `/api/admin/datahub/*` e são reaproveitados sem criar endpoint público novo. A nuvem
+  verdadeiramente aberta continua sendo o Lote 5 do `docs/PLANO.md` — só agregados e
+  scores, sem prévia de arquivo.
+- **Bolinhas não acendem no P5.5** (29/jul/2026, decisão da Maria — "agora é pra
+  mostrar que temos os dados; só depois começar a dizer que algo está anormal"). Além
+  da razão de produto, a estatística não sustentaria: o motor exige 6 competências
+  anteriores à analisada, e o DataHub tem 7 (jan–jul/2026) — só jul/2026 seria
+  avaliável, com desvio-padrão tirado de 6 pontos (instável: `|z| >= 2` dispararia
+  quase por sorteio). As outras 6 competências cairiam em `historico_curto`. Se a
+  bolinha parecesse detector de anomalia sem ser, viraria pergunta difícil na
+  apresentação. Caminhos registrados para quando acender (nenhum autorizado):
+  regra fixa de cobertura/publicação (não precisa de histórico), variação vs
+  competência anterior (precisa de 2), motor de scores sobre as fontes do **DW**
+  (volumetria tem série 2021→hoje, histórico de verdade) e detectores de regra de
+  negócio (Lote 9/9.5 do `docs/PLANO.md`).
 - **Leitura de planilha por nome de coluna, não por posição** (29/jul/2026): o P3
   monta um dicionário cabeçalho→índice ao ler o arquivo e busca cada coluna que os
   KPIs precisam pelo rótulo. Motivo: se alguém acrescentar coluna na planilha
@@ -230,5 +283,9 @@ pdf, 1 json, 1 lock), sem erro.
 
 ## Próximo lote autorizado
 
-Nenhum lote além do P2 foi autorizado. **P3 só começa após validação explícita da
-Maria.**
+**P2.1 autorizado** (29/jul/2026) — curto, independente do P3, pode rodar já.
+
+**P5.5 registrado na fila, não autorizado a começar**: depende do P4 (precisa dos KPIs
+para o drill-down da família integrada), então roda depois do P5 e antes do P6.
+
+P3, P4, P5, P5.5 e P6 só começam após validação explícita da Maria, um por vez.
