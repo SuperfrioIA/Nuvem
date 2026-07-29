@@ -110,6 +110,8 @@ seção 8. Resumo de cada um:
 - **P3** — download por `item_id` (nunca URL arbitrária), validação de
   nome/extensão/tamanho, leitura com `openpyxl`, metadados obrigatórios (arquivo,
   competência/filial inferidas, linhas lidas/válidas/descartadas, % qualidade).
+  Colunas localizadas **por nome**, via dicionário cabeçalho→índice montado na
+  leitura — nunca índice chumbado (ver decisões técnicas).
 - **P4** — 3 a 5 KPIs entre os candidatos (registros, clientes, volume, peso
   líquido/bruto, UAs, valor movimentado); tela "KPIs da POC" com auditoria por KPI.
 - **P5** — template determinístico do resumo; `docs/DEMO_POC.md` com roteiro e
@@ -142,6 +144,15 @@ seção 8. Resumo de cada um:
   para o código novo).
 - Não criar tabela nova para o inventário do DataHub salvo necessidade clara
   (comparação entre sincronizações, rastreabilidade) — decisão fica para o P2.
+- **Leitura de planilha por nome de coluna, não por posição** (29/jul/2026): o P3
+  monta um dicionário cabeçalho→índice ao ler o arquivo e busca cada coluna que os
+  KPIs precisam pelo rótulo. Motivo: se alguém acrescentar coluna na planilha
+  amanhã, a leitura continua funcionando (coluna não mapeada simplesmente não entra
+  — mesma regra do parser dos modelos de importação, Lote 1). Índice chumbado
+  quebraria a cada coluna nova. Posição só entra para desempatar rótulo duplicado
+  (`EMB` aparece duas vezes em `ENTRADA_MERCADORIAS`) — e nenhum KPI candidato do P4
+  usa essas colunas. Coluna mapeada ausente ou renomeada deve **falhar com mensagem
+  clara** ("coluna 'Peso Bruto' não encontrada"), nunca produzir número errado.
 
 ## Status atualizado
 
