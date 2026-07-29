@@ -94,7 +94,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
 | **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
 | **P2.1** | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | **feito** (29/jul/2026) |
-| P2.2 | Escape de conteúdo externo no painel do DataHub | a fazer |
+| **P2.2** | Escape de conteúdo externo no painel do DataHub | **feito** (29/jul/2026) |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
@@ -309,6 +309,17 @@ pdf, 1 json, 1 lock), sem erro.
 faltar. `id` fica salvo no resumo como o `item_id` que o P3 vai usar pro download.
 Teste novo (`test_arquivo_inclui_id_e_web_url`) confirma que os dois campos
 sobrevivem do item bruto do Graph até o resumo. Suíte: **89 passed**.
+
+29/jul/2026 — **P2.2 fechado**: `frontend/admin.html` ganha helper `escaparHtml()`
+aplicado em `nome`, `caminho` e `extensao` nas duas tabelas do painel DataHub
+(extensões e arquivos recentes) — os três campos derivam de nome de arquivo cru do
+SharePoint e entravam por `innerHTML` sem escape. `web_url` só vira `<a href>` se
+passar validação de esquema (`^https?://`); fora isso, mostra o nome como texto
+puro, sem link. Sem mudança de backend, sem endpoint novo. Validado pela Maria ao
+vivo: rebuild da imagem (`docker compose up -d --build` — `frontend/` é `COPY` no
+Dockerfile, não volume) e injeção de payload malicioso via console do navegador
+(sem alterar dado real no SharePoint), sem disparo de script e sem link para nome
+malicioso. Suíte Python inalterada (nenhum arquivo `.py` tocado).
 
 ## Próximo lote autorizado
 

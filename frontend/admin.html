@@ -532,6 +532,15 @@ async function carregarMetricas() {
 
 // -------- datahub --------
 
+function escaparHtml(texto) {
+  return String(texto ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 async function carregarDatahubStatus() {
   try {
     const dados = await api("/datahub/status");
@@ -569,7 +578,7 @@ function renderizarDatahub(dados) {
   const extBody = document.querySelector("#tabelaDatahubExtensoes tbody");
   const extensoes = Object.entries(dados.resumo.extensoes).sort((a, b) => b[1] - a[1]);
   extBody.innerHTML = extensoes.map(([ext, qtd]) => `
-    <tr><td>${ext || "(sem extensão)"}</td><td>${qtd}</td></tr>`).join("") ||
+    <tr><td>${escaparHtml(ext) || "(sem extensão)"}</td><td>${qtd}</td></tr>`).join("") ||
     `<tr><td colspan="2" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
 
   document.getElementById("datahubPastasLista").textContent = dados.resumo.pastas.length
@@ -577,12 +586,19 @@ function renderizarDatahub(dados) {
     : "Nenhuma pasta encontrada.";
 
   const recentesBody = document.querySelector("#tabelaDatahubRecentes tbody");
-  recentesBody.innerHTML = dados.resumo.arquivos_recentes.map(a => `
+  recentesBody.innerHTML = dados.resumo.arquivos_recentes.map(a => {
+    const nome = escaparHtml(a.nome);
+    const linkSeguro = typeof a.web_url === "string" && /^https?:\/\//i.test(a.web_url);
+    const celulaNome = linkSeguro
+      ? `<a href="${escaparHtml(a.web_url)}" target="_blank" rel="noopener">${nome}</a>`
+      : nome;
+    return `
     <tr>
-      <td>${a.web_url ? `<a href="${a.web_url}" target="_blank" rel="noopener">${a.nome}</a>` : a.nome}</td>
-      <td>${a.caminho}</td>
+      <td>${celulaNome}</td>
+      <td>${escaparHtml(a.caminho)}</td>
       <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
-    </tr>`).join("") || `<tr><td colspan="3" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
+    </tr>`;
+  }).join("") || `<tr><td colspan="3" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
 }
 
 document.getElementById("btnSincronizarDatahub").addEventListener("click", async () => {
