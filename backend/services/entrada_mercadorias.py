@@ -141,6 +141,27 @@ def _paranum_br(valor):
         return None
 
 
+def item_mais_recente() -> str:
+    """item_id do arquivo ENTRADA_MERCADORIAS mais recente no inventario.
+
+    Decisao de 29/jul/2026: a tela de KPIs (Lote P4) nao deixa escolher entre
+    os arquivos da familia (tem ate 20, filial x competencia) -- sempre mostra
+    o mais recente sincronizado, mais simples pro POC.
+    """
+    resumo = inventario_datahub.status().get("resumo")
+    if not resumo:
+        raise EntradaMercadoriasError(
+            "nenhuma sincronizacao do DataHub ainda -- clique em 'Sincronizar agora' primeiro"
+        )
+    candidatos = [a for a in resumo.get("arquivos", []) if _PADRAO_NOME.match(a.get("nome", ""))]
+    if not candidatos:
+        raise EntradaMercadoriasError(
+            "nenhum arquivo ENTRADA_MERCADORIAS encontrado na ultima sincronizacao"
+        )
+    mais_recente = max(candidatos, key=lambda a: a.get("modificado_em") or "")
+    return mais_recente["id"]
+
+
 def ler(item_id: str) -> dict:
     """Baixa, valida e le a planilha; devolve metadados + linhas validadas.
 

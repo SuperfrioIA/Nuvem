@@ -126,6 +126,37 @@ def test_sem_sincronizacao_falha():
         entrada_mercadorias.ler(_ITEM_ID)
 
 
+# --- item_mais_recente() (Lote P4) --------------------------------------------
+
+
+def test_item_mais_recente_acha_arquivo_da_familia():
+    assert entrada_mercadorias.item_mais_recente() == _ITEM_ID
+
+
+def test_item_mais_recente_ignora_outras_familias():
+    outro = _arquivo_inventario(nome="GUIAS_ENTRADA_001_2607.xlsx", id_="item-outra-familia")
+    inventario_datahub._cache["resumo"]["arquivos"] = [outro]
+
+    with pytest.raises(entrada_mercadorias.EntradaMercadoriasError, match="nenhum arquivo ENTRADA_MERCADORIAS"):
+        entrada_mercadorias.item_mais_recente()
+
+
+def test_item_mais_recente_escolhe_o_mais_novo():
+    antigo = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2601.xlsx", id_="item-antigo")
+    antigo["modificado_em"] = "2026-01-01T00:00:00Z"
+    novo = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_002_2607.xlsx", id_="item-novo")
+    novo["modificado_em"] = "2026-07-13T00:00:00Z"
+    inventario_datahub._cache["resumo"]["arquivos"] = [antigo, novo]
+
+    assert entrada_mercadorias.item_mais_recente() == "item-novo"
+
+
+def test_item_mais_recente_sem_sincronizacao_falha():
+    inventario_datahub._cache.update({"resumo": None})
+    with pytest.raises(entrada_mercadorias.EntradaMercadoriasError, match="Sincronizar agora"):
+        entrada_mercadorias.item_mais_recente()
+
+
 # --- validacoes de nome/extensao/aba/coluna -----------------------------------
 
 

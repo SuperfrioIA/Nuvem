@@ -212,3 +212,38 @@ def test_ler_arquivo_acima_do_limite_da_413(cliente, monkeypatch):
 
     resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": _ARQUIVO_EM["id"]})
     assert resposta.status_code == 413
+
+
+# --- GET /kpis (Lote P4) ------------------------------------------------------
+
+
+def test_kpis_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.get("/api/admin/datahub/kpis")
+    assert resposta.status_code == 401
+
+
+def test_kpis_sem_sincronizacao_da_400(cliente):
+    resposta = cliente.get("/api/admin/datahub/kpis")
+    assert resposta.status_code == 400
+    assert "Sincronizar agora" in resposta.json()["detail"]
+
+
+def test_kpis_sucesso(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+
+    resposta = cliente.get("/api/admin/datahub/kpis")
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["arquivo"] == _ARQUIVO_EM["nome"]
+    assert corpo["filial"] == "001"
+    assert len(corpo["kpis"]) == 5
+    assert {k["chave"] for k in corpo["kpis"]} == {
+        "registros", "clientes", "volume", "peso_bruto", "valor_total",
+    }
+    assert corpo["por_cliente"] == [
+        {"cliente": "CLIENTE A", "registros": 1, "volume": 10.0, "peso_bruto": 1300.0, "valor_total": 12345.67}
+    ]

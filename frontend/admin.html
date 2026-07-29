@@ -65,6 +65,17 @@
   .stat { background: #f4f5f7; border-radius: 6px; padding: 10px 18px; text-align: center; }
   .stat-numero { display: block; font-size: 22px; font-weight: 700; color: #2a4d8f; }
   .stat-label { display: block; font-size: 11px; color: #666; text-transform: uppercase; }
+
+  .kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+  .kpi-card { background: #f4f5f7; border-radius: 6px; padding: 12px 16px; min-width: 160px; }
+  .kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: #2a4d8f; }
+  .kpi-card .kpi-nome { display: block; font-size: 12px; color: #444; margin-top: 2px; }
+  .kpi-card .kpi-audit { display: block; font-size: 11px; color: #888; margin-top: 6px; }
+  .kpis-grafico .barra-linha { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+  .kpis-grafico .barra-label { width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kpis-grafico .barra-track { flex: 1; background: #eef0f4; border-radius: 4px; height: 16px; }
+  .kpis-grafico .barra-fill { background: #2a4d8f; height: 100%; border-radius: 4px; }
+  .kpis-grafico .barra-valor { width: 120px; text-align: right; }
 </style>
 </head>
 <body>
@@ -91,6 +102,7 @@
     <button data-painel="catalogo">Catálogo</button>
     <button data-painel="metricas">Métricas</button>
     <button data-painel="datahub">DataHub</button>
+    <button data-painel="kpispoc">KPIs da POC</button>
   </nav>
 
   <main>
@@ -309,6 +321,41 @@
         </fieldset>
       </div>
     </section>
+
+    <!-- KPIS DA POC -->
+    <section id="painel-kpispoc" class="painel">
+      <h3>KPIs da POC</h3>
+      <p class="ajuda">Indicadores calculados a partir do arquivo ENTRADA_MERCADORIAS mais recente sincronizado do DataHub — sem persistir nada, recalculado a cada consulta.</p>
+
+      <div id="kpisPocMsg"></div>
+
+      <div id="kpisPocConteudo" class="oculto">
+        <div class="datahub-info">
+          <div><strong>Arquivo:</strong> <span id="kpisPocArquivo">—</span></div>
+          <div><strong>Filial:</strong> <span id="kpisPocFilial">—</span></div>
+          <div><strong>Competência:</strong> <span id="kpisPocCompetencia">—</span></div>
+          <div><strong>Atualizado em:</strong> <span id="kpisPocModificadoEm">—</span></div>
+          <div><strong>Qualidade da leitura:</strong> <span id="kpisPocQualidade">—</span></div>
+        </div>
+
+        <button class="acao" id="btnAtualizarKpisPoc">Atualizar</button>
+
+        <div id="kpisPocCards" class="kpis-cards"></div>
+
+        <fieldset>
+          <legend>Valor total por cliente (top 10)</legend>
+          <div id="kpisPocGrafico" class="kpis-grafico"></div>
+        </fieldset>
+
+        <fieldset>
+          <legend>KPIs por cliente</legend>
+          <table id="tabelaKpisPocClientes">
+            <thead><tr><th>Cliente</th><th>Registros</th><th>Volume</th><th>Peso bruto (kg)</th><th>Valor total</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </fieldset>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -371,6 +418,7 @@ document.querySelectorAll("nav button").forEach(btn => {
     document.querySelectorAll(".painel").forEach(p => p.classList.remove("ativo"));
     btn.classList.add("ativo");
     document.getElementById("painel-" + btn.dataset.painel).classList.add("ativo");
+    if (btn.dataset.painel === "kpispoc") carregarKpisPoc();
   });
 });
 
@@ -617,6 +665,74 @@ document.getElementById("btnSincronizarDatahub").addEventListener("click", async
     btn.textContent = "Sincronizar agora";
   }
 });
+
+// -------- kpis da poc --------
+
+async function carregarKpisPoc() {
+  const msgDiv = document.getElementById("kpisPocMsg");
+  const conteudo = document.getElementById("kpisPocConteudo");
+  msgDiv.innerHTML = `<div class="msg">Carregando...</div>`;
+  try {
+    const dados = await api("/datahub/kpis");
+    msgDiv.innerHTML = "";
+    conteudo.classList.remove("oculto");
+    renderizarKpisPoc(dados);
+  } catch (e) {
+    conteudo.classList.add("oculto");
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function formatarNumeroKpi(valor, unidade) {
+  const texto = Number(valor).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  return unidade ? `${texto} ${unidade}` : texto;
+}
+
+function formatarMoeda(valor) {
+  return Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function renderizarKpisPoc(dados) {
+  document.getElementById("kpisPocArquivo").textContent = dados.arquivo;
+  document.getElementById("kpisPocFilial").textContent = dados.filial;
+  document.getElementById("kpisPocCompetencia").textContent = dados.competencia;
+  document.getElementById("kpisPocModificadoEm").textContent = dados.modificado_em
+    ? new Date(dados.modificado_em).toLocaleString("pt-BR")
+    : "-";
+  document.getElementById("kpisPocQualidade").textContent =
+    `${dados.qualidade_pct}% (${dados.linhas_validas}/${dados.linhas_lidas} linhas válidas)`;
+
+  const cardsDiv = document.getElementById("kpisPocCards");
+  cardsDiv.innerHTML = dados.kpis.map(k => `
+    <div class="kpi-card">
+      <span class="kpi-valor">${escaparHtml(formatarNumeroKpi(k.valor, k.unidade))}</span>
+      <span class="kpi-nome">${escaparHtml(k.nome)}</span>
+      <span class="kpi-audit">${escaparHtml(k.regra)} · ${k.registros_validos} registros válidos · ${escaparHtml(k.fonte)}</span>
+    </div>`).join("");
+
+  const graficoDiv = document.getElementById("kpisPocGrafico");
+  const topClientes = dados.por_cliente.slice(0, 10);
+  const maxValor = Math.max(1, ...topClientes.map(c => c.valor_total));
+  graficoDiv.innerHTML = topClientes.map(c => `
+    <div class="barra-linha">
+      <div class="barra-label" title="${escaparHtml(c.cliente)}">${escaparHtml(c.cliente)}</div>
+      <div class="barra-track"><div class="barra-fill" style="width:${(c.valor_total / maxValor * 100).toFixed(1)}%"></div></div>
+      <div class="barra-valor">${escaparHtml(formatarMoeda(c.valor_total))}</div>
+    </div>`).join("") || `<div class="ajuda">Nenhum cliente encontrado.</div>`;
+
+  const tbody = document.querySelector("#tabelaKpisPocClientes tbody");
+  tbody.innerHTML = dados.por_cliente.map(c => `
+    <tr>
+      <td>${escaparHtml(c.cliente)}</td>
+      <td>${c.registros}</td>
+      <td>${escaparHtml(formatarNumeroKpi(c.volume, ""))}</td>
+      <td>${escaparHtml(formatarNumeroKpi(c.peso_bruto, ""))}</td>
+      <td>${escaparHtml(formatarMoeda(c.valor_total))}</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="ajuda">Nenhum cliente encontrado.</td></tr>`;
+}
+
+document.getElementById("btnAtualizarKpisPoc").addEventListener("click", carregarKpisPoc);
+
 
 // -------- de-para / armazém: criação --------
 

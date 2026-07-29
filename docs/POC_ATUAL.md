@@ -96,7 +96,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P2.1** | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | **feito** (29/jul/2026) |
 | **P2.2** | Escape de conteúdo externo no painel do DataHub | **feito** (29/jul/2026) |
 | **P3** | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | **feito** (29/jul/2026) |
-| P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
+| **P4** | KPIs da POC (`backend/services/kpis_poc.py`) | **feito** (29/jul/2026) |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
 | P5.5 | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | a fazer |
 | P6 | Revisão final e limpeza pós-POC | a fazer |
@@ -339,6 +339,30 @@ de tamanho (reaproveita `UPLOAD_MAX_MB`, sem variavel nova), timeout proprio de
 comum), devolve metadados + ate 100 linhas (arquivo real tem milhares). Validado
 pela Maria ao vivo contra o SharePoint real via console do navegador (chamada
 autenticada com a sessao do admin). Suite: **115 passed** (89 + 26 novos).
+
+29/jul/2026 — **P4 fechado**: `backend/services/kpis_poc.py` (novo) calcula 5 dos 7
+KPIs candidatos da especificação (decisão de 29/jul/2026: quantidade de registros,
+quantidade de clientes, volume total, peso bruto total, valor total movimentado —
+peso líquido e quantidade de UAs ficaram de fora por redundância pra esse demo).
+Cada KPI leva auditoria (coluna/regra, unidade, registros válidos, fonte) e há um
+agrupamento por cliente ordenado por valor total. `entrada_mercadorias.py` ganha
+`item_mais_recente()` — a tela não deixa escolher entre os até 20 arquivos da
+família, sempre usa o mais recente sincronizado. `backend/routers/datahub.py`
+ganha `GET /kpis` (sem cache próprio, recalcula a cada chamada — o botão
+"Atualizar" da tela é só uma nova chamada). `frontend/admin.html` ganha a aba
+"KPIs da POC": dados do arquivo, cards de KPI, gráfico de barras simples (valor por
+cliente, top 10) e tabela por cliente — carrega ao abrir a aba, escapa todo
+conteúdo vindo do SharePoint (nome de cliente, arquivo) via `escaparHtml()`.
+Validado pela Maria ao vivo contra o SharePoint real. Suíte: **126 passed**
+(115 + 11 novos).
+
+Achado à parte, fora do código do app: o ambiente local de validação (WSL2,
+Ubuntu-24.04, dockerd nativo sem Docker Desktop) desliga a distro por
+ociosidade entre comandos, derrubando o Docker e reiniciando os containers —
+pareceu bug do app, mas era o WSL. Sem `.wslconfig` (`vmIdleTimeout`) hoje;
+contornado nesta sessão mantendo um processo (`sleep infinity`) na distro.
+Ajuste permanente (criar `.wslconfig` com `vmIdleTimeout` maior) fica como
+decisão da Maria, não foi aplicado.
 
 ## Próximo lote autorizado
 
