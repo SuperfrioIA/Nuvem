@@ -179,6 +179,25 @@ metadata:
   e painel read-only no admin. 44 testes verdes (39 do R2 + 5 novos). R4–R6 não
   autorizados.
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026 e 22/jul/2026 — evita rediscutir do zero.
+- **Mudança de trajeto (29/jul/2026, decisão da Maria): o SharePoint DataHub passa a ser
+  fonte permanente, não conector opcional.** O desenho antigo era "upload manual na POC,
+  SharePoint depois"; agora é o contrário — **olhar sempre o DataHub** e **mesclar** com
+  as 5 fontes do DW (que precisam ser atualizadas) e com o que a Maria for acrescentando,
+  via upload ou direto no SharePoint. O `sharepoint_excel` deixa de ser alternativa ao
+  `upload_manual` e passa a conviver com ele: fontes diferentes, mesma camada fina.
+  Vínculo funcionando nessa data (app `nuvem-ia`, `Sites.Selected` + `read` no site
+  DataHub, lido com token de aplicação) — inventário completo em **docs/FONTES_DATAHUB.md**.
+  Só leitura: papel `read`, zero permissão delegada, escrita recusada pelo próprio Graph.
+  A pasta **não** contém as 5 fontes canônicas do DW — são exports do WMS SLIN (aba
+  sempre `SLIN`), 228 arquivos / 711 MB / 8 famílias, série jan–jul/2026, com os clientes
+  de catering da POC. Três coisas que o parser atual não faz e essas fontes exigem:
+  **linha de cabeçalho configurável** (varia entre 1, 2, 3 e 5 por família), **mapeamento
+  por posição** (nomes de coluna repetem — `EMB` duas vezes) e **concatenação de arquivos
+  partidos** (`_f1`/`_f2`/`_f3` = uma competência). Pendências humanas: de-para dos códigos
+  numéricos de filial (`001`/`002`/`015`/`016` vs siglas WMS) e quem publica com que
+  cadência. Próximo passo pedido pela Maria: **KPI básico de amostra**, só para provar o
+  vínculo, antes do KPI da POC.
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026 e 29/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

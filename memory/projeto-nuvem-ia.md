@@ -26,9 +26,21 @@ relatório detailed agora bloqueia o take or pay). **Lotes R1 e R1.1 fechados em
 fonte/modelo/versão/execução; R1.1 semeia os 5 modelos canônicos com v1 vinculada —
 banco novo já nasce utilizável; 33 testes; ver [[decisoes-fechadas]]). **R2 fechado**
 (22/jul/2026, linhagem: `medidas_recebidas` + `medida_linhagem` + origem/regra em
-`medidas`, migration 0003, 39 testes; ver [[decisoes-fechadas]]). R1/R1.1/R2 ainda não
-deployados na VM. Próximo: deploy na VM ou decidir o Lote 9 (ocupação composta). Base
-analítica da POC: `docs/Analise/saida/` (analise_rmsp.xlsx + analise-rmsp/ +
+`medidas`, migration 0003, 39 testes; ver [[decisoes-fechadas]]). R3 fechado (catálogo
+semântico de métricas). R1/R1.1/R2/R3 ainda não deployados na VM.
+
+**Virada de 29/jul/2026: o SharePoint DataHub virou fonte permanente e o vínculo está
+funcionando.** O app `nuvem-ia` lê com token de aplicação o site
+`/sites/DataHub`, pasta `00.Dados/00.Bronze/00.Dados_Sistemicos` (`Sites.Selected` +
+concessão `read`, somente leitura). A pasta tem 228 arquivos / 711 MB em 8 famílias de
+export do WMS SLIN (série jan–jul/2026, clientes de catering da POC) — **não** são as 5
+fontes canônicas do DW. Trajeto novo pedido pela Maria: olhar sempre o DataHub e mesclar
+com as fontes do DW (a atualizar) e com o que ela acrescentar. Inventário completo,
+colunas por família, obstáculos e pendências em `docs/FONTES_DATAHUB.md`. Próximo passo:
+**KPI básico de amostra** a partir do SharePoint, só para provar o vínculo, antes do KPI
+da POC.
+
+Base analítica da POC: `docs/Analise/saida/` (analise_rmsp.xlsx + analise-rmsp/ +
 mapa-dados com tabelas por nó e filtro por filial). Dona: Maria Watanabe (CSC).
 
 **Why:** hoje há milhares de BIs individuais e o cruzamento mora na cabeça das pessoas.

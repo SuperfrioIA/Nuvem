@@ -26,12 +26,24 @@ só onde há julgamento (o motor).
 
 - [x] Pedido à TI: app registration no Entra ID, permissão `Sites.Selected` — app
       `nuvem-ia` registrado, consentimento de administrador aprovado (16/jul/2026). Site
-      dedicado criado: `https://superfrioarmazens.sharepoint.com/sites/nuvem-ia`. Falta
-      só a concessão de escrita (`write`, não só leitura — o app vai gravar backup do
-      `upload_manual` lá além de ler a planilha de ocupação) nesse site: pedido feito a
-      quem tem `Sites.FullControl.All`/SharePoint Admin, aguardando aprovação.
+      dedicado criado: `https://superfrioarmazens.sharepoint.com/sites/nuvem-ia`.
       *21/jul/2026: fora do caminho crítico da apresentação da POC — a demo roda com
       os dados locais na máquina da Maria; SharePoint entra depois.*
+- [x] **Vínculo com o SharePoint funcionando (29/jul/2026)** — mudou o site: as bases
+      ficam no **site DataHub**, não no `nuvem-ia`
+      (`/sites/DataHub`, pasta `Documentos Compartilhados/00.Dados/00.Bronze/00.Dados_Sistemicos`).
+      Concessão `read` executada pelo Carlos (`carlos.rvsilva`, SharePoint Admin) — a
+      concessão de `Sites.Selected` é **por site**, e o consentimento de 16/jul não
+      bastava. Leitura confirmada com **token de aplicação**, não com conta de usuário.
+      Inventário completo (228 arquivos, 711 MB, 8 famílias do WMS SLIN), colunas por
+      família e obstáculos em **docs/FONTES_DATAHUB.md**. Escrita no site `nuvem-ia`
+      (backup do `pg_dump` + retenção dos xlsx) segue pendente e foi deliberadamente
+      **deixada fora** deste pedido para não atrasar a leitura.
+- [ ] De-para dos códigos numéricos de filial dos arquivos do DataHub (`001`, `002`,
+      `015`, `016`) para as siglas WMS do `depara_armazem` — bloqueia agregar qualquer
+      métrica dessas fontes por armazém. Ver docs/FONTES_DATAHUB.md §6
+- [ ] Confirmar quem publica na `00.Dados_Sistemicos` e com que cadência (as evidências
+      apontam republicação da competência corrente, não arquivo novo por mês)
 - [ ] Congelar o contrato da planilha de ocupação (aba + colunas fixas + quem preenche)
 - [x] Filiais do piloto escolhidas (21/jul/2026): **família RMSP** — a POC é catering
       (docs/PILOTO.md refeito nessa data; análise completa em `docs/Analise/saida/`).
