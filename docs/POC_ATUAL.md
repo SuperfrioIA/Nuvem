@@ -198,11 +198,11 @@ seção 8. Resumo de cada um:
   avaliável, com desvio-padrão tirado de 6 pontos (instável: `|z| >= 2` dispararia
   quase por sorteio). As outras 6 competências cairiam em `historico_curto`. Se a
   bolinha parecesse detector de anomalia sem ser, viraria pergunta difícil na
-  apresentação. Caminhos registrados para quando acender (nenhum autorizado):
-  regra fixa de cobertura/publicação (não precisa de histórico), variação vs
-  competência anterior (precisa de 2), motor de scores sobre as fontes do **DW**
-  (volumetria tem série 2021→hoje, histórico de verdade) e detectores de regra de
-  negócio (Lote 9/9.5 do `docs/PLANO.md`).
+  apresentação. Os quatro caminhos possíveis para quando acender — regra fixa de
+  cobertura/publicação, variação vs competência anterior, motor de scores sobre as
+  fontes do DW, detectores de regra de negócio — estão descritos em `docs/PLANO.md`,
+  nota de 29/jul/2026 no **Lote 5**. **Nenhum autorizado**; a escolha é conversa à
+  parte, fora do escopo da POC.
 - **Leitura de planilha por nome de coluna, não por posição** (29/jul/2026): o P3
   monta um dicionário cabeçalho→índice ao ler o arquivo e busca cada coluna que os
   KPIs precisam pelo rótulo. Motivo: se alguém acrescentar coluna na planilha

@@ -213,6 +213,36 @@ funciona; dump gerado e copiado pra fora da VM.
 **Check de conclusão:** abre em segundos lendo só a camada fina; contexto filtra; bolinhas
 fora do padrão acendem juntas; distingue sem-dado de normal.
 
+*Nota 29/jul/2026 — **como a bolinha vai acender: quatro caminhos, nenhum autorizado.**
+Levantados quando a Maria decidiu que o Lote P5.5 (nuvem do DataHub, ver
+docs/POC_ATUAL.md) entrega o grafo **sem** acender: "agora é pra mostrar que temos os
+dados; só depois começar a dizer que algo está anormal". Ficam registrados aqui pra
+discussão futura — decidir qual(is) adotar é conversa à parte.*
+
+1. ***Regra fixa de cobertura/publicação.** Acende quando falta o arquivo de uma
+   competência numa família, quando a competência corrente não é republicada há N dias,
+   ou quando uma parte `_f2`/`_f3` está ausente. Não precisa de histórico nenhum e é
+   totalmente explicável ("acendeu porque falta o arquivo da filial 002 em junho"). Não
+   é anomalia de negócio, é **qualidade de dado** — e por isso nunca mente. É a mais
+   barata e a candidata natural a primeira.*
+2. ***Variação contra a competência anterior.** Acende se a métrica variou mais de X%
+   vs o mês anterior. Precisa de 2 competências só. Simples, mas o X é arbitrário sem
+   histórico e série curta gera falso positivo com facilidade.*
+3. ***Motor de scores atual (z-score) sobre as fontes do DW, não do DataHub.** Achado
+   que motivou a lista: as bolinhas que já poderiam acender com estatística de verdade
+   são as do **DW** — a volumetria (`fato.csv`) tem série 2021→hoje e está carregada
+   desde o Lote 8. O DataHub tem jan–jul/2026: como o motor exige 6 competências
+   anteriores à analisada, só jul/2026 seria avaliável, com desvio-padrão tirado de 6
+   pontos (instável — `|z| >= 2` dispararia quase por sorteio) e as outras 6 em
+   `historico_curto`. Uma nuvem híbrida (acende nas métricas do DW, "só mapa" nas do
+   DataHub) é honesta e não exige nada novo no motor.*
+4. ***Detectores de regra de negócio.** Cobertura contratual acima de 100%, contrato
+   vencido com movimento nos últimos 60 dias, ocupação acima do limite. É o que
+   responde as 3 perguntas do docs/PILOTO.md — e é o que a revisão arquitetural já
+   apontou (docs/DIAGNOSTICO.md, achado 3: o z-score não responde nenhuma das 3). Mas
+   depende do Lote 9 (regra de composição da ocupação, ainda não fechada) e das fontes
+   do DW atualizadas.*
+
 ## Lote 6 — Confiança e acabamento
 
 **Status: a fazer** · **Modelo:** Sonnet 5 / Haiku 4.5.
