@@ -92,6 +92,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P1** | Configuração + cliente mínimo do Microsoft Graph (`backend/config.py`, `backend/services/graph_datahub.py`) | **feito** (29/jul/2026) |
 | **P1.1** | Correções do P1 achadas em revisão: cache de token, URL de subpasta, erro de configuração na hierarquia `GraphError` | **feito** (29/jul/2026) |
 | **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
+| **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
@@ -207,6 +208,25 @@ cards de contagem, extensões, pastas e arquivos recentes, botão "Sincronizar a
 com estado de carregamento. Nenhuma tabela nova no banco; nenhum arquivo do P1/P1.1
 alterado. Suíte: **86 passed** (70 + 16 novos, `tests/test_inventario_datahub.py` e
 `tests/test_datahub_router.py`, tudo mockado — nenhuma chamada real ao SharePoint).
+
+29/jul/2026 — **P1.2 fechado** (bug achado testando o P2 ao vivo, pela Maria, contra
+o SharePoint real): o primeiro clique em "Sincronizar agora" voltou
+`resposta inesperada do Graph (HTTP 400)`. Causa raiz confirmada chamando o Graph
+real: `listar_itens()` endereçava a pasta encadeando **dois** segmentos de caminho
+com `:` numa URL só (`/sites/{host}:{caminho}:/drive/root:/{pasta}:/children`) — o
+Graph não aceita isso e respondia
+`"Resource not found for the segment 'root:'."`. Correção: `graph_datahub.py` ganha
+`_resolver_site_id()` (resolve o site pelo caminho — um só `:` — e cacheia o ID
+retornado, sem `:`, reaproveitado entre chamadas); `listar_itens()` passa a
+endereçar a pasta e as subpastas pelo ID do site, nunca mais encadeando dois `:`.
+`tests/test_graph_datahub.py`: testes de listagem com sucesso ajustados pra
+responder a chamada extra de resolução do site (helper `_mock_get`); os testes de
+erro (403/404/429/timeout/rede/resposta malformada) não precisaram mudar — o mesmo
+tipo de exceção é levantado não importa em qual das duas chamadas o erro
+aconteça; 2 testes novos (site ID reaproveitado entre chamadas, resposta sem campo
+`id`). Suíte: **88 passed**. Validado ao vivo contra o SharePoint real após a
+correção: sincronização completa em ~40s, **249 arquivos, 31 pastas** (228 xlsx, 19
+pdf, 1 json, 1 lock), sem erro.
 
 ## Próximo lote autorizado
 

@@ -22,11 +22,14 @@ def variaveis_graph(monkeypatch):
     monkeypatch.setenv("GRAPH_CLIENT_SECRET", "segredo-fake-nao-usar")
     monkeypatch.setenv("GRAPH_SITE_PATH", "empresa.sharepoint.com:/sites/DataHub")
     monkeypatch.setenv("GRAPH_PASTA", "00.Dados/00.Bronze/00.Dados_Sistemicos")
-    # O token vive em cache de processo (Lote P1.1) -- zerar antes e depois, senao
-    # um teste herda o token do anterior e o mock de autenticacao nunca e exercido.
+    # Token e ID do site vivem em cache de processo (Lote P1.1/P1.2) -- zerar
+    # antes e depois, senao um teste herda o cache do anterior e o mock nunca e
+    # exercido.
     graph_datahub._invalidar_token()
+    graph_datahub._invalidar_site_id()
     yield
     graph_datahub._invalidar_token()
+    graph_datahub._invalidar_site_id()
 
 
 def _resposta_token_ok(token="token-fake-123"):
@@ -37,6 +40,26 @@ def _mock_post_token_ok(monkeypatch, token="token-fake-123"):
     monkeypatch.setattr(
         graph_datahub.httpx, "post", lambda url, **kwargs: _resposta_token_ok(token)
     )
+
+
+_SITE_ID_FAKE = "fake-site-id"
+_URL_RESOLUCAO_SITE = "https://graph.microsoft.com/v1.0/sites/empresa.sharepoint.com:/sites/DataHub"
+
+
+def _mock_get(monkeypatch, resposta_ou_funcao):
+    """Registra um httpx.get fake: resolve o site com um ID fixo (Lote P1.2) e
+    delega a resposta da listagem em si -- resposta_ou_funcao pode ser uma
+    httpx.Response fixa ou uma funcao url -> httpx.Response, pra testes que
+    precisam variar a resposta por pagina."""
+
+    def _fake_get(url, **kwargs):
+        if url == _URL_RESOLUCAO_SITE:
+            return httpx.Response(200, json={"id": _SITE_ID_FAKE})
+        if callable(resposta_ou_funcao):
+            return resposta_ou_funcao(url)
+        return resposta_ou_funcao
+
+    monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
 
 
 # --- backend/config.py -------------------------------------------------------
@@ -108,56 +131,58 @@ def test_obter_token_nunca_aparece_no_erro(monkeypatch):
 
 
 def test_listar_itens_url_da_pasta_configurada(monkeypatch):
+    """So um segmento ':' por URL (Lote P1.2): resolve o site pelo caminho
+    (1 segmento ':'), depois usa o ID retornado -- sem ':' -- pra enderecar a
+    pasta. Encadear os dois caminhos ':' numa URL so (o desenho do P1/P1.1)
+    reproduziu 400 "Resource not found for the segment 'root:'." ao vivo."""
     _mock_post_token_ok(monkeypatch)
     urls_chamadas = []
 
     def _fake_get(url, **kwargs):
         urls_chamadas.append(url)
+        if url == _URL_RESOLUCAO_SITE:
+            return httpx.Response(200, json={"id": _SITE_ID_FAKE})
         return httpx.Response(200, json={"value": []})
 
     monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
     graph_datahub.listar_itens()
     assert urls_chamadas == [
-        "https://graph.microsoft.com/v1.0/sites/empresa.sharepoint.com:/sites/DataHub"
-        ":/drive/root:/00.Dados/00.Bronze/00.Dados_Sistemicos:/children"
+        _URL_RESOLUCAO_SITE,
+        f"https://graph.microsoft.com/v1.0/sites/{_SITE_ID_FAKE}"
+        "/drive/root:/00.Dados/00.Bronze/00.Dados_Sistemicos:/children",
     ]
 
 
 def test_listar_itens_url_de_subpasta(monkeypatch):
-    """A URL de subpasta precisa fechar o caminho do site com `:` antes de seguir
-    pro sub-recurso -- sem isso o Graph responde 400/404 (Lote P1.1). E o caminho
-    que a listagem recursiva do P2 usa."""
+    """Mesma regra do teste acima, pro caminho de subpasta (listagem recursiva
+    do P2): ID do site (sem ':'), nao o caminho do site, endereça o item."""
     _mock_post_token_ok(monkeypatch)
     urls_chamadas = []
 
     def _fake_get(url, **kwargs):
         urls_chamadas.append(url)
+        if url == _URL_RESOLUCAO_SITE:
+            return httpx.Response(200, json={"id": _SITE_ID_FAKE})
         return httpx.Response(200, json={"value": []})
 
     monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
     graph_datahub.listar_itens(item_id="01ABCDEF")
     assert urls_chamadas == [
-        "https://graph.microsoft.com/v1.0/sites/empresa.sharepoint.com:/sites/DataHub"
-        ":/drive/items/01ABCDEF/children"
+        _URL_RESOLUCAO_SITE,
+        f"https://graph.microsoft.com/v1.0/sites/{_SITE_ID_FAKE}/drive/items/01ABCDEF/children",
     ]
 
 
 def test_listar_itens_lista_vazia(monkeypatch):
     _mock_post_token_ok(monkeypatch)
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
     assert graph_datahub.listar_itens() == []
 
 
 def test_listar_itens_uma_pagina(monkeypatch):
     _mock_post_token_ok(monkeypatch)
     itens_esperados = [{"name": "a.xlsx"}, {"name": "b.xlsx"}]
-    monkeypatch.setattr(
-        graph_datahub.httpx,
-        "get",
-        lambda url, **kwargs: httpx.Response(200, json={"value": itens_esperados}),
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": itens_esperados}))
     assert graph_datahub.listar_itens() == itens_esperados
 
 
@@ -165,14 +190,14 @@ def test_listar_itens_multiplas_paginas(monkeypatch):
     _mock_post_token_ok(monkeypatch)
     url_pagina_2 = "https://graph.microsoft.com/v1.0/pagina-2"
 
-    def _fake_get(url, **kwargs):
+    def _resposta_listagem(url):
         if url == url_pagina_2:
             return httpx.Response(200, json={"value": [{"name": "b.xlsx"}]})
         return httpx.Response(
             200, json={"value": [{"name": "a.xlsx"}], "@odata.nextLink": url_pagina_2}
         )
 
-    monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
+    _mock_get(monkeypatch, _resposta_listagem)
     itens = graph_datahub.listar_itens()
     assert [item["name"] for item in itens] == ["a.xlsx", "b.xlsx"]
 
@@ -233,8 +258,39 @@ def test_listar_itens_resposta_nao_e_json(monkeypatch):
 
 def test_listar_itens_resposta_sem_campo_value(monkeypatch):
     _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={}))
+    with pytest.raises(graph_datahub.GraphRespostaInvalidaError):
+        graph_datahub.listar_itens()
+
+
+# --- resolucao do site (Lote P1.2) ---------------------------------------------
+
+
+def test_site_id_reaproveitado_entre_chamadas(monkeypatch):
+    """Resolver o site e mais uma ida ao Graph -- a listagem recursiva do P2
+    percorre dezenas de pastas e nao pode refazer essa resolucao a cada uma."""
+    _mock_post_token_ok(monkeypatch)
+    resolucoes = []
+
+    def _fake_get(url, **kwargs):
+        if url == _URL_RESOLUCAO_SITE:
+            resolucoes.append(url)
+            return httpx.Response(200, json={"id": _SITE_ID_FAKE})
+        return httpx.Response(200, json={"value": []})
+
+    monkeypatch.setattr(graph_datahub.httpx, "get", _fake_get)
+    graph_datahub.listar_itens()
+    graph_datahub.listar_itens(item_id="01ABCDEF")
+    graph_datahub.listar_itens()
+    assert len(resolucoes) == 1
+
+
+def test_site_id_resposta_sem_campo_id(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
     monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={})
+        graph_datahub.httpx,
+        "get",
+        lambda url, **kwargs: httpx.Response(200, json={"nao_e_id": "x"}),
     )
     with pytest.raises(graph_datahub.GraphRespostaInvalidaError):
         graph_datahub.listar_itens()
@@ -259,9 +315,7 @@ def test_token_reaproveitado_entre_chamadas(monkeypatch):
     """Listagem recursiva percorre dezenas de pastas: uma autenticacao por pasta
     seria ida desnecessaria ao login.microsoftonline.com e risco de 429."""
     autenticacoes = _contar_autenticacoes(monkeypatch)
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
     graph_datahub.listar_itens()
     graph_datahub.listar_itens()
     graph_datahub.listar_itens()
@@ -270,9 +324,7 @@ def test_token_reaproveitado_entre_chamadas(monkeypatch):
 
 def test_token_renovado_quando_expira(monkeypatch):
     autenticacoes = _contar_autenticacoes(monkeypatch)
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
     graph_datahub.listar_itens()
     graph_datahub._token_expira_em = 0.0  # simula vencimento
     graph_datahub.listar_itens()
@@ -289,9 +341,7 @@ def test_token_invalidado_apos_401(monkeypatch):
     with pytest.raises(graph_datahub.GraphAutenticacaoInvalidaError):
         graph_datahub.listar_itens()
 
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
     graph_datahub.listar_itens()
     assert len(autenticacoes) == 2
 
@@ -301,9 +351,7 @@ def test_token_invalidado_apos_401(monkeypatch):
 
 def test_testar_conexao_ok(monkeypatch):
     _mock_post_token_ok(monkeypatch)
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
     resultado = graph_datahub.testar_conexao()
     assert resultado == {"ok": True, "mensagem": "conexao com o DataHub OK"}
 
@@ -409,9 +457,7 @@ def test_nenhuma_chamada_de_escrita_chega_no_graph(monkeypatch):
         return _resposta_token_ok()
 
     monkeypatch.setattr(graph_datahub.httpx, "post", _post_vigiado)
-    monkeypatch.setattr(
-        graph_datahub.httpx, "get", lambda url, **kwargs: httpx.Response(200, json={"value": []})
-    )
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
 
     graph_datahub.listar_itens()
     graph_datahub.listar_itens(item_id="01ABCDEF")

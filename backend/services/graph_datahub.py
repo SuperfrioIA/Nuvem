@@ -34,6 +34,7 @@ _MARGEM_RENOVACAO_SEGUNDOS = 300.0
 
 _token_em_cache: str | None = None
 _token_expira_em: float = 0.0
+_site_id_em_cache: str | None = None
 
 
 class GraphError(Exception):
@@ -85,6 +86,12 @@ def _invalidar_token() -> None:
     global _token_em_cache, _token_expira_em
     _token_em_cache = None
     _token_expira_em = 0.0
+
+
+def _invalidar_site_id() -> None:
+    """Descarta o ID do site em cache (usado nos testes)."""
+    global _site_id_em_cache
+    _site_id_em_cache = None
 
 
 def obter_token() -> str:
@@ -171,6 +178,35 @@ def _requisitar(url: str, token: str) -> dict:
         raise GraphRespostaInvalidaError("resposta do Graph nao e JSON valido") from exc
 
 
+def _resolver_site_id(token: str) -> str:
+    """Resolve e cacheia o ID do site (Lote P1.2).
+
+    O Graph nao aceita dois segmentos de caminho com ':' encadeados na mesma
+    URL. `.../sites/{host}:{caminho}:/drive/root:/{pasta}:/children` (site por
+    caminho + item por caminho, os dois com ':') responde 400 "Resource not
+    found for the segment 'root:'." -- reproduzido ao vivo em 29/jul/2026,
+    testando a sincronizacao real do Lote P2. A correcao e resolver o site
+    pelo caminho (um so segmento ':') e usar o ID retornado (sem ':') pra
+    enderecar o drive dali em diante -- so um segmento ':' por URL.
+    """
+    global _site_id_em_cache
+    if _site_id_em_cache is not None:
+        return _site_id_em_cache
+
+    config = _configuracao()
+    url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}"
+    corpo = _requisitar(url, token)
+    try:
+        site_id = corpo["id"]
+    except KeyError as exc:
+        raise GraphRespostaInvalidaError(
+            "resposta do Graph sem o campo 'id' ao resolver o site"
+        ) from exc
+
+    _site_id_em_cache = site_id
+    return site_id
+
+
 def listar_itens(item_id: str | None = None) -> list[dict]:
     """Lista os itens (arquivos/pastas) filhos de uma pasta, seguindo paginacao
     por @odata.nextLink ate esgotar.
@@ -179,18 +215,15 @@ def listar_itens(item_id: str | None = None) -> list[dict]:
     qualquer chamador pode disparar sem argumento nenhum. item_id e o id de
     item do proprio Graph (nunca um caminho digitado por usuario/frontend);
     serve pra quem ja tem um id descoberto numa chamada anterior descer numa
-    subpasta (uso futuro do Lote P2, listagem recursiva).
+    subpasta (listagem recursiva do Lote P2).
     """
     config = _configuracao()
     token = obter_token()
+    site_id = _resolver_site_id(token)
     if item_id is None:
-        url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}:/drive/root:/{config.pasta}:/children"
+        url = f"{_GRAPH_BASE_URL}/sites/{site_id}/drive/root:/{config.pasta}:/children"
     else:
-        # O `:` que fecha o caminho do site e obrigatorio antes de seguir pro
-        # sub-recurso: GRAPH_SITE_PATH e do tipo `host:/sites/DataHub`, e sem esse
-        # fechamento o Graph le `/sites/DataHub/drive/...` como parte do caminho do
-        # site e responde 400/404.
-        url = f"{_GRAPH_BASE_URL}/sites/{config.site_path}:/drive/items/{item_id}/children"
+        url = f"{_GRAPH_BASE_URL}/sites/{site_id}/drive/items/{item_id}/children"
 
     itens: list[dict] = []
     while url:
