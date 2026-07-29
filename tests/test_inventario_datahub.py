@@ -102,6 +102,21 @@ def test_arquivo_inclui_id_e_web_url(monkeypatch):
     assert arquivo["web_url"] == "https://superfrio.sharepoint.com/a.xlsx"
 
 
+def test_resumo_guarda_lista_completa_de_arquivos(monkeypatch):
+    """Lote P3: 'arquivos' e a lista de permissao pro download por item_id --
+    tem que conter todo mundo, nao so os _MAX_ARQUIVOS_RECENTES."""
+    arquivos = [
+        _item_arquivo(f"arquivo_{i}.xlsx", modificado_em=f"2026-07-{i:02d}T00:00:00Z", id_=f"id-{i}")
+        for i in range(1, 13)  # 12 arquivos, mais que os 10 recentes
+    ]
+    monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: arquivos if item_id is None else [])
+
+    resultado = inventario_datahub.sincronizar()
+    lista = resultado["resumo"]["arquivos"]
+    assert len(lista) == 12
+    assert {a["id"] for a in lista} == {f"id-{i}" for i in range(1, 13)}
+
+
 def test_erro_preserva_resumo_anterior(monkeypatch):
     arvore_ok = {None: [_item_arquivo("a.xlsx")]}
     monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: arvore_ok[item_id])

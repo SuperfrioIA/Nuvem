@@ -1,13 +1,16 @@
-"""Testes dos endpoints /api/admin/datahub/* (Lote P2), via TestClient.
-graph_datahub.listar_itens e sempre mockado -- nenhuma chamada real ao
-SharePoint/Microsoft Graph.
+"""Testes dos endpoints /api/admin/datahub/* (Lotes P2 e P3), via TestClient.
+graph_datahub e sempre mockado -- nenhuma chamada real ao SharePoint/Microsoft
+Graph.
 """
 
+import io
+
+import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.services import graph_datahub, inventario_datahub
+from backend.services import entrada_mercadorias, graph_datahub, inventario_datahub
 
 
 @pytest.fixture(autouse=True)
@@ -110,3 +113,102 @@ def test_sincronizar_sem_configuracao_da_mensagem_clara(cliente, monkeypatch):
     corpo = resposta.json()
     assert corpo["ok"] is False
     assert "GRAPH_" in corpo["mensagem_erro"]
+
+
+# --- POST /ler (Lote P3) -------------------------------------------------
+
+_ARQUIVO_EM = {
+    "nome": "ENTRADA_MERCADORIAS_001_2607.xlsx",
+    "tamanho": 1000,
+    "modificado_em": "2026-07-13T00:00:00Z",
+    "id": "item-fake-em",
+    "web_url": "https://exemplo/arquivo",
+}
+
+
+def _linha_valida_entrada_mercadorias():
+    # Lista completa (com EMB duplicado), alinhada 1:1 com o cabecalho escrito
+    # em _xlsx_entrada_mercadorias -- deduplicar aqui desalinharia a partir da
+    # segunda ocorrencia de EMB (cabecalho com 20 colunas, linha com 19).
+    colunas = list(entrada_mercadorias._COLUNAS_ESPERADAS)
+    valores = {
+        "Cliente": "CLIENTE A", "Cliente CNPJ": "12345678000199", "GEM": "GEM1",
+        "Devolução": "N", "Solicitação": "SOL1", "NF Entrada": "NF001",
+        "Código": "COD1", "Descrição": "DESCRICAO", "Volume": 10, "EMB": "CX",
+        "Fração": 1, "Peso Líquido": "1.234,56", "Peso Bruto": 1300,
+        "Vlr. Unitário": 5.5, "Vlr. Total": "12.345,67", "Qtde UA": 3,
+        "Código Estoque": "EST1", "Nome Estoque": "ESTOQUE 1", "Operação": "ENTRADA",
+    }
+    return [valores[c] for c in colunas]
+
+
+def _xlsx_entrada_mercadorias():
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "SLIN"
+    ws.append(list(entrada_mercadorias._COLUNAS_ESPERADAS))
+    ws.append(_linha_valida_entrada_mercadorias())
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
+def _sincronizar_com_arquivo_em(cliente, monkeypatch):
+    """Simula uma sincronizacao ja feita, com o arquivo padrao no inventario."""
+    _configurar_graph_fake(monkeypatch)
+    item = {
+        "name": _ARQUIVO_EM["nome"], "file": {}, "size": _ARQUIVO_EM["tamanho"],
+        "lastModifiedDateTime": _ARQUIVO_EM["modificado_em"], "id": _ARQUIVO_EM["id"],
+        "webUrl": _ARQUIVO_EM["web_url"],
+    }
+    monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: [item] if item_id is None else [])
+    resposta = cliente.post("/api/admin/datahub/sincronizar")
+    assert resposta.status_code == 200
+
+
+def test_ler_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.post("/api/admin/datahub/ler", json={"item_id": "qualquer"})
+    assert resposta.status_code == 401
+
+
+def test_ler_sem_sincronizacao_da_400(cliente):
+    resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": "qualquer"})
+    assert resposta.status_code == 400
+    assert "Sincronizar agora" in resposta.json()["detail"]
+
+
+def test_ler_item_id_fora_do_inventario_da_400(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": "item-desconhecido"})
+    assert resposta.status_code == 400
+    assert "nao encontrado" in resposta.json()["detail"]
+
+
+def test_ler_sucesso(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+
+    resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": _ARQUIVO_EM["id"]})
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["arquivo"] == _ARQUIVO_EM["nome"]
+    assert corpo["filial"] == "001"
+    assert corpo["competencia"] == "2026-07"
+    assert corpo["linhas_validas"] == 1
+    assert len(corpo["linhas_amostra"]) == 1
+    assert "linhas" not in corpo
+
+
+def test_ler_arquivo_acima_do_limite_da_413(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+
+    def _falha(item_id, limite_bytes):
+        raise graph_datahub.GraphArquivoGrandeError("simulado: acima do limite")
+
+    monkeypatch.setattr(graph_datahub, "baixar_item", _falha)
+
+    resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": _ARQUIVO_EM["id"]})
+    assert resposta.status_code == 413

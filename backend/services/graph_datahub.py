@@ -28,6 +28,10 @@ from backend.config import ConfiguracaoGraphIncompletaError, obter_configuracao_
 
 _GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0"
 _TIMEOUT_SEGUNDOS = 10.0
+# O timeout de listagem e pra uma pagina de ate 200 itens de metadado -- baixar
+# o conteudo de um arquivo (Lote P3) e uma operacao diferente, mais lenta;
+# timeout proprio, maior.
+_TIMEOUT_DOWNLOAD_SEGUNDOS = 60.0
 # O token do Graph vale ~1h. Renovamos com folga pra nao usar um token que expira
 # no meio de uma listagem recursiva longa.
 _MARGEM_RENOVACAO_SEGUNDOS = 300.0
@@ -71,6 +75,11 @@ class GraphConfiguracaoIncompletaError(GraphError):
     GraphError de proposito: quem captura GraphError (ex: testar_conexao, endpoints
     do painel) trata falta de configuracao como qualquer outra falha, com mensagem
     clara na tela em vez de erro 500."""
+
+
+class GraphArquivoGrandeError(GraphError):
+    """Arquivo maior que o limite configurado -- download abortado no meio do
+    streaming, sem terminar de baixar o resto pro processo."""
 
 
 def _configuracao():
@@ -234,6 +243,63 @@ def listar_itens(item_id: str | None = None) -> list[dict]:
         itens.extend(valores)
         url = corpo.get("@odata.nextLink")
     return itens
+
+
+def baixar_item(item_id: str, limite_bytes: int) -> bytes:
+    """Baixa o conteudo binario de um arquivo pelo item_id (Lote P3).
+
+    item_id e sempre um id resolvido numa sincronizacao anterior (nunca um
+    caminho digitado) -- quem chama (backend/services/entrada_mercadorias.py)
+    ja validou isso contra o inventario antes de chegar aqui.
+
+    Streaming com corte por tamanho: nao confia so no Content-Length (pode
+    faltar ou nao bater com o corpo real) -- aborta assim que o acumulado
+    ultrapassa limite_bytes, sem terminar de baixar o resto pro processo.
+    """
+    token = obter_token()
+    site_id = _resolver_site_id(token)
+    url = f"{_GRAPH_BASE_URL}/sites/{site_id}/drive/items/{item_id}/content"
+    cabecalhos = {"Authorization": f"Bearer {token}"}
+
+    try:
+        # follow_redirects=True: o Graph costuma responder o download com um
+        # redirect 302 pra uma URL temporaria de blob storage, sem precisar do
+        # Bearer token la.
+        with httpx.stream(
+            "GET", url, headers=cabecalhos, timeout=_TIMEOUT_DOWNLOAD_SEGUNDOS, follow_redirects=True
+        ) as resposta:
+            if resposta.status_code == 401:
+                _invalidar_token()
+                raise GraphAutenticacaoInvalidaError("token rejeitado pelo Graph (HTTP 401)")
+            if resposta.status_code == 403:
+                raise GraphAcessoNegadoError(
+                    "acesso negado pelo Graph (HTTP 403) -- confirme a concessao read no site"
+                )
+            if resposta.status_code == 404:
+                raise GraphRecursoNaoEncontradoError(
+                    "arquivo nao encontrado no Graph (HTTP 404) -- pode ter sido movido/apagado"
+                )
+            if resposta.status_code == 429:
+                raise GraphLimiteExcedidoError("limite de requisicoes do Graph excedido (HTTP 429)")
+            if resposta.status_code != 200:
+                raise GraphIndisponivelError(
+                    f"resposta inesperada do Graph ao baixar arquivo (HTTP {resposta.status_code})"
+                )
+
+            pedacos: list[bytes] = []
+            total = 0
+            for pedaco in resposta.iter_bytes():
+                total += len(pedaco)
+                if total > limite_bytes:
+                    raise GraphArquivoGrandeError(
+                        f"arquivo maior que o limite de download ({limite_bytes} bytes)"
+                    )
+                pedacos.append(pedaco)
+            return b"".join(pedacos)
+    except httpx.TimeoutException as exc:
+        raise GraphIndisponivelError("timeout ao baixar arquivo do Graph") from exc
+    except httpx.HTTPError as exc:
+        raise GraphIndisponivelError("falha de rede ao baixar arquivo do Graph") from exc
 
 
 def testar_conexao() -> dict:

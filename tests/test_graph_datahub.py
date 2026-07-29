@@ -346,6 +346,108 @@ def test_token_invalidado_apos_401(monkeypatch):
     assert len(autenticacoes) == 2
 
 
+# --- baixar_item() -------------------------------------------------------
+
+
+class _RespostaStreamFake:
+    def __init__(self, status_code, pedacos=(b"",)):
+        self.status_code = status_code
+        self._pedacos = pedacos
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def iter_bytes(self):
+        yield from self._pedacos
+
+
+def _mock_stream(monkeypatch, status_code=200, pedacos=(b"conteudo",), excecao=None):
+    def _fake_stream(method, url, **kwargs):
+        if excecao is not None:
+            raise excecao
+        assert method == "GET"
+        return _RespostaStreamFake(status_code, pedacos)
+
+    monkeypatch.setattr(graph_datahub.httpx, "stream", _fake_stream)
+
+
+def test_baixar_item_sucesso(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, pedacos=(b"parte1", b"parte2"))
+
+    conteudo = graph_datahub.baixar_item("item-123", limite_bytes=1000)
+    assert conteudo == b"parte1parte2"
+
+
+def test_baixar_item_acima_do_limite_aborta_sem_carregar_tudo(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, pedacos=(b"a" * 600, b"b" * 600))
+
+    with pytest.raises(graph_datahub.GraphArquivoGrandeError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_acesso_negado(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, status_code=403)
+
+    with pytest.raises(graph_datahub.GraphAcessoNegadoError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_nao_encontrado(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, status_code=404)
+
+    with pytest.raises(graph_datahub.GraphRecursoNaoEncontradoError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_limite_do_graph_excedido(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, status_code=429)
+
+    with pytest.raises(graph_datahub.GraphLimiteExcedidoError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_timeout(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, excecao=httpx.TimeoutException("tempo esgotado"))
+
+    with pytest.raises(graph_datahub.GraphIndisponivelError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_falha_de_rede(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    _mock_stream(monkeypatch, excecao=httpx.ConnectError("conexao recusada"))
+
+    with pytest.raises(graph_datahub.GraphIndisponivelError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+
+
+def test_baixar_item_token_rejeitado_invalida_cache(monkeypatch):
+    _mock_post_token_ok(monkeypatch)
+    _mock_get(monkeypatch, httpx.Response(200, json={"value": []}))
+    graph_datahub.obter_token()  # popula o cache de token
+    _mock_stream(monkeypatch, status_code=401)
+
+    with pytest.raises(graph_datahub.GraphAutenticacaoInvalidaError):
+        graph_datahub.baixar_item("item-123", limite_bytes=1000)
+    assert graph_datahub._token_em_cache is None
+
+
 # --- testar_conexao() ---------------------------------------------------------
 
 

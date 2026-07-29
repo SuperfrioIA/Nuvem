@@ -93,4 +93,9 @@ def _construir_resumo() -> dict:
         "extensoes": extensoes,
         "pastas": sorted(pastas),
         "arquivos_recentes": arquivos_recentes,
+        # Lista completa (nao so os _MAX_ARQUIVOS_RECENTES) -- e a lista de
+        # permissao que o Lote P3 usa pra aceitar um item_id de download: so um
+        # id que apareceu nesta sincronizacao pode ser baixado, nunca um id
+        # digitado/arbitrario.
+        "arquivos": sorted(arquivos, key=lambda a: a["caminho"]),
     }
