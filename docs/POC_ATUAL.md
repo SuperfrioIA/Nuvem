@@ -95,7 +95,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
 | **P2.1** | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | **feito** (29/jul/2026) |
 | **P2.2** | Escape de conteúdo externo no painel do DataHub | **feito** (29/jul/2026) |
-| P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
+| **P3** | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | **feito** (29/jul/2026) |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
 | P5.5 | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | a fazer |
@@ -320,6 +320,25 @@ vivo: rebuild da imagem (`docker compose up -d --build` — `frontend/` é `COPY
 Dockerfile, não volume) e injeção de payload malicioso via console do navegador
 (sem alterar dado real no SharePoint), sem disparo de script e sem link para nome
 malicioso. Suíte Python inalterada (nenhum arquivo `.py` tocado).
+
+29/jul/2026 — **P3 fechado**: `backend/services/entrada_mercadorias.py` (novo) le
+e valida a familia `ENTRADA_MERCADORIAS`. Guarda de seguranca: item_id so e aceito
+se aparecer na ultima sincronizacao (`inventario_datahub.py` ganhou a chave
+`arquivos` -- lista completa dos itens, nao so os 10 recentes -- vira a lista de
+permissao). Nome tem que bater `ENTRADA_MERCADORIAS_{filial}_{AAMM}.xlsx`, extensao
+`.xlsx`, aba `SLIN`. Decisao de 29/jul/2026: as 20 colunas do export sao
+obrigatorias no cabecalho (nao so as 6 dos KPIs do P4), mas so as 6 numericas
+(Volume, Peso Líquido, Peso Bruto, Vlr. Unitário, Vlr. Total, Qtde UA) recebem
+validacao de valor -- aceita numero nativo do openpyxl ou texto no formato BR
+(ponto de milhar, virgula decimal), descarta a linha se nao converter. Filial fica
+crua (codigo numerico do nome do arquivo) -- de-para pra sigla WMS continua
+pendencia humana (§6 do FONTES_DATAHUB), pela inconsistencia ja documentada do
+`GUIAS_ENTRADA_001`. `graph_datahub.py` ganha `baixar_item()`: streaming com corte
+de tamanho (reaproveita `UPLOAD_MAX_MB`, sem variavel nova), timeout proprio de
+60s, segue redirect do Graph. `backend/routers/datahub.py` ganha `POST /ler` (def
+comum), devolve metadados + ate 100 linhas (arquivo real tem milhares). Validado
+pela Maria ao vivo contra o SharePoint real via console do navegador (chamada
+autenticada com a sessao do admin). Suite: **115 passed** (89 + 26 novos).
 
 ## Próximo lote autorizado
 
