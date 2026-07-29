@@ -94,6 +94,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
 | **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
 | **P2.1** | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | **feito** (29/jul/2026) |
+| P2.2 | Escape de conteúdo externo no painel do DataHub | a fazer |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
@@ -122,6 +123,11 @@ seção 8. Resumo de cada um:
   pessoa que clicou**, com as credenciais dela: quem não tem acesso ao site DataHub
   vê o "acesso negado" do próprio SharePoint (comportamento aceito em 29/jul/2026 —
   o app não empresta acesso a ninguém).
+- **P2.2** — endurecer a renderização do painel do DataHub: helper `escaparHtml()`
+  (ou `textContent`/`createElement`, padrão que o `admin.html` já usa em outro
+  ponto) nos valores que vêm do SharePoint, e validação de esquema (só `http`/
+  `https`) antes de pôr a `web_url` num `href`. Curto e independente dos outros
+  lotes. Ver a decisão técnica sobre escape.
 - **P3** — download por `item_id` (nunca URL arbitrária), validação de
   nome/extensão/tamanho, leitura com `openpyxl`, metadados obrigatórios (arquivo,
   competência/filial inferidas, linhas lidas/válidas/descartadas, % qualidade).
@@ -154,6 +160,9 @@ seção 8. Resumo de cada um:
     mapa do que existe, não semáforo de risco.
   - Frontend vanilla (HTML/JS/SVG), padrão do `mapa-dados` já validado em
     21/jul/2026 — sem framework novo.
+  - **Escape obrigatório** (ver decisões técnicas): a lista de arquivos e a prévia
+    de 100 linhas são conteúdo vindo do SharePoint — nada disso entra por
+    `innerHTML` sem escapar.
 - **P6** — limpeza de código temporário/prints/endpoints inseguros; suíte
   completa; `docs/ENTREGA_POC.md` com objetivo comprovado, limitações e riscos.
 
@@ -203,6 +212,17 @@ seção 8. Resumo de cada um:
   fontes do DW, detectores de regra de negócio — estão descritos em `docs/PLANO.md`,
   nota de 29/jul/2026 no **Lote 5**. **Nenhum autorizado**; a escolha é conversa à
   parte, fora do escopo da POC.
+- **Conteúdo do SharePoint nunca entra por `innerHTML` sem escapar** (29/jul/2026):
+  nome de arquivo, caminho, `web_url` e — no P5.5 — as células da prévia de 100 linhas
+  são texto controlado por quem publica na biblioteca do DataHub, não pelo projeto. Um
+  arquivo nomeado com HTML executaria script dentro do painel autenticado, com a
+  sessão do admin. Probabilidade baixa (exige ator interno com acesso de escrita
+  nomeando arquivo de propósito), mas a superfície cresce muito no P5.5, onde a prévia
+  são milhares de células externas. Regra: escapar (helper `escaparHtml()`) ou montar
+  via `textContent`/`createElement`; e validar esquema (`http`/`https`) antes de usar
+  URL externa em `href`. O padrão de `innerHTML` com template string é anterior ao
+  P2.1 — não é regressão dele; o P2.2 corrige o painel atual e o P5.5 nasce já com a
+  regra.
 - **Leitura de planilha por nome de coluna, não por posição** (29/jul/2026): o P3
   monta um dicionário cabeçalho→índice ao ler o arquivo e busca cada coluna que os
   KPIs precisam pelo rótulo. Motivo: se alguém acrescentar coluna na planilha
