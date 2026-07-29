@@ -2,11 +2,14 @@
 
 Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 
-1. [MEMORY.md](MEMORY.md) + `memory/` — estado e decisões vivas do projeto (autoritativo).
-2. [docs/PLANO.md](docs/PLANO.md) — plano de construção em lotes + status atual de cada
-   lote (onde a construção parou). Ler antes de codar; marcar o check ao fechar um lote.
-3. [docs/ARQUITETURA.md](docs/ARQUITETURA.md) — desenho técnico fechado.
-4. [docs/HISTORICO.md](docs/HISTORICO.md) — os prompts originais que desenrolaram o
+1. [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — dono único do escopo ativo e do status
+   dos lotes P0–P6 da POC SharePoint DataHub (onde a construção parou). Ler antes de
+   codar; marcar o status ao fechar um lote.
+2. [MEMORY.md](MEMORY.md) + `memory/` — estado e decisões vivas do projeto (autoritativo).
+3. [docs/PLANO.md](docs/PLANO.md) — histórico do plano de produto em lotes (0–10,
+   R0–R3); nenhum lote daqui é autorizado automaticamente — ver `docs/POC_ATUAL.md`.
+4. [docs/ARQUITETURA.md](docs/ARQUITETURA.md) — desenho técnico fechado.
+5. [docs/HISTORICO.md](docs/HISTORICO.md) — os prompts originais que desenrolaram o
    projeto (contexto completo da conversa de origem).
 
 ## Regras para IA

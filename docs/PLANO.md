@@ -1,5 +1,9 @@
 # Plano de construção — Nuvem IA
 
+> Plano ativo da POC: [docs/POC_ATUAL.md](POC_ATUAL.md). Este arquivo é o histórico
+> do plano de produto (Lotes 0–10, R0–R3) — nenhum lote daqui está autorizado
+> automaticamente (29/jul/2026).
+
 Plano em lotes (agrupados por módulo tocado, não por prioridade). **Um lote por vez;
 aguardar validação antes do próximo.** Gatilho pra começar: a Maria diz "vamos pro
 Lote N". Ao fechar um lote, marcar o check e **commitar** — este arquivo é a verdade
@@ -122,6 +126,13 @@ valendo como checagem.*
 Depende do Lote 0 pra testar de verdade. *Não bloqueia a apresentação da POC
 (21/jul/2026): a demo roda com dados locais (upload manual + retenção em pasta
 local, desenho do Lote 1); SharePoint entra depois, sem mudar arquitetura.*
+
+*Nota 29/jul/2026: parágrafo acima superado — o SharePoint DataHub passou a ser
+fonte permanente, não conector opcional que "entra depois" (ver
+memory/decisoes-fechadas.md). O canal DataHub ganhou marco próprio (Lotes P0–P6,
+docs/POC_ATUAL.md), fora deste plano; o `sharepoint_excel` deste Lote 2 continua
+válido como conector formal (formato canônico + modelos de importação), a construir
+depois da POC.*
 
 - [ ] Interface única (`testar` / `buscar` / `detalhar`)
 - [ ] Conector `sharepoint_excel` (Microsoft Graph)

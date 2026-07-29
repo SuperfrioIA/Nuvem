@@ -1,5 +1,6 @@
 - [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; POC = catering família RMSP; Lotes 1, 3, 7, 7.1, 8, 8.5, R0–R3 feitos; SharePoint DataHub vinculado em 29/jul
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, auth só no admin, DataHub como fonte permanente (29/jul)
-- Plano de construção em lotes e status vivo: [docs/PLANO.md](docs/PLANO.md) — marcar check ao fechar cada lote
+- Escopo e status ativos da POC (dono único, lotes P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — ler antes de codar; marcar status ao fechar lote
+- Plano de construção em lotes (histórico, 0–10/R0–R3): [docs/PLANO.md](docs/PLANO.md) — status vivo desses lotes; não confundir com o status da POC P0–P6 (isso é o POC_ATUAL.md)
 - [IP da VM da Nuvem IA](memory/vm-nuvem-ia.md) — `172.31.49.141:8002`, admin em produção
 - Fontes do SharePoint DataHub (inventário, colunas, obstáculos): [docs/FONTES_DATAHUB.md](docs/FONTES_DATAHUB.md) — ler antes de mexer no conector `sharepoint_excel`

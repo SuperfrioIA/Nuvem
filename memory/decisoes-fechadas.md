@@ -198,6 +198,24 @@ metadata:
   cadência. Próximo passo pedido pela Maria: **KPI básico de amostra**, só para provar o
   vínculo, antes do KPI da POC.
 
+- **Lote P0 (29/jul/2026) — organização segura + marco do canal DataHub.** Os
+  Lotes P0–P6 (`docs/DIRECIONAMENTO_POC_NUVEM_IA_CLAUDE.md`) são o marco que prova o
+  canal SharePoint DataHub de ponta a ponta com um KPI de amostra — **uma** POC
+  (catering RMSP) alimentada por **dois canais de fonte** que convergem na mesma
+  camada fina: SharePoint DataHub (exports WMS SLIN) e arquivos locais do Pentaho/DW
+  (os 5 modelos do Lote 8, via upload manual). A camada de IA para redigir o resumo
+  da POC foi cortada (resumo só por template determinístico; IA narradora segue fora
+  de escopo, candidata a incremento pós-demo). **`docs/POC_ATUAL.md` passa a ser o
+  dono único do escopo ativo e do status dos lotes P0–P6** — nenhum outro documento
+  mantém esse status; `docs/PLANO.md` continua sendo o histórico do plano de produto
+  (Lotes 0–10, R0–R3), sem mover nem reescrever. `docs/DIRECIONAMENTO_POC_NUVEM_IA_CLAUDE.md`
+  foi marcado como superado (mantido no lugar como referência técnica detalhada de
+  cada lote P1–P6). Inventário completo do repositório (Git × disco) em
+  `docs/ORGANIZACAO_REPOSITORIO.md` — confirmado: `docs/Analise/` e `data/` existem
+  só no disco (gitignored), nenhum dado real/credencial está rastreado no Git; único
+  binário rastreado é `docs/configuracao_graph_api.docx` (já conferido sem
+  credenciais). Nenhum arquivo foi movido ou removido neste lote.
+
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026 e 29/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

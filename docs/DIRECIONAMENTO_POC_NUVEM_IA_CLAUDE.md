@@ -1,5 +1,11 @@
 # Direcionamento de execução — POC Nuvem IA + organização do projeto
 
+> **Superado por [docs/POC_ATUAL.md](POC_ATUAL.md) em 29/jul/2026 — não usar para
+> execução.** `docs/POC_ATUAL.md` é o dono único do escopo ativo e do status dos
+> Lotes P0–P6. Este documento fica no lugar como referência técnica detalhada de
+> cada lote (endpoints, requisitos de segurança, casos de teste) — não como fonte
+> de status.
+
 ## 1. Contexto obrigatório
 
 Você está trabalhando no repositório:

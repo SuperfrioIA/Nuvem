@@ -7,6 +7,7 @@ data/
 *.db
 .DS_Store
 Thumbs.db
+.vscode/
 
 # dados reais (cliente/operacao) e analise a parte dos relatorios do dw (17/jul/2026)
 # -- exports brutos + saidas (excel, mapa) nao vao pro historico do git
