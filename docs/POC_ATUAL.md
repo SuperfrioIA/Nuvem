@@ -93,7 +93,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P1.1** | Correções do P1 achadas em revisão: cache de token, URL de subpasta, erro de configuração na hierarquia `GraphError` | **feito** (29/jul/2026) |
 | **P2** | Tela DataHub + sincronização manual (`backend/routers/datahub.py`) | **feito** (29/jul/2026) |
 | **P1.2** | Correção achada testando o P2 ao vivo: endereçamento por site ID no cliente Graph | **feito** (29/jul/2026) |
-| P2.1 | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | a fazer |
+| **P2.1** | Link do arquivo pro SharePoint (`web_url` + `id` no inventário) | **feito** (29/jul/2026) |
 | P3 | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | a fazer |
 | P4 | KPIs da POC (`backend/services/kpis_poc.py`) | a fazer |
 | P5 | Resumo textual (template) + acabamento da demo | a fazer |
@@ -281,9 +281,16 @@ aconteça; 2 testes novos (site ID reaproveitado entre chamadas, resposta sem ca
 correção: sincronização completa em ~40s, **249 arquivos, 31 pastas** (228 xlsx, 19
 pdf, 1 json, 1 lock), sem erro.
 
-## Próximo lote autorizado
+29/jul/2026 — **P2.1 fechado**: `backend/services/inventario_datahub.py` carrega
+`id` e `web_url` de cada item de arquivo direto do `children` do Graph (campos
+`id`/`webUrl`, já vinham na resposta — confirmado ao vivo, nenhuma chamada nova).
+`frontend/admin.html`: nome do arquivo na tabela de recentes vira link
+(`target="_blank" rel="noopener"`) pro `web_url`, com fallback pro texto simples se
+faltar. `id` fica salvo no resumo como o `item_id` que o P3 vai usar pro download.
+Teste novo (`test_arquivo_inclui_id_e_web_url`) confirma que os dois campos
+sobrevivem do item bruto do Graph até o resumo. Suíte: **89 passed**.
 
-**P2.1 autorizado** (29/jul/2026) — curto, independente do P3, pode rodar já.
+## Próximo lote autorizado
 
 **P5.5 registrado na fila, não autorizado a começar**: depende do P4 (precisa dos KPIs
 para o drill-down da família integrada), então roda depois do P5 e antes do P6.

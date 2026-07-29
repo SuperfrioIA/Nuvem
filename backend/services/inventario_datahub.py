@@ -73,6 +73,11 @@ def _construir_resumo() -> dict:
                         "caminho": caminho_item,
                         "tamanho": item.get("size", 0),
                         "modificado_em": item.get("lastModifiedDateTime"),
+                        # id: o item_id que o Lote P3 vai usar pra baixar o arquivo.
+                        # web_url: link pro SharePoint (Lote P2.1) -- abre com as
+                        # credenciais de quem clicou, nao empresta acesso do app.
+                        "id": item.get("id"),
+                        "web_url": item.get("webUrl"),
                     }
                 )
 

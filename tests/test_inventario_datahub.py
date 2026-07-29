@@ -21,8 +21,17 @@ def _item_pasta(id_, nome):
     return {"id": id_, "name": nome, "folder": {}}
 
 
-def _item_arquivo(nome, tamanho=100, modificado_em="2026-07-01T00:00:00Z"):
-    return {"name": nome, "file": {}, "size": tamanho, "lastModifiedDateTime": modificado_em}
+def _item_arquivo(
+    nome, tamanho=100, modificado_em="2026-07-01T00:00:00Z", id_="item-fake", web_url="https://exemplo/arquivo"
+):
+    return {
+        "name": nome,
+        "file": {},
+        "size": tamanho,
+        "lastModifiedDateTime": modificado_em,
+        "id": id_,
+        "webUrl": web_url,
+    }
 
 
 def test_estado_inicial_nunca_sincronizado():
@@ -77,6 +86,20 @@ def test_arquivos_recentes_ordenados_e_limitados(monkeypatch):
     recentes = resultado["resumo"]["arquivos_recentes"]
     assert len(recentes) == 10
     assert [r["nome"] for r in recentes] == [f"arquivo_{i}.xlsx" for i in range(12, 2, -1)]
+
+
+def test_arquivo_inclui_id_e_web_url(monkeypatch):
+    """Lote P2.1: id (pro download do P3) e web_url (link no painel) precisam
+    sobreviver do item bruto do Graph ate o arquivo do resumo."""
+    arvore = {
+        None: [_item_arquivo("a.xlsx", id_="01ABCDEF", web_url="https://superfrio.sharepoint.com/a.xlsx")]
+    }
+    monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: arvore[item_id])
+
+    resultado = inventario_datahub.sincronizar()
+    arquivo = resultado["resumo"]["arquivos_recentes"][0]
+    assert arquivo["id"] == "01ABCDEF"
+    assert arquivo["web_url"] == "https://superfrio.sharepoint.com/a.xlsx"
 
 
 def test_erro_preserva_resumo_anterior(monkeypatch):

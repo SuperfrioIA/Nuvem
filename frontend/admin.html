@@ -579,7 +579,7 @@ function renderizarDatahub(dados) {
   const recentesBody = document.querySelector("#tabelaDatahubRecentes tbody");
   recentesBody.innerHTML = dados.resumo.arquivos_recentes.map(a => `
     <tr>
-      <td>${a.nome}</td>
+      <td>${a.web_url ? `<a href="${a.web_url}" target="_blank" rel="noopener">${a.nome}</a>` : a.nome}</td>
       <td>${a.caminho}</td>
       <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
     </tr>`).join("") || `<tr><td colspan="3" class="ajuda">Nenhum arquivo encontrado.</td></tr>`;
