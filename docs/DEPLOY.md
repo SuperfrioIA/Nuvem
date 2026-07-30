@@ -143,6 +143,70 @@ Não me mande o conteúdo dos segredos.
 
 ---
 
+## Passo 4.1 — Variáveis do Microsoft Graph (DataHub)
+
+*Acrescentado em 30/jul/2026, depois de executado na VM real. Necessário desde o Lote
+P1 (leitura do SharePoint DataHub); o `.env` criado no Passo 4 acima é anterior a ele
+e só tem as 4 chaves. Se o painel do DataHub acusar "configuração do Graph incompleta
+— faltam as variáveis: …", é isto que está faltando.*
+
+São 5 variáveis. **Três saem do próprio repositório**, não precisa entrar no Azure:
+
+| Variável | Valor | Fonte |
+|---|---|---|
+| `GRAPH_CLIENT_ID` | `7324ef4d-54e4-4fc9-9179-00a5c95b8855` | docs/FONTES_DATAHUB.md §1 |
+| `GRAPH_SITE_PATH` | `superfrioarmazens.sharepoint.com:/sites/DataHub` | `.env.example` |
+| `GRAPH_PASTA` | `00.Dados/00.Bronze/00.Dados_Sistemicos` | `.env.example` |
+| `GRAPH_TENANT_ID` | — | `.env` de outra máquina já configurada, ou Azure → app `nuvem-ia` → Directory (tenant) ID |
+| `GRAPH_CLIENT_SECRET` | — | `.env` de outra máquina já configurada (é o **Value**, nunca o Secret ID) |
+
+**O client secret não é recuperável do Azure** — aparece uma única vez, na criação. Se
+a única cópia se perder, alguém com direito no app registration precisa gerar um novo.
+Guarde uma cópia em gerenciador de senhas. Ele **expira em 12 meses**; essa é a única
+manutenção periódica do vínculo.
+
+```bash
+cd /home/ubuntu/nuvemIA
+nano .env          # acrescenta as 5 linhas no fim
+chmod 600 .env
+docker compose up -d
+```
+
+Use o **nano**, não `echo`/heredoc: assim o secret não fica no `~/.bash_history`.
+
+**`up -d`, nunca `restart`** — este é o erro que mais engana: `docker compose restart`
+reinicia o mesmo container com o mesmo ambiente e a mensagem de "faltam as variáveis"
+continua idêntica. Só `up -d` recria o container lendo o `.env` novo.
+
+Conferir que chegaram no container, sem imprimir valor nenhum:
+
+```bash
+docker compose exec nuvem-app env | grep '^GRAPH_' | cut -d= -f1
+```
+
+Depois: `/admin` → painel DataHub → **Sincronizar agora**.
+
+### Se falhar, a mensagem diz a camada
+
+- **"timeout / falha de rede ao autenticar no Graph"** → saída HTTPS da VM. Testar:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://login.microsoftonline.com/common/v2.0/.well-known/openid-configuration
+curl -s -o /dev/null -w '%{http_code}\n' https://graph.microsoft.com/v1.0/
+```
+
+  Esperado `200` e `401` — **401 é boa notícia**: a rede chega e o Graph só recusa por
+  falta de token. Travando ou `000`, abrir chamado com a Valcann (mesmo caminho da
+  porta 8001 do Hub). *Em 30/jul/2026 a VM real não precisou de chamado: a saída
+  HTTPS já estava liberada, como aconteceu com a porta 8002.*
+- **"credencial do Graph rejeitada (HTTP 400/401)"** → secret errado ou vencido. O
+  clássico é ter copiado o Secret ID (GUID de 36 caracteres) em vez do Value.
+- **"acesso negado (HTTP 403)"** → concessão `read` no site DataHub (ver
+  docs/FONTES_DATAHUB.md §1).
+- **"faltam as variáveis" de novo** → foi `restart` em vez de `up -d`.
+
+---
+
 ## Passo 5 — Subir
 
 ```bash

@@ -27,7 +27,10 @@ fonte/modelo/versão/execução; R1.1 semeia os 5 modelos canônicos com v1 vinc
 banco novo já nasce utilizável; 33 testes; ver [[decisoes-fechadas]]). **R2 fechado**
 (22/jul/2026, linhagem: `medidas_recebidas` + `medida_linhagem` + origem/regra em
 `medidas`, migration 0003, 39 testes; ver [[decisoes-fechadas]]). R3 fechado (catálogo
-semântico de métricas). R1/R1.1/R2/R3 ainda não deployados na VM.
+semântico de métricas). **R1–R3 deployados na VM em 30/jul/2026** (`alembic current`
+= `0004_catalogo_metricas (head)`), junto com a configuração dos `GRAPH_*` no `.env`
+de produção — a saída HTTPS da VM já estava liberada, sem chamado, e a sincronização
+real do DataHub rodou na VM sem erro. Runbook em docs/DEPLOY.md, "Passo 4.1".
 
 **Virada de 29/jul/2026: o SharePoint DataHub virou fonte permanente e o vínculo está
 funcionando.** O app `nuvem-ia` lê com token de aplicação o site

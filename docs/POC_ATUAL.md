@@ -84,6 +84,18 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
   migrations 0002–0004 (R1–R3 ainda não deployados lá), repassar os `GRAPH_*` no
   compose/`.env` da VM, confirmar saída HTTPS da VM pros endpoints da Microsoft.
 
+**Nota 30/jul/2026 — fase 2 executada, as três pendências acima estão resolvidas:**
+
+- `GRAPH_*` configurados no `.env` da VM (as 3 do repositório + tenant/secret copiados
+  da máquina local). Runbook permanente em `docs/DEPLOY.md`, "Passo 4.1" — inclui a
+  pegadinha do `up -d` em vez de `restart`, que é o erro que reproduz a mensagem de
+  "faltam as variáveis" mesmo depois de editar o arquivo.
+- **Saída HTTPS da VM não precisou de chamado** — já estava liberada, mesmo padrão da
+  porta 8002 em 20/jul/2026. A Valcann fica de fallback se alguma coisa futura fechar.
+- **Migrations aplicadas:** `alembic current` na VM = `0004_catalogo_metricas (head)`.
+  R1/R1.1/R2/R3 estão deployados lá.
+- Sincronização real do DataHub confirmada na VM, sem erro.
+
 ## Lotes e status
 
 | Lote | Objetivo | Status |
