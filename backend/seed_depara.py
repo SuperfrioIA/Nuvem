@@ -78,7 +78,7 @@ ARMAZENS = [
      "apelidos": ["CWBIII", "001029", "02060862002936"]},
     {"sigla": "RMSPII", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPII", "008001", "06975242000187", "45"]},
-    {"sigla": "RMSPIII", "nome": "Barueri/SP", "ativo": True,
+    {"sigla": "RMSPIII", "nome": "Barueri/SP", "ativo": False,
      "apelidos": ["RMSPIII", "008002", "06975242000268", "46"]},
     {"sigla": "RMRJ", "nome": "Duque de Caxias/RJ", "ativo": True,
      "apelidos": ["RMRJ", "008004", "06975242000420"]},
@@ -102,12 +102,15 @@ ARMAZENS = [
     # contratadas da RMSPIII (analise_rmsp.xlsx).
 
     # Lote 7.1 (21/jul/2026, POC catering RMSP): RMSPV nasceu no WMS em 14/jul/2026,
-    # ainda sem capacidade/contrato/volumetria — ativa e vazia. RMSPIV existe só no
-    # cadastro Protheus, nunca apareceu em fonte do DW — registrada pra resolver
-    # de-para de uploads antigos, mas inativa (mesmo padrão da MRS).
+    # ainda sem capacidade/contrato/volumetria — ativa e vazia. RMSPIV foi cadastrada
+    # aqui como inativa (nunca tinha aparecido em fonte do DW), mas em 30/jul/2026
+    # a Maria confirmou que ela está ativa de verdade (filial 016 do SharePoint
+    # DataHub -- a de maior volumetria da POC) -- corrigido pra ativo=True.
+    # RMSPIII (filial 015, SECO da Sodexo) encerrou operação no mês anterior a
+    # 30/jul/2026 -- corrigida pra ativo=False (estava True desde o Lote 7).
     {"sigla": "RMSPV", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPV", "008009", "06975242000934"]},
-    {"sigla": "RMSPIV", "nome": "Barueri/SP", "ativo": False,
+    {"sigla": "RMSPIV", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPIV", "008003", "06975242000349"]},
 ]
 

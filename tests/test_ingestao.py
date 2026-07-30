@@ -185,7 +185,7 @@ def test_seeds_idempotentes(banco_migrado):
         for tabela in antes
     }
     assert antes == depois
-    # sanidade do seed: 34 armazens (32 ativos + MRS e RMSPIV inativas)
+    # sanidade do seed: 34 armazens (32 ativos + MRS e RMSPIII inativas)
     assert antes["armazens"] == 34
     assert consultar("SELECT count(*) FROM armazens WHERE ativo")[0][0] == 32
 
