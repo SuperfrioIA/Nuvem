@@ -264,3 +264,46 @@ def test_kpis_traz_resumo_executivo(cliente, monkeypatch):
     # so em nota_tecnica, pra area tecnica/tooltip (pedido da Maria)
     assert "sem IA" not in corpo["resumo"]["texto"]
     assert "sem IA" in corpo["resumo"]["nota_tecnica"]
+
+
+def test_kpis_traz_amostra_de_linhas(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+
+    resposta = cliente.get("/api/admin/datahub/kpis")
+    corpo = resposta.json()
+    assert len(corpo["linhas_amostra"]) == 1
+    assert corpo["linhas_amostra"][0]["Cliente"] == "CLIENTE A"
+
+
+# --- GET /nuvem (Lote P5.5) ----------------------------------------------
+
+
+def test_nuvem_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.get("/api/admin/datahub/nuvem")
+    assert resposta.status_code == 401
+
+
+def test_nuvem_sem_sincronizacao_da_400(cliente):
+    resposta = cliente.get("/api/admin/datahub/nuvem")
+    assert resposta.status_code == 400
+    assert "Sincronizar agora" in resposta.json()["detail"]
+
+
+def test_nuvem_sucesso(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+
+    resposta = cliente.get("/api/admin/datahub/nuvem")
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert len(corpo["bolinhas"]) == 1
+    bolinha = corpo["bolinhas"][0]
+    assert bolinha["familia"] == "ENTRADA_MERCADORIAS"
+    assert bolinha["area"] == "ENTRADA"
+    assert bolinha["estado"] == "integrada"
+    assert bolinha["total_arquivos"] == 1
+    assert bolinha["arquivos"][0]["nome"] == _ARQUIVO_EM["nome"]
+    assert bolinha["arquivos"][0]["web_url"] == _ARQUIVO_EM["web_url"]

@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuvem IA — Nuvem do DataHub</title>
+<link rel="icon" href="/frontend/logo-superfrio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand-azul-institucional: #071A3A;
+  --brand-azul-corporativo:   #0A2A5E;
+  --brand-azul-principal:     #1E6FD9;
+  --brand-azul-conexao:       #3FA9F5;
+  --brand-amarelo:            #FFC400;
+  --brand-amarelo-suave:      #FFD84D;
+  --brand-branco:             #FFFFFF;
+  --brand-cinza-claro:        #C7D2E3;
+  --brand-azul-escuro:        #050F24;
+
+  --grad-institucional: linear-gradient(135deg, #050F24 0%, #071A3A 50%, #0A2A5E 100%);
+  --grad-conexao:       linear-gradient(135deg, #1E6FD9 0%, #3FA9F5 100%);
+
+  --font-primary: 'Montserrat', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
+  --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+
+  --card:   #FFFFFF;
+  --card-2: #F0F4FA;
+  --card-3: #F7F9FC;
+  --texto:  #071A3A;
+  --muted:  #5A6B85;
+  --line:        rgba(30, 111, 217, 0.16);
+  --line-strong: rgba(30, 111, 217, 0.30);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
+    #FBFCFE;
+  color: var(--texto);
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.oculto { display: none !important; }
+
+#login { max-width: 320px; margin: 100px auto; background: var(--card); padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
+#login img { height: 34px; margin-bottom: 18px; }
+#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--brand-azul-institucional); }
+#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; }
+#login button { width: 100%; padding: 10px; background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); font-weight: 700; cursor: pointer; font-family: var(--font-primary); }
+#loginErro { color: #b3261e; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+.section { padding: 32px 0 64px; width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
+
+.appHeader { display: flex; justify-content: flex-end; padding: 0 min(90px, calc((100% - 1180px)/2 + 20px)) 0; padding-top: 16px; }
+.appHeader button {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  border-radius: var(--radius-pill); padding: 7px 16px; cursor: pointer; font-family: var(--font-primary);
+  font-weight: 600; font-size: 13px;
+}
+
+.brandBar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brandLogo { height: 40px; width: auto; display: block; }
+.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--brand-cinza-claro), transparent); }
+
+.eyebrow {
+  display: inline-block; color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08);
+  border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px;
+  font-size: 0.82rem; font-weight: 700;
+}
+h1.titulo {
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem); color: var(--brand-azul-institucional); letter-spacing: -0.02em;
+  line-height: 1.1; margin: 14px 0 10px; font-weight: 700;
+}
+h1.titulo .accent { box-shadow: inset 0 -0.32em 0 var(--brand-amarelo-suave); }
+p.intro { max-width: 620px; color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 20px; }
+.legendItem { display: inline-flex; align-items: center; gap: 7px; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.legendDot { width: 12px; height: 12px; border-radius: 50%; border: 1px solid rgba(7,26,58,.18); flex: none; }
+.legendDot.dominio   { background: var(--brand-azul-escuro); }
+.legendDot.integrada { background: var(--brand-azul-principal); }
+.legendDot.mapeada   { background: var(--card-2); border: 1.5px dashed var(--brand-azul-conexao); }
+.legendLine { width: 20px; height: 0; border: 0; border-top: 2px dashed var(--brand-azul-conexao); flex: none; }
+
+.msg { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 14px; }
+.msg-erro { background: #fbe1df; color: #b3261e; }
+
+.wrap { display: grid; grid-template-columns: 1.6fr 1fr; gap: 22px; align-items: start; margin-top: 26px; }
+
+.graphCard {
+  position: relative; border-radius: var(--radius-lg); padding: 10px;
+  background:
+    radial-gradient(circle at 22% 16%, rgba(63, 169, 245, 0.12), transparent 46%),
+    radial-gradient(circle at 84% 86%, rgba(30, 111, 217, 0.08), transparent 46%),
+    var(--card);
+  border: 1px solid var(--line); box-shadow: var(--shadow-md); overflow: hidden;
+}
+.svg { display: block; width: 100%; height: auto; user-select: none; touch-action: pan-y; }
+
+.edge { stroke: var(--brand-azul-principal); stroke-opacity: 0.16; stroke-width: 1; stroke-linecap: round;
+  transition: stroke-opacity 300ms, stroke-width 300ms, stroke 300ms; }
+.edgeLit { stroke: var(--brand-azul-conexao); stroke-opacity: 0.9; stroke-width: 1.8; }
+.edgeDim { stroke-opacity: 0.05; }
+
+/* Juncao de dado: tracejada e em cor propria, pra nao ser lida como aresta de
+ * dominio. Fraca por padrao (o mapa cruzado ficaria poluido com as tres
+ * sempre visiveis) e forte quando uma das pontas esta ativa. As regras de duas
+ * classes vencem .edgeLit/.edgeDim por especificidade, nao por ordem. */
+.edgeJuncao { stroke: var(--brand-azul-conexao); stroke-opacity: 0.22; stroke-width: 1.6;
+  stroke-dasharray: 7 5; stroke-linecap: butt; }
+.edgeJuncao.edgeLit { stroke-opacity: 0.95; stroke-width: 2.4; }
+.edgeJuncao.edgeDim { stroke-opacity: 0.06; }
+
+.node { cursor: grab; outline: none; }
+.node:active { cursor: grabbing; }
+.hit  { fill: transparent; }
+.halo { fill: var(--card); opacity: 0.92; }
+.dot  { stroke: rgba(7,26,58,.22); stroke-width: 1; transform-box: fill-box; transform-origin: center;
+  transition: transform 220ms, stroke-width 220ms; }
+
+.typeDominio   .dot { fill: var(--brand-azul-escuro); }
+.typeIntegrada .dot { fill: var(--brand-azul-principal); }
+.typeMapeada   .dot { fill: var(--card-2); stroke: var(--brand-azul-conexao); stroke-width: 1.6; stroke-dasharray: 3 2.4; }
+
+.node.isActive .dot   { transform: scale(1.3); stroke: var(--brand-azul-institucional); stroke-width: 2; }
+.node.isSelected .dot { stroke: var(--brand-azul-institucional); stroke-width: 2.4; }
+.node.isDim { opacity: 0.24; }
+.node:focus-visible .dot { stroke: var(--brand-azul-institucional); stroke-width: 3; }
+.node, .label, .contagem { transition: opacity 220ms; }
+
+.contagem { fill: #fff; font-family: var(--font-primary); font-weight: 700; font-size: 12px; text-anchor: middle;
+  dominant-baseline: central; pointer-events: none; }
+.label {
+  fill: var(--texto); font-family: var(--font-primary); font-weight: 600; text-anchor: middle; pointer-events: none;
+  paint-order: stroke; stroke: var(--card); stroke-width: 3.4px; stroke-linejoin: round;
+}
+.labelPrimary { font-size: 15px; fill: var(--brand-azul-institucional); font-weight: 700; }
+.labelSecondary { font-size: 12px; opacity: 0; }
+.labelShown { opacity: 1; }
+
+.panel {
+  display: flex; flex-direction: column; min-height: 420px; border-radius: var(--radius-lg); padding: 26px;
+  background: var(--card-2); border: 1px solid var(--line); box-shadow: var(--shadow-sm);
+}
+.tag {
+  align-self: flex-start; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em;
+  padding: 5px 11px; border-radius: var(--radius-pill); color: #fff; margin-bottom: 16px;
+}
+.tag.typeDominio   { background: var(--brand-azul-escuro); }
+.tag.typeIntegrada { background: var(--brand-azul-principal); }
+.tag.typeMapeada   { background: transparent; color: var(--brand-azul-corporativo); border: 1.5px dashed var(--brand-azul-conexao); }
+
+.panelTitle { margin: 0 0 12px; font-size: 1.3rem; font-weight: 700; color: var(--brand-azul-institucional); line-height: 1.15; }
+.panelText { color: var(--muted); font-size: 0.95rem; line-height: 1.55; margin: 0; }
+.connections { margin-top: 22px; }
+.connLabel { display: block; font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--brand-azul-principal); margin-bottom: 11px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font-family: var(--font-primary); font-size: 0.82rem; font-weight: 600; color: var(--brand-azul-institucional);
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px;
+  cursor: pointer; transition: transform 220ms, border-color 220ms, box-shadow 220ms;
+}
+.chip:hover, .chip:focus-visible { transform: translateY(-2px); border-color: var(--line-strong); box-shadow: var(--shadow-sm); outline: none; }
+
+.juncoesLista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 9px; }
+.juncoesLista li { background: var(--card); border: 1px solid var(--line); border-left: 3px dashed var(--brand-azul-conexao);
+  border-radius: var(--radius-sm); padding: 9px 12px; font-size: 0.82rem; line-height: 1.45; }
+.juncoesLista .juncaoAlvo { display: block; font-weight: 700; color: var(--brand-azul-institucional); }
+.juncoesLista .juncaoChave { display: block; font-weight: 600; color: var(--brand-azul-principal); margin-top: 2px; }
+.juncoesLista .juncaoNota { display: block; color: var(--muted); margin-top: 3px; }
+.hint { margin: auto 0 0; padding-top: 22px; font-size: 0.82rem; color: var(--muted); }
+
+.dataCard { margin-top: 22px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--card);
+  box-shadow: var(--shadow-sm); padding: 22px 26px; }
+.dataHint { color: var(--muted); font-size: 0.9rem; text-align: center; padding: 10px 0; }
+.dataHead { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-bottom: 14px; }
+.dataTitle { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--brand-azul-institucional); }
+.dataFonte { font-size: 0.76rem; font-weight: 600; color: var(--muted); }
+.dataHeadSep { flex: 1; }
+.filtroWrap { display: inline-flex; align-items: center; gap: 8px; }
+.filtroLabel { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.08em; color: var(--brand-azul-principal); }
+#filtroFilial {
+  font-family: var(--font-primary); font-size: 0.84rem; font-weight: 600; color: var(--brand-azul-institucional);
+  background: var(--card); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); padding: 7px 12px; cursor: pointer;
+}
+.dataCount { font-size: 0.74rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.tblWrap { overflow-x: auto; max-height: 430px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius-md); }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+.tbl th { background: var(--brand-azul-institucional); color: #fff; font-weight: 700; text-align: left; padding: 9px 12px;
+  white-space: nowrap; font-size: 0.74rem; position: sticky; top: 0; }
+.tbl td { padding: 7px 12px; border-top: 1px solid rgba(199,210,227,.5); color: var(--texto); }
+.tbl tbody tr:nth-child(even) { background: var(--card-3); }
+.tbl td.num, .tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tblEmpty { text-align: center; color: var(--muted); padding: 18px 12px !important; font-style: italic; }
+
+.kpi-contexto { font-size: 13px; font-weight: 600; color: var(--brand-azul-institucional); margin: 18px 0 12px; }
+.kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+.kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 170px; flex: 1; }
+.kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
+.kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
+.resumo-poc { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
+.resumo-poc p { margin: 0 0 8px; }
+.resumo-poc p:last-child { margin-bottom: 0; }
+.subLabel { color: var(--muted); font-size: 12px; margin: 14px 0 4px; }
+
+@media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .section { padding: 22px 0 40px; width: min(1180px, calc(100% - 24px)); }
+  .graphCard, .panel, .dataCard { border-radius: var(--radius-md); }
+  .kpis-cards { flex-direction: column; }
+  .kpi-card { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <img src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+  <h2>Nuvem do DataHub</h2>
+  <input type="password" id="senhaInput" placeholder="Senha" aria-label="Senha">
+  <button id="btnEntrar">Entrar</button>
+  <div id="loginErro"></div>
+</div>
+
+<div id="app" class="oculto">
+  <div class="appHeader"><button id="btnSair">Sair</button></div>
+
+  <main class="section" aria-labelledby="nuvem-titulo">
+    <div class="brandBar">
+      <img class="brandLogo" src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+      <hr class="brandRule" aria-hidden="true">
+    </div>
+    <span class="eyebrow">Domínios de dados · SharePoint DataHub</span>
+    <h1 class="titulo" id="nuvem-titulo">De onde vêm os <span class="accent">dados</span> do armazém</h1>
+    <p class="intro">Cada domínio de dado se conecta às famílias de arquivos que o alimentam. Passe o mouse ou toque num nó pra ver como se relacionam; clique numa família pra abrir os arquivos.</p>
+
+    <div class="legend" aria-hidden="true">
+      <span class="legendItem"><span class="legendDot dominio"></span>Domínio</span>
+      <span class="legendItem"><span class="legendDot integrada"></span>Integrada</span>
+      <span class="legendItem"><span class="legendDot mapeada"></span>Não mapeada</span>
+      <span class="legendItem"><span class="legendLine"></span>Junção de dados (chave conferida)</span>
+    </div>
+
+    <div id="nuvemMsg"></div>
+
+    <div class="wrap">
+      <div class="graphCard">
+        <svg id="graph" class="svg" viewBox="0 0 1000 620" role="group"
+             aria-label="Mapa interativo dos domínios e famílias do DataHub. Use Tab para navegar entre os nós e Enter para ver os detalhes.">
+          <g id="edges"></g>
+          <g id="nodes"></g>
+        </svg>
+      </div>
+
+      <aside class="panel" id="panel" aria-live="polite">
+        <span class="tag" id="panelTag"></span>
+        <h2 class="panelTitle" id="panelTitle"></h2>
+        <p class="panelText" id="panelText"></p>
+        <div class="connections" id="panelConns" hidden>
+          <span class="connLabel">Conecta-se a</span>
+          <div class="chips" id="panelChips"></div>
+        </div>
+        <div class="connections" id="panelJuncoes" hidden>
+          <span class="connLabel">Junções de dado conferidas</span>
+          <ul class="juncoesLista" id="juncoesLista"></ul>
+        </div>
+        <p class="hint">Dica: arraste os nós (com o mouse) pra reorganizar o mapa. Clique numa família pra abrir os dados aqui embaixo.</p>
+      </aside>
+    </div>
+
+    <section class="dataCard" id="dataCard" aria-live="polite">
+      <div class="dataHint" id="dataHint">Clique numa família no mapa pra ver aqui os arquivos reais dela.</div>
+      <div class="dataBody" id="dataBody" hidden>
+        <div class="dataHead">
+          <h2 class="dataTitle" id="dataTitle"></h2>
+          <span class="dataFonte" id="dataFonte"></span>
+          <span class="dataHeadSep"></span>
+          <label class="filtroWrap">
+            <span class="filtroLabel">Filial</span>
+            <select id="filtroFilial" aria-label="Filtrar a tabela por filial"></select>
+          </label>
+          <span class="dataCount" id="dataCount"></span>
+        </div>
+        <div class="tblWrap"><table class="tbl" id="dataTable"></table></div>
+
+        <div id="blocoIntegrado" class="oculto">
+          <div id="integradoMsg"></div>
+          <div class="kpi-contexto" id="integradoContexto"></div>
+          <div id="integradoCards" class="kpis-cards"></div>
+          <p class="subLabel">Leitura executiva</p>
+          <div id="integradoResumo" class="resumo-poc"></div>
+          <p class="subLabel">Prévia dos dados (até 100 linhas)</p>
+          <div class="tblWrap"><table class="tbl" id="tabelaPreviaLinhas"></table></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script src="/frontend/comum.js"></script>
+<script>
+iniciarLoginPadrao(carregarNuvem);
+
+const SVGNS = "http://www.w3.org/2000/svg";
+
+/* Taxonomia por dominio de negocio (decisao de 30/jul/2026, com a Maria) --
+ * substitui o hub generico "SharePoint" por dominios que dizem o que cada
+ * familia serve pra calcular (ver docs/FONTES_DATAHUB.md, secao 4). Cada
+ * dominio e um no proprio no grafo; familias sao filhas de 1 dominio (2 no
+ * caso do ESTOQUE_POR_LOTE, que alimenta tanto Ocupacao quanto Volumetria). */
+const DOMINIOS = [
+  {
+    id: "VOLUMETRIA", titulo: "Volumetria", x: 280, y: 190, anguloBase: 200,
+    descricao: "Peso, volume e valor movimentado -- entrada, expedição e ruptura de atendimento.",
+    familias: ["ENTRADA_MERCADORIAS", "SAIDA_MERCADORIAS", "CORTES_PRODUTOS"],
+  },
+  {
+    id: "OCUPACAO", titulo: "Ocupação de estoque", x: 720, y: 190, anguloBase: -20,
+    descricao: "Ocupação física do estoque por UA -- vencido, avariado e aging.",
+    familias: ["ESTOQUE_POR_LOTE"],
+  },
+  {
+    id: "ENTREGAS", titulo: "Entregas", x: 280, y: 450, anguloBase: 160,
+    descricao: "O que acontece depois que a mercadoria sai: prazo (SLA) e qualidade de entrega.",
+    familias: ["DADOS_GERAIS", "OCORRENCIAS_ENTREGAS"],
+  },
+  {
+    id: "PRODUTIVIDADE", titulo: "Produtividade operacional", x: 720, y: 450, anguloBase: 20,
+    descricao: "Lead time e produtividade de separação nas guias de entrada e saída.",
+    familias: ["GUIAS_ENTRADA", "GUIAS_SAIDA"],
+  },
+];
+// Aresta extra (cross-domínio): ESTOQUE_POR_LOTE tem peso/volume tambem, alem
+// da ocupacao -- so essa, pra nao inventar mais cruzamentos sem necessidade.
+const ARESTAS_EXTRA = [["VOLUMETRIA", "ESTOQUE_POR_LOTE"]];
+
+/* Juncoes de DADO entre familias (30/jul/2026). Sao outra coisa que a aresta de
+ * dominio: aresta de dominio diz "essas familias servem pro mesmo calculo";
+ * juncao diz "essas duas linhas sao o mesmo evento, ligadas por esta chave".
+ * Cada uma foi conferida cruzando os xlsx reais da 016/2607 baixados do Graph,
+ * nao inferida por semelhanca de nome de coluna -- numeros e metodo em
+ * docs/FONTES_DATAHUB.md, secao 5.1. Junção não conferida não entra aqui. */
+const JUNCOES = [
+  {
+    de: "SAIDA_MERCADORIAS", para: "GUIAS_SAIDA", chave: "GSM = Número",
+    cobertura: "100% — 847 de 847 chaves, 266.910 linhas de item",
+    ressalva: "Unindo as guias de junho e julho: guia solicitada num mês pode ter saída no seguinte.",
+  },
+  {
+    de: "OCORRENCIAS_ENTREGAS", para: "DADOS_GERAIS", chave: "Pedido + NF",
+    cobertura: "100% — 12.015 de 12.015 pares, na janela coberta",
+    ressalva: "O export do DADOS_GERAIS publica só metade da competência (o _f2 é cópia do _f1).",
+  },
+  {
+    de: "DADOS_GERAIS", para: "GUIAS_SAIDA", chave: "GSM = Número",
+    cobertura: "98,97% — 287 de 290 chaves",
+    ressalva: "Só nas linhas cuja EMP GSM é a filial do próprio arquivo — o GSM é série por empresa.",
+  },
+];
+// Posicao de familia sem dominio calculavel (ex.: PALLETS_EXCEDENTES, so PDF).
+const POSICAO_ORFA = { x: 930, y: 300 };
+
+let nodes = [];
+let edges = [];
+let bolinhaPorId = {};
+let juncoesPorNo = {};
+
+async function carregarNuvem() {
+  const msgDiv = document.getElementById("nuvemMsg");
+  msgDiv.innerHTML = "";
+  try {
+    const nuvem = await api("/datahub/nuvem");
+    montarGrafo(nuvem.bolinhas);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function criarNodeFamilia(b, hubX, hubY, anguloGraus, raio, orfa) {
+  const integrada = b.familia === "ENTRADA_MERCADORIAS";
+  let nota;
+  if (integrada) nota = "Dados lidos, validados e usados nos KPIs desta POC.";
+  else if (orfa) nota = "Não se encaixa em nenhum domínio calculável hoje.";
+  else if (b.estado === "só_pdf") nota = "Arquivos em PDF -- sem extração de dados estruturados nesta POC.";
+  else nota = "Conhecida e inventariada, ainda não lida pela aplicação.";
+
+  const angulo = anguloGraus * Math.PI / 180;
+  return {
+    id: b.familia, tipo: integrada ? "typeIntegrada" : "typeMapeada", label: b.familia, primary: false,
+    tag: integrada ? "Integrada" : (orfa ? "Sem domínio" : "Não mapeada"), titulo: b.familia,
+    descricao: `Área ${b.area} (pasta física) · ${b.total_arquivos} arquivo(s) · ${b.tamanho_total_mb} MB. ${nota}`,
+    x: orfa ? hubX : hubX + raio * Math.cos(angulo),
+    y: orfa ? hubY : hubY + raio * Math.sin(angulo),
+  };
+}
+
+function montarGrafo(bolinhas) {
+  bolinhaPorId = {};
+  bolinhas.forEach(b => { bolinhaPorId[b.familia] = b; });
+
+  const nodesLocais = [];
+  const edgesLocais = [];
+  const familiasColocadas = new Set();
+  const RAIO_FAMILIA = 110;
+
+  DOMINIOS.forEach(dom => {
+    const filhos = dom.familias.filter(f => bolinhaPorId[f]);
+    if (!filhos.length) return; // dominio sem nenhuma familia sincronizada ainda -- nao desenha
+
+    nodesLocais.push({
+      id: dom.id, tipo: "typeDominio", label: dom.titulo, primary: true,
+      tag: "Domínio", titulo: dom.titulo, descricao: dom.descricao, x: dom.x, y: dom.y,
+    });
+
+    filhos.forEach((familiaId, i) => {
+      familiasColocadas.add(familiaId);
+      const arco = filhos.length > 1 ? 130 : 0;
+      const anguloGraus = dom.anguloBase + (filhos.length > 1 ? (-arco / 2 + i * (arco / (filhos.length - 1))) : 0);
+      nodesLocais.push(criarNodeFamilia(bolinhaPorId[familiaId], dom.x, dom.y, anguloGraus, RAIO_FAMILIA, false));
+      edgesLocais.push([dom.id, familiaId, "dominio"]);
+    });
+  });
+
+  ARESTAS_EXTRA.forEach(([domId, famId]) => {
+    if (familiasColocadas.has(famId) && nodesLocais.find(n => n.id === domId)) {
+      edgesLocais.push([domId, famId, "dominio"]);
+    }
+  });
+
+  bolinhas.forEach(b => {
+    if (familiasColocadas.has(b.familia)) return;
+    nodesLocais.push(criarNodeFamilia(b, POSICAO_ORFA.x, POSICAO_ORFA.y, 0, 0, true));
+  });
+
+  // Juncoes por ultimo: as duas pontas precisam ja estar no mapa. Familia que
+  // nao veio na sincronizacao nao vira aresta solta -- mesma guarda das
+  // ARESTAS_EXTRA.
+  juncoesPorNo = {};
+  const idsNoMapa = new Set(nodesLocais.map(n => n.id));
+  JUNCOES.forEach(j => {
+    if (!idsNoMapa.has(j.de) || !idsNoMapa.has(j.para)) return;
+    edgesLocais.push([j.de, j.para, "juncao", j]);
+    (juncoesPorNo[j.de] = juncoesPorNo[j.de] || []).push({ outro: j.para, juncao: j });
+    (juncoesPorNo[j.para] = juncoesPorNo[j.para] || []).push({ outro: j.de, juncao: j });
+  });
+
+  nodes = nodesLocais;
+  edges = edgesLocais;
+  desenharGrafo();
+}
+
+function radiusFor(n) {
+  if (n.tipo === "typeDominio") return 26;
+  const total = (bolinhaPorId[n.id] || {}).total_arquivos || 1;
+  return Math.min(24, 9 + Math.sqrt(total) * 3);
+}
+
+/* ---- estado de interacao do grafo (adaptado de
+ * docs/Analise/saida/mapa-dados/app.js, ja validado em 21/jul/2026) ---- */
+let hovered = null;
+let selected = null;
+let basePos = [];
+let nodeEls = {};
+let labelEls = {};
+let edgeEls = [];
+let adjacency = {};
+// So as arestas de dominio -- os chips "Conecta-se a" nao podem misturar
+// "servem pro mesmo calculo" com "se juntam por esta chave".
+let adjacencyDominio = {};
+let nodeById = {};
+let idToIndex = {};
+let dragging = null;
+let dragStart = null;
+let dragMoved = false;
+let suppressClickUntil = 0;
+let rafId = 0;
+
+const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+let reduced = mq.matches;
+
+function activeId() { return hovered != null ? hovered : selected; }
+
+function desenharGrafo() {
+  stopDrift();
+  const svg = document.getElementById("graph");
+  const gEdges = document.getElementById("edges");
+  const gNodes = document.getElementById("nodes");
+  gEdges.innerHTML = ""; gNodes.innerHTML = "";
+
+  idToIndex = {}; nodeById = {}; adjacency = {}; adjacencyDominio = {};
+  nodes.forEach((n, i) => {
+    idToIndex[n.id] = i; nodeById[n.id] = n; adjacency[n.id] = []; adjacencyDominio[n.id] = [];
+  });
+  edges.forEach(e => {
+    if (adjacency[e[0]].indexOf(e[1]) === -1) adjacency[e[0]].push(e[1]);
+    if (adjacency[e[1]].indexOf(e[0]) === -1) adjacency[e[1]].push(e[0]);
+    if (e[2] === "juncao") return;
+    if (adjacencyDominio[e[0]].indexOf(e[1]) === -1) adjacencyDominio[e[0]].push(e[1]);
+    if (adjacencyDominio[e[1]].indexOf(e[0]) === -1) adjacencyDominio[e[1]].push(e[0]);
+  });
+
+  basePos = nodes.map(n => ({ x: n.x, y: n.y }));
+  nodeEls = {}; labelEls = {}; edgeEls = [];
+  hovered = null;
+  if (selected && !nodeById[selected]) selected = null;
+
+  edges.forEach(e => {
+    const line = document.createElementNS(SVGNS, "line");
+    line.setAttribute("class", e[2] === "juncao" ? "edge edgeJuncao" : "edge");
+    if (e[2] === "juncao") {
+      // <title> nativo do SVG: tooltip sem codigo de interacao novo. Texto e
+      // constante do proprio arquivo, nao vem do SharePoint -- e textContent.
+      const j = e[3];
+      const titulo = document.createElementNS(SVGNS, "title");
+      titulo.textContent = `${j.de} ↔ ${j.para} · chave ${j.chave} · ${j.cobertura}. ${j.ressalva}`;
+      line.appendChild(titulo);
+    }
+    gEdges.appendChild(line);
+    edgeEls.push(line);
+  });
+
+  nodes.forEach((n, index) => {
+    const r = radiusFor(n);
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("class", nodeClasses(n, false, false, false));
+    g.setAttribute("role", "button");
+    g.setAttribute("tabindex", "0");
+    g.setAttribute("aria-label", (n.tag || "") + ": " + n.titulo);
+
+    const hit = document.createElementNS(SVGNS, "circle");
+    hit.setAttribute("class", "hit"); hit.setAttribute("r", "30");
+    const halo = document.createElementNS(SVGNS, "circle");
+    halo.setAttribute("class", "halo"); halo.setAttribute("r", String(r + 5));
+    const dot = document.createElementNS(SVGNS, "circle");
+    dot.setAttribute("class", "dot"); dot.setAttribute("r", String(r));
+
+    const contagem = document.createElementNS(SVGNS, "text");
+    contagem.setAttribute("class", "contagem");
+    if (n.tipo !== "typeDominio") {
+      const total = (bolinhaPorId[n.id] || {}).total_arquivos;
+      contagem.textContent = total != null ? total : "";
+    }
+
+    const label = document.createElementNS(SVGNS, "text");
+    label.setAttribute("class", labelClasses(n, n.primary));
+    label.setAttribute("y", String(r + 17));
+    label.textContent = n.label;
+
+    g.appendChild(hit); g.appendChild(halo); g.appendChild(dot);
+    g.appendChild(contagem); g.appendChild(label);
+    gNodes.appendChild(g);
+
+    nodeEls[n.id] = g; labelEls[n.id] = label;
+
+    g.addEventListener("mouseenter", () => setHovered(n.id));
+    g.addEventListener("mouseleave", () => setHovered(null));
+    g.addEventListener("focus", () => setHovered(n.id));
+    g.addEventListener("blur", () => setHovered(null));
+    g.addEventListener("click", () => { if (Date.now() < suppressClickUntil) return; toggleSelect(n.id); });
+    g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggleSelect(n.id); } });
+    g.addEventListener("pointerdown", ev => onNodePointerDown(index, ev));
+  });
+
+  staticApply();
+  render();
+  startDrift();
+}
+
+function nodeClasses(n, isActive, isDim, isSelected) {
+  const c = ["node", n.tipo, n.primary ? "primary" : "secondary"];
+  if (isActive) c.push("isActive");
+  if (isDim) c.push("isDim");
+  if (isSelected) c.push("isSelected");
+  return c.join(" ");
+}
+function labelClasses(n, shown) {
+  const c = ["label", n.primary ? "labelPrimary" : "labelSecondary"];
+  if (shown) c.push("labelShown");
+  return c.join(" ");
+}
+
+function setHovered(id) { hovered = id; render(); }
+function toggleSelect(id) { selected = (selected === id) ? null : id; render(); }
+function setSelected(id) { selected = id; render(); }
+
+function render() {
+  const active = activeId();
+  let hset = null;
+  if (active) {
+    hset = {}; hset[active] = true;
+    (adjacency[active] || []).forEach(id => { hset[id] = true; });
+  }
+  nodes.forEach(n => {
+    const isActive = n.id === active;
+    const inSet = hset ? !!hset[n.id] : false;
+    const dim = hset !== null && !inSet;
+    const isSel = selected === n.id;
+    nodeEls[n.id].setAttribute("class", nodeClasses(n, isActive, dim, isSel));
+    const labelShown = n.primary || inSet;
+    labelEls[n.id].setAttribute("class", labelClasses(n, labelShown));
+  });
+  edges.forEach((e, i) => {
+    const lit = active !== null && (e[0] === active || e[1] === active);
+    const dim = active !== null && !lit;
+    const c = ["edge"];
+    if (e[2] === "juncao") c.push("edgeJuncao");
+    if (lit) c.push("edgeLit");
+    if (dim) c.push("edgeDim");
+    edgeEls[i].setAttribute("class", c.join(" "));
+  });
+  updatePanel(active);
+  atualizarDataCard(selected);
+}
+
+function updatePanel(active) {
+  const panelTag = document.getElementById("panelTag");
+  const panelTitle = document.getElementById("panelTitle");
+  const panelText = document.getElementById("panelText");
+  const panelConns = document.getElementById("panelConns");
+  const panelChips = document.getElementById("panelChips");
+  const panelJuncoes = document.getElementById("panelJuncoes");
+  const juncoesLista = document.getElementById("juncoesLista");
+
+  const id = active || selected;
+  const info = id ? nodeById[id] : null;
+  if (!info) {
+    panelTag.textContent = "";
+    panelTag.setAttribute("class", "tag oculto");
+    panelTitle.textContent = "Domínios de dados do DataHub";
+    panelText.textContent = "Passe o mouse ou clique num nó do mapa pra ver os detalhes aqui.";
+    panelConns.hidden = true;
+    panelJuncoes.hidden = true;
+    return;
+  }
+
+  panelTag.textContent = info.tag || "";
+  panelTag.setAttribute("class", "tag " + info.tipo);
+  panelTitle.textContent = info.titulo;
+  panelText.textContent = info.descricao;
+
+  while (panelChips.firstChild) panelChips.removeChild(panelChips.firstChild);
+  const vizinhos = adjacencyDominio[info.id] || [];
+  if (vizinhos.length) {
+    panelConns.hidden = false;
+    vizinhos.forEach(vid => {
+      const nb = nodeById[vid];
+      if (!nb) return;
+      const b = document.createElement("button");
+      b.type = "button"; b.className = "chip"; b.textContent = nb.titulo;
+      b.addEventListener("click", () => setSelected(nb.id));
+      b.addEventListener("mouseenter", () => setHovered(nb.id));
+      b.addEventListener("mouseleave", () => setHovered(null));
+      panelChips.appendChild(b);
+    });
+  } else {
+    panelConns.hidden = true;
+  }
+
+  while (juncoesLista.firstChild) juncoesLista.removeChild(juncoesLista.firstChild);
+  const juncoes = juncoesPorNo[info.id] || [];
+  panelJuncoes.hidden = juncoes.length === 0;
+  juncoes.forEach(({ outro, juncao }) => {
+    const li = document.createElement("li");
+    const alvo = document.createElement("span");
+    alvo.className = "juncaoAlvo"; alvo.textContent = outro;
+    const chave = document.createElement("span");
+    chave.className = "juncaoChave"; chave.textContent = `${juncao.chave} · ${juncao.cobertura}`;
+    const nota = document.createElement("span");
+    nota.className = "juncaoNota"; nota.textContent = juncao.ressalva;
+    li.appendChild(alvo); li.appendChild(chave); li.appendChild(nota);
+    juncoesLista.appendChild(li);
+  });
+}
+
+function applyPositions(getPos) {
+  nodes.forEach((n, i) => {
+    const p = getPos(i);
+    const g = nodeEls[n.id];
+    if (g) g.setAttribute("transform", `translate(${p.x.toFixed(2)},${p.y.toFixed(2)})`);
+  });
+  edges.forEach((e, i) => {
+    const line = edgeEls[i];
+    if (!line) return;
+    const ps = getPos(idToIndex[e[0]]);
+    const pt = getPos(idToIndex[e[1]]);
+    line.setAttribute("x1", ps.x.toFixed(2)); line.setAttribute("y1", ps.y.toFixed(2));
+    line.setAttribute("x2", pt.x.toFixed(2)); line.setAttribute("y2", pt.y.toFixed(2));
+  });
+}
+function staticApply() { applyPositions(i => basePos[i]); }
+
+function startDrift() {
+  if (reduced) return;
+  let start = null;
+  function loop(now) {
+    if (start === null) start = now;
+    const t = now - start;
+    applyPositions(i => {
+      const b = basePos[i];
+      if (dragging === i) return b;
+      const phase = i * 1.7;
+      return { x: b.x + Math.sin(t * 0.0006 + phase) * 5, y: b.y + Math.cos(t * 0.00054 + phase) * 5 };
+    });
+    rafId = window.requestAnimationFrame(loop);
+  }
+  rafId = window.requestAnimationFrame(loop);
+}
+function stopDrift() { if (rafId) { window.cancelAnimationFrame(rafId); rafId = 0; } }
+
+function clientToSvg(cx, cy) {
+  const svg = document.getElementById("graph");
+  if (!svg.createSVGPoint) return null;
+  const pt = svg.createSVGPoint();
+  pt.x = cx; pt.y = cy;
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return null;
+  const p = pt.matrixTransform(ctm.inverse());
+  return { x: p.x, y: p.y };
+}
+function onNodePointerDown(index, ev) {
+  if (ev.pointerType === "touch") return;
+  ev.preventDefault();
+  dragging = index; dragMoved = false;
+  dragStart = clientToSvg(ev.clientX, ev.clientY);
+  try { document.getElementById("graph").setPointerCapture(ev.pointerId); } catch (e) { /* noop */ }
+}
+function endDrag(ev) {
+  if (dragging === null) return;
+  try { document.getElementById("graph").releasePointerCapture(ev.pointerId); } catch (e) { /* noop */ }
+  if (!dragMoved && ev.type === "pointerup") {
+    toggleSelect(nodes[dragging].id);
+    suppressClickUntil = Date.now() + 400;
+  }
+  dragging = null;
+}
+document.getElementById("graph").addEventListener("pointermove", ev => {
+  if (dragging === null) return;
+  const p = clientToSvg(ev.clientX, ev.clientY);
+  if (!p) return;
+  if (!dragMoved && dragStart) {
+    const dx = p.x - dragStart.x, dy = p.y - dragStart.y;
+    if (dx * dx + dy * dy < 16) return;
+    dragMoved = true;
+  }
+  basePos[dragging] = p;
+  if (reduced) staticApply();
+});
+document.getElementById("graph").addEventListener("pointerup", endDrag);
+document.getElementById("graph").addEventListener("pointerleave", endDrag);
+document.getElementById("graph").addEventListener("pointercancel", endDrag);
+
+function onReducedChange(e) { reduced = e.matches; stopDrift(); staticApply(); if (!reduced) startDrift(); }
+if (mq.addEventListener) mq.addEventListener("change", onReducedChange);
+else if (mq.addListener) mq.addListener(onReducedChange);
+
+/* ---- cartao de dados (tabela de arquivos + previa da familia integrada) ---- */
+let _kpisIntegradaCache = null;
+let _ultimoIdCard;
+let _filtroFilial = "";
+
+function atualizarDataCard(id) {
+  if (id === _ultimoIdCard) return;
+  _ultimoIdCard = id;
+
+  const hint = document.getElementById("dataHint");
+  const body = document.getElementById("dataBody");
+  const bolinha = id ? bolinhaPorId[id] : null;
+
+  if (!bolinha) {
+    body.hidden = true;
+    hint.hidden = false;
+    hint.textContent = "Clique numa família no mapa pra ver aqui os arquivos reais dela.";
+    return;
+  }
+
+  hint.hidden = true;
+  body.hidden = false;
+  _filtroFilial = "";
+  desenharTabelaArquivos(bolinha);
+
+  const blocoIntegrado = document.getElementById("blocoIntegrado");
+  if (bolinha.familia !== "ENTRADA_MERCADORIAS") {
+    blocoIntegrado.classList.add("oculto");
+  } else {
+    blocoIntegrado.classList.remove("oculto");
+    carregarIntegrado();
+  }
+
+  document.getElementById("dataCard").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function formatarTamanho(bytes) {
+  if (!bytes && bytes !== 0) return "-";
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1
+    ? `${mb.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} MB`
+    : `${Math.round(bytes / 1024)} KB`;
+}
+
+function desenharTabelaArquivos(bolinha) {
+  const rotulo = bolinha.familia === "ENTRADA_MERCADORIAS" ? "Integrada" : "Não mapeada";
+  document.getElementById("dataTitle").textContent = bolinha.familia;
+  document.getElementById("dataFonte").textContent =
+    `Área ${bolinha.area} · ${rotulo} · ${bolinha.tamanho_total_mb} MB`;
+
+  const selFilial = document.getElementById("filtroFilial");
+  const filiais = Array.from(new Set(bolinha.arquivos.map(a => a.filial).filter(Boolean))).sort();
+  selFilial.innerHTML = `<option value="">Todas as filiais</option>` +
+    filiais.map(f => `<option value="${escaparHtml(f)}">${escaparHtml(f)}</option>`).join("");
+  selFilial.onchange = () => { _filtroFilial = selFilial.value; desenharLinhasArquivos(bolinha); };
+
+  desenharLinhasArquivos(bolinha);
+}
+
+function desenharLinhasArquivos(bolinha) {
+  const todos = bolinha.arquivos;
+  const linhas = _filtroFilial ? todos.filter(a => a.filial === _filtroFilial) : todos;
+
+  const tabela = document.getElementById("dataTable");
+  tabela.innerHTML = `
+    <thead><tr><th>Arquivo</th><th>Caminho</th><th>Filial</th><th>Competência</th><th class="num">Tamanho</th><th>Modificado em</th></tr></thead>
+    <tbody>${linhas.map(a => {
+      const nome = escaparHtml(a.nome);
+      const linkSeguro = typeof a.web_url === "string" && /^https?:\/\//i.test(a.web_url);
+      const celulaNome = linkSeguro ? `<a href="${escaparHtml(a.web_url)}" target="_blank" rel="noopener">${nome}</a>` : nome;
+      return `<tr>
+        <td>${celulaNome}</td>
+        <td>${escaparHtml(a.caminho)}</td>
+        <td>${escaparHtml(a.filial || "—")}</td>
+        <td>${escaparHtml(a.competencia || "—")}</td>
+        <td class="num">${formatarTamanho(a.tamanho)}</td>
+        <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
+      </tr>`;
+    }).join("") || `<tr><td colspan="6" class="tblEmpty">Nenhum arquivo para este filtro.</td></tr>`}</tbody>`;
+
+  document.getElementById("dataCount").textContent =
+    _filtroFilial ? `${linhas.length} de ${todos.length} arquivo(s) (${_filtroFilial})` : `${todos.length} arquivo(s)`;
+}
+
+async function carregarIntegrado() {
+  const msgDiv = document.getElementById("integradoMsg");
+  if (_kpisIntegradaCache) { renderizarIntegrado(_kpisIntegradaCache); return; }
+  msgDiv.innerHTML = `<div class="msg">Carregando KPIs...</div>`;
+  try {
+    const dados = await api("/datahub/kpis");
+    _kpisIntegradaCache = dados;
+    msgDiv.innerHTML = "";
+    renderizarIntegrado(dados);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function renderizarIntegrado(dados) {
+  document.getElementById("integradoContexto").textContent =
+    `Filial ${dados.filial} | Competência ${competenciaCurta(dados.competencia)} | Fonte: SharePoint DataHub`;
+
+  document.getElementById("integradoCards").innerHTML = KPIS_EXECUTIVOS.map(def => {
+    const k = dados.kpis.find(item => item.chave === def.chave);
+    if (!k) return "";
+    const tooltip = `${k.regra} · ${k.registros_validos} registros válidos · ${k.fonte}`;
+    return `<div class="kpi-card" title="${escaparHtml(tooltip)}">
+      <span class="kpi-valor">${escaparHtml(def.formatar(k))}</span>
+      <span class="kpi-nome">${escaparHtml(def.titulo)}</span>
+    </div>`;
+  }).join("");
+
+  const frases = (dados.resumo && dados.resumo.frases) || [];
+  document.getElementById("integradoResumo").innerHTML = frases.map(f => `<p>${escaparHtml(f)}</p>`).join("");
+
+  renderizarPreviaLinhas(dados.linhas_amostra || []);
+}
+
+function renderizarPreviaLinhas(linhas) {
+  const tabela = document.getElementById("tabelaPreviaLinhas");
+  if (!linhas.length) {
+    tabela.innerHTML = `<tbody><tr><td class="tblEmpty">Nenhuma linha na amostra.</td></tr></tbody>`;
+    return;
+  }
+  const colunas = Object.keys(linhas[0]);
+  tabela.innerHTML = `
+    <thead><tr>${colunas.map(c => `<th>${escaparHtml(c)}</th>`).join("")}</tr></thead>
+    <tbody>${linhas.map(linha => `<tr>${colunas.map(c => `<td>${escaparHtml(String(linha[c] ?? ""))}</td>`).join("")}</tr>`).join("")}</tbody>`;
+}
+</script>
+</body>
+</html>

@@ -29,7 +29,13 @@ def admin_page():
     return FileResponse("frontend/admin.html")
 
 
+@app.get("/nuvem")
+def nuvem_page():
+    return FileResponse("frontend/nuvem.html")
+
+
 @app.get("/")
 def root():
-    # a nuvem (index.html) entra no Lote 5; por ora o admin é a única tela
+    # a nuvem completa (index.html, Lote 5 do docs/PLANO.md) ainda nao existe;
+    # /nuvem hoje e a Nuvem do DataHub (Lote P5.5), a POC do canal SharePoint
     return RedirectResponse(url="/admin")

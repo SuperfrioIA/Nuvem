@@ -175,6 +175,17 @@ seção 8. Resumo de cada um:
   - **Escape obrigatório** (ver decisões técnicas): a lista de arquivos e a prévia
     de 100 linhas são conteúdo vindo do SharePoint — nada disso entra por
     `innerHTML` sem escapar.
+  - **Aresta de junção de dado** (acréscimo de 30/jul/2026): além da aresta de
+    domínio ("essas famílias servem pro mesmo cálculo"), o grafo desenha uma
+    aresta **tracejada** para junção real de dado ("essas duas linhas são o mesmo
+    evento, ligadas por esta chave"). Três junções, todas conferidas cruzando os
+    xlsx reais da 016/2607 — `SAIDA_MERCADORIAS`↔`GUIAS_SAIDA` por `GSM` (100%),
+    `OCORRENCIAS_ENTREGAS`↔`DADOS_GERAIS` por `Pedido`+`NF` (100% na janela
+    coberta) e `DADOS_GERAIS`↔`GUIAS_SAIDA` por `GSM` (98,97%, só com `EMP GSM`
+    da filial do arquivo). Números e método em `docs/FONTES_DATAHUB.md`, seção
+    5.1. **Junção não conferida não entra no grafo** — mesmo princípio das
+    bolinhas que não acendem: o desenho não pode afirmar relação que o dado não
+    sustenta. Constante no próprio HTML, nenhuma leitura nova de arquivo.
 - **P6** — limpeza de código temporário/prints/endpoints inseguros; suíte
   completa; `docs/ENTREGA_POC.md` com objetivo comprovado, limitações e riscos.
 

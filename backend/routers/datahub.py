@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
-from ..services import entrada_mercadorias, graph_datahub, inventario_datahub, kpis_poc, resumo_poc
+from ..services import entrada_mercadorias, graph_datahub, inventario_datahub, kpis_poc, nuvem_datahub, resumo_poc
 
 router = APIRouter(prefix="/datahub")
 
@@ -87,8 +87,9 @@ def kpis(request: Request):
         item_id = entrada_mercadorias.item_mais_recente()
         resultado = entrada_mercadorias.ler(item_id)
 
+    linhas = resultado.pop("linhas")
     fonte = f"{resultado['arquivo']} (filial {resultado['filial']}, competência {resultado['competencia']})"
-    calculado = kpis_poc.calcular(resultado["linhas"], fonte)
+    calculado = kpis_poc.calcular(linhas, fonte)
     resumo = resumo_poc.gerar(resultado, calculado["kpis"], calculado["por_cliente"])
 
     return {
@@ -104,4 +105,23 @@ def kpis(request: Request):
         "kpis": calculado["kpis"],
         "por_cliente": calculado["por_cliente"],
         "resumo": resumo,
+        # previa pra Nuvem do DataHub (Lote P5.5) -- reaproveita a leitura que
+        # este endpoint ja faz, sem baixar o arquivo de novo.
+        "linhas_amostra": linhas[:_MAX_LINHAS_RESPOSTA],
     }
+
+
+@router.get("/nuvem")
+def nuvem(request: Request):
+    """Bolinhas por familia do DataHub, agrupadas por area (Lote P5.5).
+
+    Usa so o inventario ja em cache (P2) -- nenhuma chamada nova ao Graph.
+    """
+    exigir_login(request)
+    resumo = inventario_datahub.status().get("resumo")
+    if not resumo:
+        raise HTTPException(
+            status_code=400,
+            detail="nenhuma sincronizacao do DataHub ainda -- clique em 'Sincronizar agora' primeiro",
+        )
+    return {"bolinhas": nuvem_datahub.montar_bolinhas(resumo)}
