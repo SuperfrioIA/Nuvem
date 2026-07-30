@@ -724,6 +724,62 @@ o contrato pronto da integração. Ganhos: cadência diária sem humano no loop 
 do histórico de ocupação (as fotos diárias que hoje se perdem entre uploads). Substitui
 o antigo `pentaho_sql` da lista de fora-de-escopo.
 
+## Lote 11 — Série histórica multi-competência (gráfico de vários meses)
+
+**Status: a fazer (não autorizado — registrado em 30/jul/2026)** · **Modelo:** Sonnet 5.
+Depende do P4 da POC DataHub (`docs/POC_ATUAL.md`).
+
+Pergunta que originou o registro (Maria, 30/jul/2026): "quando montarmos um
+gráfico/dash/KPI que mostra mais de 1 mês, se eu quiser ver o ano todo ou todos os
+meses que temos, será possível?". Resposta curta: **sim**, mas não pelo caminho atual
+da POC.
+
+**O que já joga a favor** — a camada fina nasceu série temporal: `medidas`
+(`alembic/versions/0001_baseline.py`) tem `competencia DATE` e chave única
+`(metrica_id, armazem_id, competencia)`. Um gráfico de N meses é um `SELECT ... ORDER BY
+competencia`. O de-para de filial→armazém fechou em 30/jul/2026
+(`memory/filiais-catering-poc.md`), então o corte por filial também fecha.
+
+**O que trava hoje** — o caminho P3/P4 é deliberadamente de um arquivo só:
+`entrada_mercadorias.item_mais_recente()` escolhe um `item_id`; `kpis_poc.calcular()`
+soma as linhas daquele arquivo; `GET /api/admin/datahub/kpis` baixa + lê + calcula a
+cada chamada e não grava nada. Repetir isso para as ~20 planilhas da família a cada
+abertura de tela seriam 20 downloads do Graph + 20 leituras `openpyxl` por clique.
+
+**Tamanho real:** 5 métricas × 3 filiais × 7 competências = 105 linhas em `medidas`. O
+custo está na carga, não no armazenamento.
+
+- [ ] Gravar o resultado do P4 em `medidas` por (métrica, armazém, competência), com
+      `ON CONFLICT DO UPDATE` — a competência corrente é republicada
+- [ ] Carga histórica única: varrer todos os `ENTRADA_MERCADORIAS_*` do inventário do
+      P2, em vez de só o mais recente
+- [ ] Endpoint de série lendo do Postgres, sem tocar no SharePoint
+- [ ] Gráfico de linha na tela, com a competência corrente marcada como parcial
+- [ ] Só o agregado é persistido — nada de dado bruto na camada fina (regra mantida)
+
+**Ressalvas do dado, levantadas antes de construir:**
+
+- Histórico publicado hoje = **jan–jul/2026, 7 competências** (`docs/FONTES_DATAHUB.md`),
+  20 arquivos de `ENTRADA_MERCADORIAS` (filiais 001/015/016). "Ano todo" hoje são 7
+  pontos, não 12.
+- **A competência corrente é republicada** — os arquivos de julho foram modificados em
+  13, 17, 20, 22, 28 e 29/jul. O último ponto do gráfico é parcial e muda: reprocessar
+  por competência e sinalizar o mês aberto na tela.
+- `DADOS_GERAIS` está quebrado na origem (`_f2` é cópia do `_f1`, metade do mês faltando
+  — obstáculo 8 do `FONTES_DATAHUB.md`): série multi-mês dessa família seria falsa.
+  `ENTRADA_MERCADORIAS` e `GUIAS_SAIDA` não têm o problema.
+- Borda de competência (guia de junho com saída em 01/07) não afeta soma mensal, mas
+  exige janela de dois meses em qualquer junção por chave.
+- A filial `015` encerrou operação: a série dela cai a zero por fim de operação, não por
+  anomalia (`memory/filiais-catering-poc.md`).
+- Score/anomalia continua fora: o motor exige 6 competências anteriores e há 7 — só
+  julho seria avaliável. Mesma razão já registrada na decisão de não acender bolinha no
+  P5.5; melhora sozinho conforme os meses entram.
+
+**Check de conclusão:** a tela mostra a evolução mensal das métricas do P4 por filial,
+lendo do Postgres; um mês novo publicado no DataHub entra na série com uma sincronização
++ reprocessamento, sem recarregar o histórico inteiro.
+
 ---
 
 ## Fora de escopo (confirmado — degraus seguintes)

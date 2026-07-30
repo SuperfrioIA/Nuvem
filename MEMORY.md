@@ -6,4 +6,7 @@
 - Fontes do SharePoint DataHub (inventário, colunas, obstáculos): [docs/FONTES_DATAHUB.md](docs/FONTES_DATAHUB.md) — ler antes de mexer no conector `sharepoint_excel`
 - [Chaves das famílias ENTRADA do DataHub](memory/chaves-nf-entrada-datahub.md) — agregar por `GEM`; colunas de NF truncadas, contagem de notas não é possível; guia cancelada não tem item
 - [Concentração da SAPORE na filial 016](memory/concentracao-sapore-016.md) — ~81% do valor/peso/volume, KPI já conferido em 30/jul; devolução entra no card de valor
+- [Junções entre famílias do DataHub](memory/juncoes-familias-datahub.md) — `GSM`=`Número` na saída (100%), `Pedido`+`NF` nas entregas (100%); `DADOS_GERAIS` `_f1`/`_f2` são cópias — ler só o `_f1`
+- [Filiais do catering na POC](memory/filiais-catering-poc.md) — 001/015/016 = RMSPII/III/IV oficiais; `ativo` corrigido no seed local (015 inativa, 016 ativa) — falta aplicar na VM; filial 002 ainda pendente
+- Gráfico de vários meses / ano todo: [docs/PLANO.md](docs/PLANO.md), Lote 11 — possível via `medidas` (já é série temporal); trava é o P4 ler só 1 arquivo e não persistir; 7 competências publicadas (jan–jul/2026)
 - [PPTX da marca SuperFrio](memory/pptx-marca-superfrio.md) — LAYOUT_WIDE, extensão negativa quebra o arquivo, asset do logo precisa de recorte, conferir por export COM
