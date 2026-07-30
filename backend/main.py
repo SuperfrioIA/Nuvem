@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -7,15 +9,22 @@ from .database import init_db
 from .routers.admin import router as admin_router
 from .routers.datahub import router as datahub_router
 
-app = FastAPI(title="Nuvem IA")
 
-
-@app.on_event("startup")
-def _startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     # schema primeiro (Alembic: cria banco novo, valida+stampa banco legado,
     # aplica migrations pendentes), seeds depois — ver backend/migracao.py
+    #
+    # migrar()/init_db() sao sincronos e rodam direto no event loop, de proposito:
+    # o app nao pode comecar a servir request antes do schema estar pronto. Mesmo
+    # comportamento do on_event("startup") que isto substitui (Lote P6) -- a troca
+    # e so pra sair da API deprecada do FastAPI.
     migracao.migrar()
     init_db()
+    yield
+
+
+app = FastAPI(title="Nuvem IA", lifespan=lifespan)
 
 
 app.include_router(admin_router, prefix="/api/admin")

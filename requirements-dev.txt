@@ -2,4 +2,6 @@
 # Uso: pip install -r requirements-dev.txt  (ja puxa o requirements.txt)
 -r requirements.txt
 pytest==8.3.4
-httpx==0.27.2
+# httpx nao aparece aqui: virou dependencia de runtime no Lote P1 (cliente do
+# Microsoft Graph) e ja vem pelo -r requirements.txt acima. O TestClient do
+# FastAPI usa o mesmo httpx.

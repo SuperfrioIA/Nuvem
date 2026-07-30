@@ -110,8 +110,8 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P3** | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | **feito** (29/jul/2026) |
 | **P4** | KPIs da POC (`backend/services/kpis_poc.py`) | **feito** (29/jul/2026) |
 | **P5** | Resumo textual (template) + acabamento da demo | **feito** (30/jul/2026) |
-| P5.5 | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | a fazer |
-| P6 | Revisão final e limpeza pós-POC | a fazer |
+| **P5.5** | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | **feito** (30/jul/2026) |
+| **P6** | Revisão final e limpeza pós-POC | **feito** (30/jul/2026) — **POC encerrada** |
 
 Especificação técnica completa de cada lote (endpoints, requisitos de segurança,
 casos de teste, critério de aceite detalhado): `docs/DIRECIONAMENTO_POC_NUVEM_IA_CLAUDE.md`,
@@ -424,9 +424,84 @@ Detalhe registrado em `memory/chaves-nf-entrada-datahub.md` e
 um KPI de "quantidade de notas" for pedido: não é construível com o export atual do
 SLIN.
 
+30/jul/2026 — **P5.5 fechado** (commit `5575b23`): `frontend/nuvem.html` (novo, página
+própria fora do `admin.html`, atrás da mesma sessão) desenha o grafo de bolinhas por
+família do DataHub agrupadas nos 4 domínios, com drill-down para a lista de arquivos
+reais e — só na família integrada (`ENTRADA_MERCADORIAS`) — os KPIs e a prévia do
+P4/P5. `backend/services/nuvem_datahub.py` (novo) + `GET /api/admin/datahub/nuvem`
+servem o inventário **já em cache do P2**: nenhuma chamada nova ao Graph, nenhuma
+leitura nova de arquivo para desenhar o grafo. `frontend/comum.js` (novo) extraiu o que
+as duas páginas compartilham; `frontend/admin.html` encolheu 108 linhas por isso.
+Bolinhas não acendem, conforme a decisão fixada.
+
+Além da aresta de domínio, o grafo desenha **aresta tracejada** para junção real de
+dado. As três foram conferidas cruzando os xlsx reais da 016/2607 baixados do Graph,
+não inferidas por semelhança de nome de coluna: `SAIDA_MERCADORIAS.GSM` =
+`GUIAS_SAIDA.Número` (100% — 847 de 847 chaves, 266.910 linhas de item),
+`OCORRENCIAS_ENTREGAS.(Pedido, NF)` = `DADOS_GERAIS.(Pedido, NF)` (100% — 12.015 de
+12.015 pares, na janela que o `DADOS_GERAIS` cobre) e `DADOS_GERAIS.GSM` =
+`GUIAS_SAIDA.Número` (98,97%, só nas linhas cuja `EMP GSM` é a filial do próprio
+arquivo — o `GSM` é série por empresa). Suíte: **150 passed** (136 + 14 novos,
+`tests/test_nuvem_datahub.py` e acréscimos em `tests/test_datahub_router.py`).
+
+Dois achados da investigação das junções, documentados em `docs/FONTES_DATAHUB.md`,
+seção 5.1 — ambos importantes para quando essas famílias forem integradas de verdade:
+
+- o cabeçalho de `SAIDA_MERCADORIAS` está na **linha 6**, não na 5 (a 5 é faixa de
+  agrupamento), e os 6 rótulos de medida se repetem 3 vezes — peso e volume dessa
+  família só saem **por posição**, exceção explícita à regra "coluna por nome";
+- `DADOS_GERAIS` `_f1` e `_f2` são o **mesmo conteúdo**, linha a linha, nas três
+  competências testadas: metade de cada competência não está publicada e concatenar
+  as partes duplicaria tudo. **Pendência humana aberta** (ler só o `_f1`).
+
+Duas pendências do P5.5 que **não** foram cobertas pelo lote e seguem abertas:
+validação ao vivo pela Maria contra o SharePoint real (todos os lotes anteriores têm
+esse registro; este não) e deploy na VM — a VM está em `0004_catalogo_metricas (head)`
+com os `GRAPH_*` configurados, mas o código do P5/P5.5 ainda não subiu lá.
+
+30/jul/2026 — **P6 fechado, POC encerrada**. Auditoria não achou código temporário,
+`print`, `TODO` nem endpoint sem autenticação: os 5 endpoints do DataHub e todos os do
+admin chamam `exigir_login` (só `/login`, `/logout` e `/me` ficam fora, corretamente), e
+o escape de conteúdo do SharePoint está aplicado nas duas telas, inclusive na prévia de
+100 linhas. O que a auditoria **achou** e o lote corrigiu:
+
+- **`docs/~$APRESENTACAO_POC_DATAHUB.pptx` estava rastreado no git** — arquivo de lock
+  temporário do Office (165 bytes, stub, não conteúdo), commitado por engano em
+  29/jul. Removido do índice com `git rm --cached` (mantido em disco, que é onde o
+  Office o gerencia) e `~$*` acrescentado ao `.gitignore`.
+- **`httpx` duplicado** — estava em `requirements.txt` (virou dependência de runtime no
+  P1) e de novo em `requirements-dev.txt`, que já puxa o primeiro. Removido do dev, com
+  comentário explicando por quê (o `TestClient` do FastAPI usa o mesmo httpx).
+- **`on_event("startup")` deprecado** — `backend/main.py` migrado para `lifespan`, o que
+  eliminou os 2 warnings que a suíte emitia. Comportamento idêntico de propósito:
+  `migrar()`/`init_db()` continuam síncronos e rodando antes de servir request.
+- **`docs/DEMO_POC.md` estava desatualizado** em quatro pontos, todos corrigidos: tratava
+  o P5.5 como roadmap não construído; descrevia 5 cards com auditoria escrita embaixo
+  (o P5 mudou pra 4 cards com auditoria em tooltip); mandava "ler a última frase do
+  resumo" sobre o aviso de template, que o P5 tirou do texto executivo; e dizia que a
+  aplicação não estava na VM. Ganhou o passo 6 (Nuvem do DataHub), o comportamento do
+  plano B com o grafo servindo de cache, e 3 perguntas prováveis novas (bolinha que não
+  acende, como as junções foram conferidas, série histórica).
+
+`docs/ENTREGA_POC.md` (novo) é o balanço da POC: objetivo comprovado com evidência,
+critérios de aceite item por item (5 atendidos, 1 parcial — o roteiro está em ~6 min e
+não foi cronometrado ao vivo), 10 limitações declaradas, os 8 obstáculos do dado, 7
+riscos com mitigação, e as pendências abertas. Suíte: **150 passed**, sem warning.
+
+Decisão de 30/jul/2026 registrada como dívida assumida: o painel "KPIs da POC" **fica
+duplicado** em `admin.html` e `nuvem.html`, cada um com seu render. Motivo: a aba do
+admin é plano B se a página da nuvem falhar durante a apresentação. Consolidar fica para
+quem continuar. Nenhum arquivo do frontend foi alterado no P6.
+
 ## Próximo lote autorizado
 
-**P5.5 registrado na fila, não autorizado a começar**: depende do P4 (já feito) e do
-P5 (já feito); roda antes do P6.
+**Nenhum. A POC está encerrada** (P0–P6 fechados em 30/jul/2026).
 
-P5.5 e P6 só começam após validação explícita da Maria, um por vez.
+Duas pendências não-código herdadas, na ordem: **validar o P5.5 ao vivo** contra o
+SharePoint real (é o único lote que fechou sem esse registro) e **subir o P5/P5.5 pra
+VM** (runbook em `docs/DEPLOY.md`, passo 4.1). Ambas estão na seção 6 do
+`docs/ENTREGA_POC.md`, junto com a decisão pendente sobre devolução no card de valor.
+
+O que vier depois — IA narradora, integração durável das famílias do DataHub, série
+histórica (Lote 11), bolinha que acende (Lote 5), nuvem pública — está desenhado e
+**nada autorizado**. É conversa de priorização, não continuação automática.

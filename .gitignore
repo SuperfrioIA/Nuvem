@@ -9,6 +9,11 @@ data/
 Thumbs.db
 .vscode/
 
+# arquivos de lock do Office (~$nome.pptx/.docx/.xlsx) -- criados enquanto o
+# arquivo esta aberto, sumem ao fechar; um deles foi commitado por engano e
+# removido no Lote P6
+~$*
+
 # dados reais (cliente/operacao) e analise a parte dos relatorios do dw (17/jul/2026)
 # -- exports brutos + saidas (excel, mapa) nao vao pro historico do git
 docs/[Aa]nalise/
