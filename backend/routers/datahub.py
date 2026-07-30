@@ -4,7 +4,7 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
-from ..services import entrada_mercadorias, graph_datahub, inventario_datahub, kpis_poc
+from ..services import entrada_mercadorias, graph_datahub, inventario_datahub, kpis_poc, resumo_poc
 
 router = APIRouter(prefix="/datahub")
 
@@ -89,6 +89,7 @@ def kpis(request: Request):
 
     fonte = f"{resultado['arquivo']} (filial {resultado['filial']}, competência {resultado['competencia']})"
     calculado = kpis_poc.calcular(resultado["linhas"], fonte)
+    resumo = resumo_poc.gerar(resultado, calculado["kpis"], calculado["por_cliente"])
 
     return {
         "arquivo": resultado["arquivo"],
@@ -102,4 +103,5 @@ def kpis(request: Request):
         "linhas_descartadas": resultado["linhas_descartadas"],
         "kpis": calculado["kpis"],
         "por_cliente": calculado["por_cliente"],
+        "resumo": resumo,
     }

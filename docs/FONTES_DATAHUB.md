@@ -207,6 +207,26 @@ com grão de UA.
    extração de tabela de PDF, ficam fora.
 5. **Volume**: 711 MB no total. O conector não pode baixar tudo a cada rodada —
    precisa ser incremental, por `lastModifiedDateTime` ou por competência.
+6. **Número de nota fiscal truncado — contagem de NF não é possível** (conferido em
+   30/jul/2026 lendo o xlsx cru da 016/2607). `NF Entrada` em `ENTRADA_MERCADORIAS` é
+   cortada em **10 caracteres**: 308 valores terminam em `-` no meio do número, e 10
+   valores não são nota nenhuma (`FATURADO`, `SECO 1235-`, `HORTI 02.0`, `CAIXA-0`,
+   `DEV-0`, `AJUSTEDEPA`, `RETIRADA-0`, cobrindo 581 linhas e R$ 494.784). `NF GEM` em
+   `GUIAS_ENTRADA` é uma **concatenação** de várias notas separadas por `/`, cortada em
+   **99 caracteres** — perde as notas além da 10ª. As duas colunas só coincidem em 310
+   de 1.484 valores: são espaços de numeração diferentes, unir e contar infla o número.
+   A chave confiável é o **`GEM`** (10 dígitos zero-padded), que é o mesmo campo que
+   `Número` em `GUIAS_ENTRADA` e casou 100% (1.275 de 1.275). Agregar por `GEM`, nunca
+   prometer quantidade de notas.
+7. **Guia cancelada não tem linha de item.** Em `GUIAS_ENTRADA` da 016/2607 há 115 guias
+   com `Status = Cancelado` valendo R$ 9,8 mi, com zero interseção com
+   `ENTRADA_MERCADORIAS`. Quem agrega pelos itens já exclui cancelado; quem usar
+   `GUIAS_ENTRADA` sozinho **precisa filtrar `Status`**, senão infla ~26%.
+
+Para validar valor de forma independente, cruzar a soma de `Vlr. Total` dos itens contra
+`Vlr. Total NF` das guias **concluídas**, por `GEM`. Na 016/2607 fecham em −1,76%
+(R$ 36.649.308,72 contra R$ 37.305.066,49) — a diferença residual é arredondamento e um
+punhado de guias com valor de NF zerado.
 
 ---
 

@@ -97,7 +97,7 @@ SharePoint → leitura/validação determinística → metadados → KPIs em có
 | **P2.2** | Escape de conteúdo externo no painel do DataHub | **feito** (29/jul/2026) |
 | **P3** | Leitura controlada de uma planilha (`ENTRADA_MERCADORIAS`) | **feito** (29/jul/2026) |
 | **P4** | KPIs da POC (`backend/services/kpis_poc.py`) | **feito** (29/jul/2026) |
-| P5 | Resumo textual (template) + acabamento da demo | a fazer |
+| **P5** | Resumo textual (template) + acabamento da demo | **feito** (30/jul/2026) |
 | P5.5 | Nuvem do DataHub: grafo de bolinhas por família, com drill-down | a fazer |
 | P6 | Revisão final e limpeza pós-POC | a fazer |
 
@@ -364,9 +364,46 @@ contornado nesta sessão mantendo um processo (`sleep infinity`) na distro.
 Ajuste permanente (criar `.wslconfig` com `vmIdleTimeout` maior) fica como
 decisão da Maria, não foi aplicado.
 
+30/jul/2026 — **P5 fechado**: `backend/services/resumo_poc.py` (novo) gera a leitura
+executiva determinística — 2 parágrafos, números abreviados em milhões/mil (mesma
+regra de 3 algarismos significativos usada nos cards), singular/plural de "milhão"
+correto, concentração do cliente líder qualificada como "forte" só acima de 40% do
+valor total (abaixo disso o texto é neutro, sem qualificar intensidade — decisão de
+30/jul/2026 pra não inventar leitura que o número não sustente). O aviso "gerado por
+template, sem IA" saiu do texto executivo e vive em `nota_tecnica`, exibido só na área
+técnica — pedido da Maria depois de ver a primeira versão pensada pra apresentação à
+diretoria/CEO, não pra tela de administração técnica. `backend/routers/datahub.py`:
+`GET /kpis` ganhou o campo `resumo`, sem endpoint novo (mesma leitura já feita pro
+cálculo dos KPIs, sem baixar o arquivo de novo). `frontend/admin.html`, aba "KPIs da
+POC" redesenhada pro público executivo: contexto único no topo (`Filial X |
+Competência mês/ano | Fonte: SharePoint DataHub`), 4 cards na ordem valor→volume→
+peso→clientes sem a linha de auditoria visível (virou tooltip no hover), peso bruto
+convertido pra tonelada só na apresentação (`4,3 mil t` no card, `4.281,7 toneladas`
+no detalhe — cálculo interno continua em kg, conversão é só de exibição), bloco
+discreto "Qualidade e origem dos dados" (arquivo, linhas processadas, % válido, peso
+detalhado, data/hora da sincronização via `/status`). Escape aplicado nas 3 mensagens
+de erro do painel DataHub que ainda entravam sem `escaparHtml()`; loading adicionado
+ao status inicial e ao botão "Atualizar"; tabelas largas com scroll horizontal;
+responsividade básica via media query. `docs/DEMO_POC.md` (novo): roteiro de ~5 min,
+checklist de preparação, plano B pra SharePoint indisponível, perguntas prováveis.
+Validado pela Maria ao vivo contra o SharePoint real (filial 016/2607: SAPORE ~81% do
+valor/peso/volume, conferido do zero e documentado em
+`memory/concentracao-sapore-016.md` — número alto é real, já investigado, não
+reabrir). Suíte: **136 passed** (126 + 10 novos).
+
+Achado à parte, do trabalho de conferência do KPI de valor: as colunas de número de
+nota fiscal do DataHub (`NF Entrada` em `ENTRADA_MERCADORIAS`, `NF GEM` em
+`GUIAS_ENTRADA`) são truncadas e não permitem contar notas fiscais nem cruzar as duas
+famílias por NF — a chave confiável é `GEM`. Guias canceladas (`Status = Cancelado`)
+não têm linha de item e já ficam de fora de qualquer soma sobre `ENTRADA_MERCADORIAS`.
+Detalhe registrado em `memory/chaves-nf-entrada-datahub.md` e
+`docs/FONTES_DATAHUB.md` (itens 6 e 7 da seção de obstáculos) — relevante se algum dia
+um KPI de "quantidade de notas" for pedido: não é construível com o export atual do
+SLIN.
+
 ## Próximo lote autorizado
 
-**P5.5 registrado na fila, não autorizado a começar**: depende do P4 (precisa dos KPIs
-para o drill-down da família integrada), então roda depois do P5 e antes do P6.
+**P5.5 registrado na fila, não autorizado a começar**: depende do P4 (já feito) e do
+P5 (já feito); roda antes do P6.
 
-P3, P4, P5, P5.5 e P6 só começam após validação explícita da Maria, um por vez.
+P5.5 e P6 só começam após validação explícita da Maria, um por vez.

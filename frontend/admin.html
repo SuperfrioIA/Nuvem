@@ -67,15 +67,30 @@
   .stat-label { display: block; font-size: 11px; color: #666; text-transform: uppercase; }
 
   .kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
-  .kpi-card { background: #f4f5f7; border-radius: 6px; padding: 12px 16px; min-width: 160px; }
-  .kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: #2a4d8f; }
-  .kpi-card .kpi-nome { display: block; font-size: 12px; color: #444; margin-top: 2px; }
-  .kpi-card .kpi-audit { display: block; font-size: 11px; color: #888; margin-top: 6px; }
+  .kpi-card { background: #f4f5f7; border-radius: 6px; padding: 16px 18px; min-width: 180px; flex: 1; cursor: default; }
+  .kpi-card .kpi-valor { display: block; font-size: 26px; font-weight: 700; color: #2a4d8f; }
+  .kpi-card .kpi-nome { display: block; font-size: 12px; color: #444; margin-top: 4px; }
+  .kpi-contexto { font-size: 13px; font-weight: 600; color: #444; margin: 4px 0 16px; }
+  .dados-tecnicos { font-size: 12px; color: #888; }
+  .dados-tecnicos div { margin-bottom: 4px; }
+  .dados-tecnicos .nota-tecnica { margin-top: 8px; font-style: italic; }
   .kpis-grafico .barra-linha { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
   .kpis-grafico .barra-label { width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .kpis-grafico .barra-track { flex: 1; background: #eef0f4; border-radius: 4px; height: 16px; }
   .kpis-grafico .barra-fill { background: #2a4d8f; height: 100%; border-radius: 4px; }
   .kpis-grafico .barra-valor { width: 120px; text-align: right; }
+
+  .resumo-poc { background: #f4f5f7; border-radius: 6px; padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
+  .resumo-poc p { margin: 0 0 8px; }
+  .resumo-poc p:last-child { margin-bottom: 0; }
+  .tabela-scroll { overflow-x: auto; }
+
+  @media (max-width: 640px) {
+    .datahub-stats, .kpis-cards { flex-direction: column; }
+    .stat, .kpi-card { width: 100%; }
+    .kpis-grafico .barra-label { width: 100px; }
+    .kpis-grafico .barra-valor { width: 90px; }
+  }
 </style>
 </head>
 <body>
@@ -301,10 +316,12 @@
 
         <fieldset>
           <legend>Arquivos por extensão</legend>
-          <table id="tabelaDatahubExtensoes">
-            <thead><tr><th>Extensão</th><th>Quantidade</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <div class="tabela-scroll">
+            <table id="tabelaDatahubExtensoes">
+              <thead><tr><th>Extensão</th><th>Quantidade</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </fieldset>
 
         <fieldset>
@@ -314,10 +331,12 @@
 
         <fieldset>
           <legend>Arquivos mais recentes</legend>
-          <table id="tabelaDatahubRecentes">
-            <thead><tr><th>Arquivo</th><th>Caminho</th><th>Modificado em</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <div class="tabela-scroll">
+            <table id="tabelaDatahubRecentes">
+              <thead><tr><th>Arquivo</th><th>Caminho</th><th>Modificado em</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
         </fieldset>
       </div>
     </section>
@@ -325,34 +344,35 @@
     <!-- KPIS DA POC -->
     <section id="painel-kpispoc" class="painel">
       <h3>KPIs da POC</h3>
-      <p class="ajuda">Indicadores calculados a partir do arquivo ENTRADA_MERCADORIAS mais recente sincronizado do DataHub — sem persistir nada, recalculado a cada consulta.</p>
+      <p class="ajuda">Leitura executiva calculada a partir do arquivo mais recente sincronizado do DataHub.</p>
 
       <div id="kpisPocMsg"></div>
 
       <div id="kpisPocConteudo" class="oculto">
-        <div class="datahub-info">
-          <div><strong>Arquivo:</strong> <span id="kpisPocArquivo">—</span></div>
-          <div><strong>Filial:</strong> <span id="kpisPocFilial">—</span></div>
-          <div><strong>Competência:</strong> <span id="kpisPocCompetencia">—</span></div>
-          <div><strong>Atualizado em:</strong> <span id="kpisPocModificadoEm">—</span></div>
-          <div><strong>Qualidade da leitura:</strong> <span id="kpisPocQualidade">—</span></div>
-        </div>
+        <div class="kpi-contexto" id="kpisPocContexto">—</div>
 
         <button class="acao" id="btnAtualizarKpisPoc">Atualizar</button>
 
         <div id="kpisPocCards" class="kpis-cards"></div>
 
-        <fieldset>
-          <legend>Valor total por cliente (top 10)</legend>
-          <div id="kpisPocGrafico" class="kpis-grafico"></div>
-        </fieldset>
+        <p class="ajuda" style="margin-bottom: 4px;">Leitura executiva</p>
+        <div id="kpisPocResumo" class="resumo-poc"></div>
 
         <fieldset>
-          <legend>KPIs por cliente</legend>
-          <table id="tabelaKpisPocClientes">
-            <thead><tr><th>Cliente</th><th>Registros</th><th>Volume</th><th>Peso bruto (kg)</th><th>Valor total</th></tr></thead>
-            <tbody></tbody>
-          </table>
+          <legend>Detalhamento por cliente</legend>
+          <p class="ajuda">Valor total por cliente (top 10)</p>
+          <div id="kpisPocGrafico" class="kpis-grafico"></div>
+          <div class="tabela-scroll">
+            <table id="tabelaKpisPocClientes">
+              <thead><tr><th>Cliente</th><th>Registros</th><th>Volume</th><th>Peso bruto (kg)</th><th>Valor total</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </fieldset>
+
+        <fieldset class="dados-tecnicos">
+          <legend>Qualidade e origem dos dados</legend>
+          <div id="kpisPocQualidadeDetalhe"></div>
         </fieldset>
       </div>
     </section>
@@ -590,11 +610,13 @@ function escaparHtml(texto) {
 }
 
 async function carregarDatahubStatus() {
+  const msgDiv = document.getElementById("datahubStatusMsg");
+  msgDiv.innerHTML = `<div class="msg">Carregando...</div>`;
   try {
     const dados = await api("/datahub/status");
     renderizarDatahub(dados);
   } catch (e) {
-    document.getElementById("datahubStatusMsg").innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
   }
 }
 
@@ -610,7 +632,7 @@ function renderizarDatahub(dados) {
   } else if (dados.ok) {
     msgDiv.innerHTML = `<div class="msg msg-ok">Conexão com o DataHub OK.</div>`;
   } else {
-    msgDiv.innerHTML = `<div class="msg msg-erro">${dados.mensagem_erro}</div>`;
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(dados.mensagem_erro)}</div>`;
   }
 
   const resumoDiv = document.getElementById("datahubResumo");
@@ -659,7 +681,7 @@ document.getElementById("btnSincronizarDatahub").addEventListener("click", async
     const dados = await api("/datahub/sincronizar", { method: "POST" });
     renderizarDatahub(dados);
   } catch (e) {
-    msgDiv.innerHTML = `<div class="msg msg-erro">${e.message}</div>`;
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = "Sincronizar agora";
@@ -671,15 +693,25 @@ document.getElementById("btnSincronizarDatahub").addEventListener("click", async
 async function carregarKpisPoc() {
   const msgDiv = document.getElementById("kpisPocMsg");
   const conteudo = document.getElementById("kpisPocConteudo");
+  const btn = document.getElementById("btnAtualizarKpisPoc");
   msgDiv.innerHTML = `<div class="msg">Carregando...</div>`;
+  btn.disabled = true;
+  btn.textContent = "Calculando...";
   try {
-    const dados = await api("/datahub/kpis");
+    const [dados, status] = await Promise.all([
+      api("/datahub/kpis"),
+      api("/datahub/status").catch(() => null),
+    ]);
+    dados.sincronizado_em = status ? status.sincronizado_em : null;
     msgDiv.innerHTML = "";
     conteudo.classList.remove("oculto");
     renderizarKpisPoc(dados);
   } catch (e) {
     conteudo.classList.add("oculto");
     msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Atualizar";
   }
 }
 
@@ -692,23 +724,73 @@ function formatarMoeda(valor) {
   return Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+// Abrevia pra milhoes com 3 algarismos significativos (ex.: 36,6 / 1,57 /
+// 4,28) -- mesma regra usada no resumo executivo do backend (resumo_poc.py).
+function formatarMilhoesExec(valor) {
+  const emMilhoes = Number((valor / 1_000_000).toPrecision(3));
+  return emMilhoes.toLocaleString("pt-BR");
+}
+
+// kg -> toneladas (/1000) -> mil toneladas (/1000), 1 casa fixa. Unidade
+// executiva de peso da empresa e tonelada, nao kg -- decisao de 30/jul/2026.
+function formatarPesoExecutivo(pesoKg) {
+  const milToneladas = pesoKg / 1_000_000;
+  return `${milToneladas.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} mil t`;
+}
+
+function formatarToneladasDetalhado(pesoKg) {
+  const toneladas = pesoKg / 1000;
+  return `${toneladas.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} toneladas`;
+}
+
+const _MESES_ABREV = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+
+function competenciaCurta(competencia) {
+  const partes = String(competencia || "").split("-");
+  const idx = parseInt(partes[1], 10);
+  if (partes.length !== 2 || !idx || idx < 1 || idx > 12) return competencia || "-";
+  return `${_MESES_ABREV[idx]}/${partes[0]}`;
+}
+
+// Cards executivos: so estes 4, nesta ordem -- "registros" fica de fora da
+// visao principal e aparece na area tecnica (Qualidade e origem dos dados).
+const _KPIS_EXECUTIVOS = [
+  { chave: "valor_total", titulo: "Valor total movimentado", formatar: k => `R$ ${formatarMilhoesExec(k.valor)} mi` },
+  { chave: "volume", titulo: "Volume total", formatar: k => `${formatarMilhoesExec(k.valor)} mi de volumes` },
+  { chave: "peso_bruto", titulo: "Peso bruto movimentado", formatar: k => formatarPesoExecutivo(k.valor) },
+  { chave: "clientes", titulo: "Quantidade de clientes", formatar: k => `${k.valor} ${k.valor === 1 ? "cliente" : "clientes"}` },
+];
+
 function renderizarKpisPoc(dados) {
-  document.getElementById("kpisPocArquivo").textContent = dados.arquivo;
-  document.getElementById("kpisPocFilial").textContent = dados.filial;
-  document.getElementById("kpisPocCompetencia").textContent = dados.competencia;
-  document.getElementById("kpisPocModificadoEm").textContent = dados.modificado_em
-    ? new Date(dados.modificado_em).toLocaleString("pt-BR")
-    : "-";
-  document.getElementById("kpisPocQualidade").textContent =
-    `${dados.qualidade_pct}% (${dados.linhas_validas}/${dados.linhas_lidas} linhas válidas)`;
+  document.getElementById("kpisPocContexto").textContent =
+    `Filial ${dados.filial} | Competência ${competenciaCurta(dados.competencia)} | Fonte: SharePoint DataHub`;
 
   const cardsDiv = document.getElementById("kpisPocCards");
-  cardsDiv.innerHTML = dados.kpis.map(k => `
-    <div class="kpi-card">
-      <span class="kpi-valor">${escaparHtml(formatarNumeroKpi(k.valor, k.unidade))}</span>
-      <span class="kpi-nome">${escaparHtml(k.nome)}</span>
-      <span class="kpi-audit">${escaparHtml(k.regra)} · ${k.registros_validos} registros válidos · ${escaparHtml(k.fonte)}</span>
-    </div>`).join("");
+  cardsDiv.innerHTML = _KPIS_EXECUTIVOS.map(def => {
+    const k = dados.kpis.find(item => item.chave === def.chave);
+    if (!k) return "";
+    const tooltip = `${k.regra} · ${k.registros_validos} registros válidos · ${k.fonte}`;
+    return `
+    <div class="kpi-card" title="${escaparHtml(tooltip)}">
+      <span class="kpi-valor">${escaparHtml(def.formatar(k))}</span>
+      <span class="kpi-nome">${escaparHtml(def.titulo)}</span>
+    </div>`;
+  }).join("");
+
+  const resumoDiv = document.getElementById("kpisPocResumo");
+  const frases = (dados.resumo && dados.resumo.frases) || [];
+  resumoDiv.innerHTML = frases.map(f => `<p>${escaparHtml(f)}</p>`).join("");
+
+  const pesoKpi = dados.kpis.find(k => k.chave === "peso_bruto");
+  const qualDiv = document.getElementById("kpisPocQualidadeDetalhe");
+  qualDiv.innerHTML = `
+    <div><strong>Arquivo:</strong> ${escaparHtml(dados.arquivo)}</div>
+    <div><strong>Linhas processadas:</strong> ${escaparHtml(String(dados.linhas_lidas))}</div>
+    <div><strong>Registros válidos:</strong> ${escaparHtml(String(dados.qualidade_pct))}% (${dados.linhas_validas}/${dados.linhas_lidas})</div>
+    ${pesoKpi ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoKpi.valor))}</div>` : ""}
+    <div><strong>Sincronizado em:</strong> ${dados.sincronizado_em ? new Date(dados.sincronizado_em).toLocaleString("pt-BR") : "-"}</div>
+    <div class="nota-tecnica">${dados.resumo && dados.resumo.nota_tecnica ? escaparHtml(dados.resumo.nota_tecnica) : ""}</div>`;
 
   const graficoDiv = document.getElementById("kpisPocGrafico");
   const topClientes = dados.por_cliente.slice(0, 10);

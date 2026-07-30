@@ -247,3 +247,20 @@ def test_kpis_sucesso(cliente, monkeypatch):
     assert corpo["por_cliente"] == [
         {"cliente": "CLIENTE A", "registros": 1, "volume": 10.0, "peso_bruto": 1300.0, "valor_total": 12345.67}
     ]
+
+
+def test_kpis_traz_resumo_executivo(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+
+    resposta = cliente.get("/api/admin/datahub/kpis")
+    corpo = resposta.json()
+    assert "resumo" in corpo
+    assert corpo["resumo"]["frases"]
+    assert corpo["resumo"]["texto"] == " ".join(corpo["resumo"]["frases"])
+    # a leitura executiva nao pode carregar o aviso de "sem IA" -- isso fica
+    # so em nota_tecnica, pra area tecnica/tooltip (pedido da Maria)
+    assert "sem IA" not in corpo["resumo"]["texto"]
+    assert "sem IA" in corpo["resumo"]["nota_tecnica"]

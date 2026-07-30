@@ -4,4 +4,6 @@
 - Plano de construção em lotes (histórico, 0–10/R0–R3): [docs/PLANO.md](docs/PLANO.md) — status vivo desses lotes; não confundir com o status da POC P0–P6 (isso é o POC_ATUAL.md)
 - [IP da VM da Nuvem IA](memory/vm-nuvem-ia.md) — `172.31.49.141:8002`, admin em produção
 - Fontes do SharePoint DataHub (inventário, colunas, obstáculos): [docs/FONTES_DATAHUB.md](docs/FONTES_DATAHUB.md) — ler antes de mexer no conector `sharepoint_excel`
+- [Chaves das famílias ENTRADA do DataHub](memory/chaves-nf-entrada-datahub.md) — agregar por `GEM`; colunas de NF truncadas, contagem de notas não é possível; guia cancelada não tem item
+- [Concentração da SAPORE na filial 016](memory/concentracao-sapore-016.md) — ~81% do valor/peso/volume, KPI já conferido em 30/jul; devolução entra no card de valor
 - [PPTX da marca SuperFrio](memory/pptx-marca-superfrio.md) — LAYOUT_WIDE, extensão negativa quebra o arquivo, asset do logo precisa de recorte, conferir por export COM
