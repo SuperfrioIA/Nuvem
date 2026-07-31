@@ -43,8 +43,11 @@ foi coberta nesta confirmação — de-para dela continua em aberto.
 armazém em vez de código numérico) e tinha uma inconsistência não resolvida sobre se
 `001` era `RMSP` ou `RMSPII`. O `ativo` errado também distorcia qualquer tela que
 filtre por armazém ativo (`backend/routers/admin.py`, listagem de armazéns).
-**How to apply:** ao mostrar filial na UI (painel de KPIs, nuvem do DataHub, resumo
-executivo) ou ao interpretar competências futuras da filial `015`, usar esta tabela.
-Não fazer de-para automático pra sigla WMS na tela ainda — é decisão futura, não
-construída nesta POC (ver `docs/POC_ATUAL.md`, decisões técnicas do P3). Ver também
-[[chaves-nf-entrada-datahub]] (mesmas filiais aparecem lá).
+**How to apply:** ao mostrar filial na UI ou ao interpretar competências futuras da
+filial `015`, usar esta tabela. Desde o V1.0 (31/jul/2026) o de-para de **exibição**
+está construído em `backend/services/filiais_datahub.py` (fonte única; exposto como
+`filial_sigla` em `/kpis` e `/nuvem`, rótulo `016 · RMSPIV` nas telas e
+`016 (RMSPIV)` no resumo) — mudou a decisão antiga de "não fazer de-para na tela".
+É só rótulo: o de-para de ingestão continua sendo o do banco (`depara_armazem`),
+que assume quando a série histórica persistir por filial (V1.3). Filial `002`
+segue só código. Ver também [[chaves-nf-entrada-datahub]].

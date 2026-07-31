@@ -240,6 +240,8 @@ def test_kpis_sucesso(cliente, monkeypatch):
     corpo = resposta.json()
     assert corpo["arquivo"] == _ARQUIVO_EM["nome"]
     assert corpo["filial"] == "001"
+    # sigla de exibicao confirmada (V1.0) -- backend/services/filiais_datahub.py
+    assert corpo["filial_sigla"] == "RMSPII"
     assert len(corpo["kpis"]) == 5
     assert {k["chave"] for k in corpo["kpis"]} == {
         "registros", "clientes", "volume", "peso_bruto", "valor_total",

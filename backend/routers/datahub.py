@@ -4,7 +4,15 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
-from ..services import entrada_mercadorias, graph_datahub, inventario_datahub, kpis_poc, nuvem_datahub, resumo_poc
+from ..services import (
+    entrada_mercadorias,
+    filiais_datahub,
+    graph_datahub,
+    inventario_datahub,
+    kpis_poc,
+    nuvem_datahub,
+    resumo_poc,
+)
 
 router = APIRouter(prefix="/datahub")
 
@@ -89,6 +97,9 @@ def kpis(request: Request):
 
     linhas = resultado.pop("linhas")
     fonte = f"{resultado['arquivo']} (filial {resultado['filial']}, competência {resultado['competencia']})"
+    # sigla de exibicao (V1.0) -- entra nos metadados antes do resumo pra o
+    # texto executivo poder nomear a filial (ex.: "016 (RMSPIV)")
+    resultado["filial_sigla"] = filiais_datahub.sigla(resultado["filial"])
     calculado = kpis_poc.calcular(linhas, fonte)
     resumo = resumo_poc.gerar(resultado, calculado["kpis"], calculado["por_cliente"])
 
@@ -96,6 +107,7 @@ def kpis(request: Request):
         "arquivo": resultado["arquivo"],
         "caminho": resultado["caminho"],
         "filial": resultado["filial"],
+        "filial_sigla": resultado["filial_sigla"],
         "competencia": resultado["competencia"],
         "modificado_em": resultado["modificado_em"],
         "qualidade_pct": resultado["qualidade_pct"],

@@ -11,9 +11,10 @@ so o texto executivo) e vai em `nota_tecnica` -- quem exibe decide se isso
 aparece numa area tecnica/tooltip, nunca na leitura principal (pedido
 explicito: essa mensagem nao pode estar na tela vista pela diretoria).
 
-Peso continua em "milhoes de kg" no texto corrido (o card executivo e a area
-tecnica que convertem pra toneladas -- decisao de 30/jul/2026, o texto-base
-dado pela Maria usa kg na frase).
+Peso no texto corrido em TONELADAS (V1.0 -- a unidade executiva de peso e
+tonelada, direcionamento V1 secao 11.5; substitui a decisao de 30/jul/2026
+que mantinha "milhoes de kg" na frase). O calculo interno segue em kg;
+conversao e so de exibicao, mesma regra do card.
 """
 
 _MESES = {
@@ -65,6 +66,23 @@ def _milhao_ou_milhoes(valor_abreviado: str) -> str:
     return "milhão" if parte_inteira == "1" else "milhões"
 
 
+def _peso_em_toneladas(peso_kg) -> str:
+    """kg -> texto executivo em toneladas. A partir de mil toneladas, abrevia
+    no mesmo padrao do card ('4,28 mil toneladas'); abaixo disso, por extenso
+    com 1 casa ('512,3 toneladas')."""
+    toneladas = peso_kg / 1000
+    if toneladas >= 1000:
+        return f"{_abreviar_milhoes(peso_kg)} mil toneladas"
+    return f"{_numero_br(toneladas, 1)} toneladas"
+
+
+def _filial_rotulada(metadados: dict) -> str:
+    """'016 (RMSPIV)' quando a sigla confirmada veio nos metadados; so o
+    codigo quando nao veio (ex.: filial 002, de-para pendente)."""
+    sigla = metadados.get("filial_sigla")
+    return f"{metadados['filial']} ({sigla})" if sigla else str(metadados["filial"])
+
+
 def _plural(quantidade, singular: str, plural: str) -> str:
     return singular if quantidade == 1 else plural
 
@@ -77,9 +95,11 @@ def gerar(metadados: dict, kpis: list[dict], por_cliente: list[dict]) -> dict:
     valores = {k["chave"]: k["valor"] for k in kpis}
     competencia_extenso = _competencia_extenso(metadados["competencia"])
 
+    filial = _filial_rotulada(metadados)
+
     if metadados["linhas_validas"] == 0:
         frases = [
-            f"O arquivo da filial {metadados['filial']} ({competencia_extenso}) não teve "
+            f"O arquivo da filial {filial} ({competencia_extenso}) não teve "
             f"nenhum registro válido -- {_numero_br(metadados['linhas_lidas'])} linha(s) "
             "lida(s), todas descartadas."
         ]
@@ -87,13 +107,12 @@ def gerar(metadados: dict, kpis: list[dict], por_cliente: list[dict]) -> dict:
 
     valor_abrev = _abreviar_milhoes(valores["valor_total"])
     volume_abrev = _abreviar_milhoes(valores["volume"])
-    peso_abrev = _abreviar_milhoes(valores["peso_bruto"])
 
     sentenca_headline = (
-        f"Em {competencia_extenso}, a filial {metadados['filial']} movimentou "
+        f"Em {competencia_extenso}, a filial {filial} movimentou "
         f"R$ {valor_abrev} {_milhao_ou_milhoes(valor_abrev)}, distribuídos em "
         f"{volume_abrev} {_milhao_ou_milhoes(volume_abrev)} de volumes e "
-        f"{peso_abrev} {_milhao_ou_milhoes(peso_abrev)} de kg."
+        f"{_peso_em_toneladas(valores['peso_bruto'])}."
     )
 
     qtd_clientes = valores["clientes"]

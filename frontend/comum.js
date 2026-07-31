@@ -1,7 +1,8 @@
 // Utilitarios compartilhados entre frontend/admin.html e frontend/nuvem.html
-// (Lote P5.5) -- extraidos do admin.html pra nao duplicar/dessincronizar a
-// mesma formula em duas telas. Sem framework, sem build step: script comum
-// incluido via <script src> antes do script proprio de cada pagina.
+// (Lote P5.5; visao executiva consolidada na nuvem no V1.0) -- extraidos do
+// admin.html pra nao duplicar/dessincronizar a mesma formula em duas telas.
+// Sem framework, sem build step: script comum incluido via <script src> antes
+// do script proprio de cada pagina.
 
 const API = "/api/admin";
 
@@ -87,6 +88,23 @@ function formatarPesoExecutivo(pesoKg) {
 function formatarToneladasDetalhado(pesoKg) {
   const toneladas = pesoKg / 1000;
   return `${toneladas.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} toneladas`;
+}
+
+function formatarMoeda(valor) {
+  return Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+function formatarNumeroKpi(valor, unidade) {
+  const texto = Number(valor).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+  return unidade ? `${texto} ${unidade}` : texto;
+}
+
+// Rotulo de filial pra tela: "016 · RMSPIV" quando a sigla confirmada veio do
+// backend (backend/services/filiais_datahub.py, a fonte unica do de-para de
+// exibicao), so o codigo quando nao veio (ex.: 002, de-para pendente).
+function rotuloFilial(codigo, sigla) {
+  if (!codigo) return "—";
+  return sigla ? `${codigo} · ${sigla}` : String(codigo);
 }
 
 const MESES_ABREV = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho",

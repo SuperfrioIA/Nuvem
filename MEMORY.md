@@ -1,8 +1,9 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; POC = catering família RMSP; Lotes 1, 3, 7, 7.1, 8, 8.5, R0–R3 feitos; SharePoint DataHub vinculado em 29/jul
-- [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, auth só no admin, DataHub como fonte permanente (29/jul)
-- Escopo e status por lote da POC (dono único, P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — **POC encerrada em 30/jul/2026, nenhum lote novo autorizado**
-- Balanço da POC (o que foi provado, limitações, obstáculos do dado, riscos): [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md) — 2 pendências abertas: validar o P5.5 ao vivo e subir o P5/P5.5 pra VM
-- Plano de construção em lotes (histórico, 0–10/R0–R3): [docs/PLANO.md](docs/PLANO.md) — status vivo desses lotes; não confundir com o status da POC P0–P6 (isso é o POC_ATUAL.md)
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Bloco A feito, B–G aguardam OK
+- **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
+- [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, DataHub como fonte permanente (29/jul), decisões fixadas da V1 e do Bloco A (31/jul)
+- Escopo e status por lote da POC (histórico, P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — POC encerrada em 30/jul/2026
+- Balanço da POC (o que foi provado, limitações, obstáculos do dado, riscos): [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md) — pendências: validar a nuvem ao vivo, subir pra VM (com UPDATE de `ativo` das filiais), devolução no card de valor
+- Plano de produto antigo (histórico, 0–11/R0–R3): [docs/PLANO.md](docs/PLANO.md) — nenhum lote de lá autorizado; o plano ativo é o V1_PLANO.md
 - [IP da VM da Nuvem IA](memory/vm-nuvem-ia.md) — `172.31.49.141:8002`, admin em produção
 - Fontes do SharePoint DataHub (inventário, colunas, obstáculos): [docs/FONTES_DATAHUB.md](docs/FONTES_DATAHUB.md) — ler antes de mexer no conector `sharepoint_excel`
 - [Chaves das famílias ENTRADA do DataHub](memory/chaves-nf-entrada-datahub.md) — agregar por `GEM`; colunas de NF truncadas, contagem de notas não é possível; guia cancelada não tem item

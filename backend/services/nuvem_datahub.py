@@ -15,6 +15,8 @@ sumir silenciosamente da contagem total.
 
 import re
 
+from . import filiais_datahub
+
 _FAMILIAS = (
     {"familia": "ENTRADA_MERCADORIAS", "area": "ENTRADA", "estado": "integrada"},
     {"familia": "GUIAS_ENTRADA", "area": "ENTRADA", "estado": "mapeada"},
@@ -89,6 +91,9 @@ def montar_bolinhas(resumo: dict) -> list[dict]:
                 "tamanho": arquivo.get("tamanho"),
                 "modificado_em": arquivo.get("modificado_em"),
                 "filial": filial,
+                # rotulo de exibicao (V1.0) -- None quando o de-para da filial
+                # nao foi confirmado; a tela mostra so o codigo nesse caso
+                "filial_sigla": filiais_datahub.sigla(filial),
                 "competencia": competencia,
             }
         )

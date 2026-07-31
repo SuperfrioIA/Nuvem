@@ -1,9 +1,21 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — junta silos numa camada fina e mostra nuvem de métricas que acendem fora do padrão
+description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status)
 metadata:
   type: project
 ---
+
+**Fase atual (31/jul/2026): construção da V1 de produção.** A POC SharePoint
+DataHub (P0–P6) foi concluída com sucesso em 30/jul/2026; o projeto deixou de ser
+prova de conceito. Orientação principal: `docs/V1_NUVEM_IA_DIRECIONAMENTO.md`;
+status: `docs/V1_PLANO.md` (fonte única — blocos A–G / macro-lotes V1.0–V1.8).
+**Bloco A (V1.0, transição para produto) feito em 31/jul/2026**: docs V1 criados,
+telas sem texto de POC, visão executiva consolidada em `/nuvem` (painel duplicado
+do admin removido — dívida do P6 resolvida), resumo executivo com peso em
+toneladas, filiais com sigla de exibição (001·RMSPII, 015·RMSPIII, 016·RMSPIV —
+fonte única `backend/services/filiais_datahub.py`), 154 testes. **Nenhum bloco
+seguinte autorizado** — Bloco B (catálogo semântico + compatibilidade de medidas)
+aguarda OK da Maria. O texto abaixo é o histórico até a virada.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

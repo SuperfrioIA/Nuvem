@@ -213,10 +213,23 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 .kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 170px; flex: 1; }
 .kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
 .kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
-.resumo-poc { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
-.resumo-poc p { margin: 0 0 8px; }
-.resumo-poc p:last-child { margin-bottom: 0; }
+.resumo-executivo { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
+.resumo-executivo p { margin: 0 0 8px; }
+.resumo-executivo p:last-child { margin-bottom: 0; }
 .subLabel { color: var(--muted); font-size: 12px; margin: 14px 0 4px; }
+
+.grafico-clientes { margin: 10px 0 14px; }
+.grafico-clientes .barra-linha { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
+.grafico-clientes .barra-label { width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--texto); }
+.grafico-clientes .barra-track { flex: 1; background: var(--card-2); border-radius: 4px; height: 16px; }
+.grafico-clientes .barra-fill { background: var(--brand-azul-principal); height: 100%; border-radius: 4px; }
+.grafico-clientes .barra-valor { width: 130px; text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Qualidade e origem dos dados: separado da area principal de proposito
+ * (V1.0 -- a diretoria le os cards e o resumo; a auditoria le este bloco). */
+.dados-tecnicos { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+.dados-tecnicos div { margin-bottom: 4px; }
+.dados-tecnicos .nota-tecnica { margin-top: 8px; font-style: italic; }
 
 @media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
@@ -304,9 +317,21 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
           <div class="kpi-contexto" id="integradoContexto"></div>
           <div id="integradoCards" class="kpis-cards"></div>
           <p class="subLabel">Leitura executiva</p>
-          <div id="integradoResumo" class="resumo-poc"></div>
+          <div id="integradoResumo" class="resumo-executivo"></div>
+          <p class="subLabel">Detalhamento por cliente — valor total (top 10)</p>
+          <div id="integradoGrafico" class="grafico-clientes"></div>
+          <div class="tblWrap">
+            <table class="tbl" id="tabelaIntegradoClientes">
+              <thead><tr><th>Cliente</th><th class="num">Registros</th><th class="num">Volume</th><th class="num">Peso bruto (kg)</th><th class="num">Valor total</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
           <p class="subLabel">Prévia dos dados (até 100 linhas)</p>
           <div class="tblWrap"><table class="tbl" id="tabelaPreviaLinhas"></table></div>
+          <div class="dados-tecnicos">
+            <strong>Qualidade e origem dos dados</strong>
+            <div id="integradoQualidade" style="margin-top:8px"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -395,9 +420,9 @@ async function carregarNuvem() {
 function criarNodeFamilia(b, hubX, hubY, anguloGraus, raio, orfa) {
   const integrada = b.familia === "ENTRADA_MERCADORIAS";
   let nota;
-  if (integrada) nota = "Dados lidos, validados e usados nos KPIs desta POC.";
+  if (integrada) nota = "Dados lidos, validados e usados nos indicadores desta tela.";
   else if (orfa) nota = "Não se encaixa em nenhum domínio calculável hoje.";
-  else if (b.estado === "só_pdf") nota = "Arquivos em PDF -- sem extração de dados estruturados nesta POC.";
+  else if (b.estado === "só_pdf") nota = "Arquivos em PDF -- sem extração de dados estruturados por enquanto.";
   else nota = "Conhecida e inventariada, ainda não lida pela aplicação.";
 
   const angulo = anguloGraus * Math.PI / 180;
@@ -820,9 +845,11 @@ function desenharTabelaArquivos(bolinha) {
     `Área ${bolinha.area} · ${rotulo} · ${bolinha.tamanho_total_mb} MB`;
 
   const selFilial = document.getElementById("filtroFilial");
+  const siglaPorFilial = {};
+  bolinha.arquivos.forEach(a => { if (a.filial && a.filial_sigla) siglaPorFilial[a.filial] = a.filial_sigla; });
   const filiais = Array.from(new Set(bolinha.arquivos.map(a => a.filial).filter(Boolean))).sort();
   selFilial.innerHTML = `<option value="">Todas as filiais</option>` +
-    filiais.map(f => `<option value="${escaparHtml(f)}">${escaparHtml(f)}</option>`).join("");
+    filiais.map(f => `<option value="${escaparHtml(f)}">${escaparHtml(rotuloFilial(f, siglaPorFilial[f]))}</option>`).join("");
   selFilial.onchange = () => { _filtroFilial = selFilial.value; desenharLinhasArquivos(bolinha); };
 
   desenharLinhasArquivos(bolinha);
@@ -842,7 +869,7 @@ function desenharLinhasArquivos(bolinha) {
       return `<tr>
         <td>${celulaNome}</td>
         <td>${escaparHtml(a.caminho)}</td>
-        <td>${escaparHtml(a.filial || "—")}</td>
+        <td>${escaparHtml(rotuloFilial(a.filial, a.filial_sigla))}</td>
         <td>${escaparHtml(a.competencia || "—")}</td>
         <td class="num">${formatarTamanho(a.tamanho)}</td>
         <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
@@ -856,9 +883,13 @@ function desenharLinhasArquivos(bolinha) {
 async function carregarIntegrado() {
   const msgDiv = document.getElementById("integradoMsg");
   if (_kpisIntegradaCache) { renderizarIntegrado(_kpisIntegradaCache); return; }
-  msgDiv.innerHTML = `<div class="msg">Carregando KPIs...</div>`;
+  msgDiv.innerHTML = `<div class="msg">Carregando indicadores...</div>`;
   try {
-    const dados = await api("/datahub/kpis");
+    const [dados, status] = await Promise.all([
+      api("/datahub/kpis"),
+      api("/datahub/status").catch(() => null),
+    ]);
+    dados.sincronizado_em = status ? status.sincronizado_em : null;
     _kpisIntegradaCache = dados;
     msgDiv.innerHTML = "";
     renderizarIntegrado(dados);
@@ -869,7 +900,7 @@ async function carregarIntegrado() {
 
 function renderizarIntegrado(dados) {
   document.getElementById("integradoContexto").textContent =
-    `Filial ${dados.filial} | Competência ${competenciaCurta(dados.competencia)} | Fonte: SharePoint DataHub`;
+    `Filial ${rotuloFilial(dados.filial, dados.filial_sigla)} | Competência ${competenciaCurta(dados.competencia)} | Fonte: SharePoint DataHub`;
 
   document.getElementById("integradoCards").innerHTML = KPIS_EXECUTIVOS.map(def => {
     const k = dados.kpis.find(item => item.chave === def.chave);
@@ -884,7 +915,42 @@ function renderizarIntegrado(dados) {
   const frases = (dados.resumo && dados.resumo.frases) || [];
   document.getElementById("integradoResumo").innerHTML = frases.map(f => `<p>${escaparHtml(f)}</p>`).join("");
 
+  renderizarClientes(dados.por_cliente || []);
   renderizarPreviaLinhas(dados.linhas_amostra || []);
+  renderizarQualidade(dados);
+}
+
+function renderizarClientes(porCliente) {
+  const graficoDiv = document.getElementById("integradoGrafico");
+  const topClientes = porCliente.slice(0, 10);
+  const maxValor = Math.max(1, ...topClientes.map(c => c.valor_total));
+  graficoDiv.innerHTML = topClientes.map(c => `
+    <div class="barra-linha">
+      <div class="barra-label" title="${escaparHtml(c.cliente)}">${escaparHtml(c.cliente)}</div>
+      <div class="barra-track"><div class="barra-fill" style="width:${(c.valor_total / maxValor * 100).toFixed(1)}%"></div></div>
+      <div class="barra-valor">${escaparHtml(formatarMoeda(c.valor_total))}</div>
+    </div>`).join("") || `<div class="dataHint">Nenhum cliente encontrado.</div>`;
+
+  const tbody = document.querySelector("#tabelaIntegradoClientes tbody");
+  tbody.innerHTML = porCliente.map(c => `
+    <tr>
+      <td>${escaparHtml(c.cliente)}</td>
+      <td class="num">${c.registros}</td>
+      <td class="num">${escaparHtml(formatarNumeroKpi(c.volume, ""))}</td>
+      <td class="num">${escaparHtml(formatarNumeroKpi(c.peso_bruto, ""))}</td>
+      <td class="num">${escaparHtml(formatarMoeda(c.valor_total))}</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="tblEmpty">Nenhum cliente encontrado.</td></tr>`;
+}
+
+function renderizarQualidade(dados) {
+  const pesoKpi = (dados.kpis || []).find(k => k.chave === "peso_bruto");
+  document.getElementById("integradoQualidade").innerHTML = `
+    <div><strong>Arquivo:</strong> ${escaparHtml(dados.arquivo)}</div>
+    <div><strong>Linhas processadas:</strong> ${escaparHtml(String(dados.linhas_lidas))}</div>
+    <div><strong>Registros válidos:</strong> ${escaparHtml(String(dados.qualidade_pct))}% (${dados.linhas_validas}/${dados.linhas_lidas})</div>
+    ${pesoKpi ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoKpi.valor))}</div>` : ""}
+    <div><strong>Sincronizado em:</strong> ${dados.sincronizado_em ? new Date(dados.sincronizado_em).toLocaleString("pt-BR") : "-"}</div>
+    <div class="nota-tecnica">${dados.resumo && dados.resumo.nota_tecnica ? escaparHtml(dados.resumo.nota_tecnica) : ""}</div>`;
 }
 
 function renderizarPreviaLinhas(linhas) {

@@ -216,6 +216,25 @@ metadata:
   binário rastreado é `docs/configuracao_graph_api.docx` (já conferido sem
   credenciais). Nenhum arquivo foi movido ou removido neste lote.
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026 e 29/jul/2026 — evita rediscutir do zero.
+- **Virada pra V1 de produção (30/jul/2026, direcionamento entregue pela Maria):**
+  a POC encerrou e `docs/V1_NUVEM_IA_DIRECIONAMENTO.md` passou a ser a orientação
+  principal; `docs/V1_PLANO.md` é a fonte única do status (blocos A–G). Decisões
+  fixadas da V1 (seção 5 do direcionamento, resumo em `docs/V1_ESCOPO.md`): sem
+  cadastro de produto e sem conversão por SKU/embalagem; somar só medidas
+  compatíveis (sem compatibilidade → não consolida, separa e declara); "volume"
+  não é conceito único (categoria de unidade obrigatória); catálogo semântico
+  configurável e versionado como fundamento; Laboratório separado do Cockpit
+  (IA nunca publica KPI nem calcula KPI oficial); dimensões obrigatórias
+  período×filial×cliente. **Bloco A (V1.0) executado em 31/jul/2026**, decisões
+  do lote: painel de KPIs saiu do admin (visão executiva só em `/nuvem` — dívida
+  do P6 resolvida pelo caminho "tirar do admin"); módulos `kpis_poc.py`/
+  `resumo_poc.py` mantêm o nome (POC saiu só das telas); texto do resumo em
+  toneladas (substitui a decisão de 30/jul que mantinha kg na frase); de-para de
+  filial **só de exibição** em `backend/services/filiais_datahub.py` (001=RMSPII,
+  015=RMSPIII, 016=RMSPIV; 002 segue só código), exposto como `filial_sigla` —
+  o de-para real de ingestão continua sendo o do banco (V1.3); card "Volume
+  total" mantido com ressalva declarada (destino no V1.2/V1.7).
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026 e 31/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

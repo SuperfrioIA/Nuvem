@@ -1,8 +1,15 @@
 # POC atual — Nuvem IA + SharePoint DataHub
 
-**Este documento é o dono único do escopo ativo, do status dos lotes P0–P6 e do
-próximo lote autorizado** (decisão de 29/jul/2026 — ver `memory/decisoes-fechadas.md`).
-Nenhum outro arquivo mantém status desses lotes. Origem completa da especificação:
+> **Documento histórico desde 31/jul/2026.** A POC da integração SharePoint DataHub
+> foi concluída com sucesso; a partir desta etapa, o projeto entra na construção da
+> **V1 de produção da Nuvem IA** — o plano ativo é `docs/V1_PLANO.md` (fonte única
+> do status da V1). Este arquivo permanece como registro do escopo e do status dos
+> lotes P0–P6, sem manutenção futura.
+
+**Enquanto a POC esteve ativa, este documento foi o dono único do escopo, do
+status dos lotes P0–P6 e do próximo lote autorizado** (decisão de 29/jul/2026 —
+ver `memory/decisoes-fechadas.md`); segue sendo a referência de status desses
+lotes, agora congelada. Origem completa da especificação:
 `docs/DIRECIONAMENTO_POC_NUVEM_IA_CLAUDE.md` (marcado como superado nesta data — fica
 no lugar como referência técnica detalhada de cada lote P1–P6, não como fonte de
 status).

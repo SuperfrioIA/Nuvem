@@ -51,13 +51,37 @@ def test_extrai_filial_e_competencia_quando_bate_o_padrao():
     resumo = {"arquivos": [_arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx")]}
     arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
     assert arquivo["filial"] == "016"
+    assert arquivo["filial_sigla"] == "RMSPIV"
     assert arquivo["competencia"] == "2026-07"
+
+
+def test_depara_de_exibicao_cobre_as_tres_filiais_confirmadas():
+    # 001/015/016 confirmadas pela Maria em 30/jul/2026
+    # (memory/filiais-catering-poc.md; fonte unica: services/filiais_datahub.py)
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_001_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_015_2605.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx"),
+    ]}
+    arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
+    siglas = {a["filial"]: a["filial_sigla"] for a in arquivos}
+    assert siglas == {"001": "RMSPII", "015": "RMSPIII", "016": "RMSPIV"}
+
+
+def test_filial_sem_depara_confirmado_fica_sem_sigla():
+    # 002 (DADOS_GERAIS/OCORRENCIAS_ENTREGAS) segue com de-para pendente --
+    # a tela mostra so o codigo, sem inventar sigla (V1.0)
+    resumo = {"arquivos": [_arquivo("DADOS_GERAIS_002_2607.xlsx")]}
+    arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
+    assert arquivo["filial"] == "002"
+    assert arquivo["filial_sigla"] is None
 
 
 def test_filial_e_competencia_ausentes_quando_nao_bate_o_padrao():
     resumo = {"arquivos": [_arquivo("PALLETS_EXCEDENTES_CLIENTE_X_GELADO.pdf")]}
     arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
     assert arquivo["filial"] is None
+    assert arquivo["filial_sigla"] is None
     assert arquivo["competencia"] is None
 
 

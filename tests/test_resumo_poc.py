@@ -1,11 +1,11 @@
-"""Testes do resumo executivo deterministico (Lote P5, ajuste executivo de
-30/jul/2026). Funcao pura -- sem I/O, sem mock necessario."""
+"""Testes do resumo executivo deterministico (Lote P5; peso em toneladas e
+filial rotulada desde o V1.0). Funcao pura -- sem I/O, sem mock necessario."""
 
 from backend.services import resumo_poc
 
 # Reproduz o texto-base pedido pela Maria: filial 016, julho/2026, R$ 36,6 mi,
-# 1,57 mi de volumes, 4,28 mi kg (= 4.281.700 kg, mesmo valor do exemplo
-# "4.281,7 toneladas" da area tecnica), 8 clientes, 100% de 8.411 registros.
+# 1,57 mi de volumes, 4.281.700 kg (= "4,28 mil toneladas" no texto executivo,
+# "4.281,7 toneladas" na area tecnica), 8 clientes, 100% de 8.411 registros.
 _METADADOS = {
     "arquivo": "ENTRADA_MERCADORIAS_016_2607.xlsx",
     "filial": "016",
@@ -35,10 +35,11 @@ def test_resumo_reproduz_texto_base_da_maria():
     assert len(resultado["frases"]) == 2
 
     assert "julho de 2026" in resultado["frases"][0]
-    assert "filial 016" in resultado["frases"][0]
+    assert "filial 016 movimentou" in resultado["frases"][0]
     assert "R$ 36,6 milhões" in resultado["frases"][0]
     assert "1,57 milhão de volumes" in resultado["frases"][0]
-    assert "4,28 milhões de kg" in resultado["frases"][0]
+    assert "4,28 mil toneladas" in resultado["frases"][0]
+    assert "kg" not in resultado["frases"][0]
     assert "8 clientes" in resultado["frases"][0]
     assert "forte concentração do valor movimentado em Sapore" in resultado["frases"][0]
 
@@ -105,3 +106,16 @@ def test_singular_milhao_quando_parte_inteira_e_um():
     kpis = [{**k, "valor": 1_050_000} if k["chave"] == "volume" else k for k in _KPIS]
     resultado = resumo_poc.gerar(_METADADOS, kpis, _POR_CLIENTE)
     assert "1,05 milhão de volumes" in resultado["frases"][0]
+
+
+def test_peso_abaixo_de_mil_toneladas_sai_por_extenso():
+    kpis = [{**k, "valor": 512_300} if k["chave"] == "peso_bruto" else k for k in _KPIS]
+    resultado = resumo_poc.gerar(_METADADOS, kpis, _POR_CLIENTE)
+    assert "512,3 toneladas" in resultado["frases"][0]
+    assert "mil toneladas" not in resultado["frases"][0]
+
+
+def test_filial_ganha_sigla_quando_confirmada():
+    metadados = {**_METADADOS, "filial_sigla": "RMSPIV"}
+    resultado = resumo_poc.gerar(metadados, _KPIS, _POR_CLIENTE)
+    assert "filial 016 (RMSPIV) movimentou" in resultado["frases"][0]

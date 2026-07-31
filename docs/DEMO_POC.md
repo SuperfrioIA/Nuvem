@@ -1,5 +1,10 @@
 # Roteiro da demonstração — POC SharePoint DataHub
 
+> **Documento histórico desde 31/jul/2026** (POC encerrada; projeto na V1 —
+> `docs/V1_PLANO.md`). Atenção: o Bloco A da V1 removeu a aba "KPIs da POC" do
+> admin (que este roteiro usava como plano B) — a visão executiva vive só em
+> `/nuvem`. O roteiro abaixo descreve a tela como era na apresentação.
+
 Lotes P5 e P5.5. Objetivo: provar de ponta a ponta que a aplicação lê o DataHub,
 atualiza sob demanda e calcula KPIs auditáveis com resumo textual — sem IA em
 nenhuma etapa de cálculo. Duração alvo: **~6 minutos** (o passo 6, a Nuvem do

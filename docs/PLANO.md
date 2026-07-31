@@ -1,8 +1,10 @@
 # Plano de construção — Nuvem IA
 
-> Plano ativo da POC: [docs/POC_ATUAL.md](POC_ATUAL.md). Este arquivo é o histórico
-> do plano de produto (Lotes 0–10, R0–R3) — nenhum lote daqui está autorizado
-> automaticamente (29/jul/2026).
+> **Plano ativo do projeto: [docs/V1_PLANO.md](V1_PLANO.md)** (V1 de produção, desde
+> 31/jul/2026). A POC DataHub (P0–P6) está encerrada — histórico em
+> [docs/POC_ATUAL.md](POC_ATUAL.md). Este arquivo é o histórico do plano de produto
+> (Lotes 0–11, R0–R3) — nenhum lote daqui está autorizado automaticamente; o que a
+> V1 aproveitar daqui entra pelos macro-lotes do V1_PLANO.
 
 Plano em lotes (agrupados por módulo tocado, não por prioridade). **Um lote por vez;
 aguardar validação antes do próximo.** Gatilho pra começar: a Maria diz "vamos pro

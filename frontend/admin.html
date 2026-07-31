@@ -66,30 +66,11 @@
   .stat-numero { display: block; font-size: 22px; font-weight: 700; color: #2a4d8f; }
   .stat-label { display: block; font-size: 11px; color: #666; text-transform: uppercase; }
 
-  .kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
-  .kpi-card { background: #f4f5f7; border-radius: 6px; padding: 16px 18px; min-width: 180px; flex: 1; cursor: default; }
-  .kpi-card .kpi-valor { display: block; font-size: 26px; font-weight: 700; color: #2a4d8f; }
-  .kpi-card .kpi-nome { display: block; font-size: 12px; color: #444; margin-top: 4px; }
-  .kpi-contexto { font-size: 13px; font-weight: 600; color: #444; margin: 4px 0 16px; }
-  .dados-tecnicos { font-size: 12px; color: #888; }
-  .dados-tecnicos div { margin-bottom: 4px; }
-  .dados-tecnicos .nota-tecnica { margin-top: 8px; font-style: italic; }
-  .kpis-grafico .barra-linha { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 12px; }
-  .kpis-grafico .barra-label { width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kpis-grafico .barra-track { flex: 1; background: #eef0f4; border-radius: 4px; height: 16px; }
-  .kpis-grafico .barra-fill { background: #2a4d8f; height: 100%; border-radius: 4px; }
-  .kpis-grafico .barra-valor { width: 120px; text-align: right; }
-
-  .resumo-poc { background: #f4f5f7; border-radius: 6px; padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
-  .resumo-poc p { margin: 0 0 8px; }
-  .resumo-poc p:last-child { margin-bottom: 0; }
   .tabela-scroll { overflow-x: auto; }
 
   @media (max-width: 640px) {
-    .datahub-stats, .kpis-cards { flex-direction: column; }
-    .stat, .kpi-card { width: 100%; }
-    .kpis-grafico .barra-label { width: 100px; }
-    .kpis-grafico .barra-valor { width: 90px; }
+    .datahub-stats { flex-direction: column; }
+    .stat { width: 100%; }
   }
 </style>
 </head>
@@ -117,7 +98,6 @@
     <button data-painel="catalogo">Catálogo</button>
     <button data-painel="metricas">Métricas</button>
     <button data-painel="datahub">DataHub</button>
-    <button data-painel="kpispoc">KPIs da POC</button>
   </nav>
 
   <main>
@@ -341,41 +321,6 @@
       </div>
     </section>
 
-    <!-- KPIS DA POC -->
-    <section id="painel-kpispoc" class="painel">
-      <h3>KPIs da POC</h3>
-      <p class="ajuda">Leitura executiva calculada a partir do arquivo mais recente sincronizado do DataHub.</p>
-
-      <div id="kpisPocMsg"></div>
-
-      <div id="kpisPocConteudo" class="oculto">
-        <div class="kpi-contexto" id="kpisPocContexto">—</div>
-
-        <button class="acao" id="btnAtualizarKpisPoc">Atualizar</button>
-
-        <div id="kpisPocCards" class="kpis-cards"></div>
-
-        <p class="ajuda" style="margin-bottom: 4px;">Leitura executiva</p>
-        <div id="kpisPocResumo" class="resumo-poc"></div>
-
-        <fieldset>
-          <legend>Detalhamento por cliente</legend>
-          <p class="ajuda">Valor total por cliente (top 10)</p>
-          <div id="kpisPocGrafico" class="kpis-grafico"></div>
-          <div class="tabela-scroll">
-            <table id="tabelaKpisPocClientes">
-              <thead><tr><th>Cliente</th><th>Registros</th><th>Volume</th><th>Peso bruto (kg)</th><th>Valor total</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </fieldset>
-
-        <fieldset class="dados-tecnicos">
-          <legend>Qualidade e origem dos dados</legend>
-          <div id="kpisPocQualidadeDetalhe"></div>
-        </fieldset>
-      </div>
-    </section>
   </main>
 </div>
 
@@ -392,7 +337,6 @@ document.querySelectorAll("nav button").forEach(btn => {
     document.querySelectorAll(".painel").forEach(p => p.classList.remove("ativo"));
     btn.classList.add("ativo");
     document.getElementById("painel-" + btn.dataset.painel).classList.add("ativo");
-    if (btn.dataset.painel === "kpispoc") carregarKpisPoc();
   });
 });
 
@@ -634,99 +578,10 @@ document.getElementById("btnSincronizarDatahub").addEventListener("click", async
   }
 });
 
-// -------- kpis da poc --------
-
-async function carregarKpisPoc() {
-  const msgDiv = document.getElementById("kpisPocMsg");
-  const conteudo = document.getElementById("kpisPocConteudo");
-  const btn = document.getElementById("btnAtualizarKpisPoc");
-  msgDiv.innerHTML = `<div class="msg">Carregando...</div>`;
-  btn.disabled = true;
-  btn.textContent = "Calculando...";
-  try {
-    const [dados, status] = await Promise.all([
-      api("/datahub/kpis"),
-      api("/datahub/status").catch(() => null),
-    ]);
-    dados.sincronizado_em = status ? status.sincronizado_em : null;
-    msgDiv.innerHTML = "";
-    conteudo.classList.remove("oculto");
-    renderizarKpisPoc(dados);
-  } catch (e) {
-    conteudo.classList.add("oculto");
-    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = "Atualizar";
-  }
-}
-
-function formatarNumeroKpi(valor, unidade) {
-  const texto = Number(valor).toLocaleString("pt-BR", { maximumFractionDigits: 1 });
-  return unidade ? `${texto} ${unidade}` : texto;
-}
-
-function formatarMoeda(valor) {
-  return Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
-
-// formatarMilhoesExec/formatarPesoExecutivo/formatarToneladasDetalhado/
-// competenciaCurta/KPIS_EXECUTIVOS vem de comum.js (compartilhado com
-// nuvem.html, Lote P5.5)
-
-function renderizarKpisPoc(dados) {
-  document.getElementById("kpisPocContexto").textContent =
-    `Filial ${dados.filial} | Competência ${competenciaCurta(dados.competencia)} | Fonte: SharePoint DataHub`;
-
-  const cardsDiv = document.getElementById("kpisPocCards");
-  cardsDiv.innerHTML = KPIS_EXECUTIVOS.map(def => {
-    const k = dados.kpis.find(item => item.chave === def.chave);
-    if (!k) return "";
-    const tooltip = `${k.regra} · ${k.registros_validos} registros válidos · ${k.fonte}`;
-    return `
-    <div class="kpi-card" title="${escaparHtml(tooltip)}">
-      <span class="kpi-valor">${escaparHtml(def.formatar(k))}</span>
-      <span class="kpi-nome">${escaparHtml(def.titulo)}</span>
-    </div>`;
-  }).join("");
-
-  const resumoDiv = document.getElementById("kpisPocResumo");
-  const frases = (dados.resumo && dados.resumo.frases) || [];
-  resumoDiv.innerHTML = frases.map(f => `<p>${escaparHtml(f)}</p>`).join("");
-
-  const pesoKpi = dados.kpis.find(k => k.chave === "peso_bruto");
-  const qualDiv = document.getElementById("kpisPocQualidadeDetalhe");
-  qualDiv.innerHTML = `
-    <div><strong>Arquivo:</strong> ${escaparHtml(dados.arquivo)}</div>
-    <div><strong>Linhas processadas:</strong> ${escaparHtml(String(dados.linhas_lidas))}</div>
-    <div><strong>Registros válidos:</strong> ${escaparHtml(String(dados.qualidade_pct))}% (${dados.linhas_validas}/${dados.linhas_lidas})</div>
-    ${pesoKpi ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoKpi.valor))}</div>` : ""}
-    <div><strong>Sincronizado em:</strong> ${dados.sincronizado_em ? new Date(dados.sincronizado_em).toLocaleString("pt-BR") : "-"}</div>
-    <div class="nota-tecnica">${dados.resumo && dados.resumo.nota_tecnica ? escaparHtml(dados.resumo.nota_tecnica) : ""}</div>`;
-
-  const graficoDiv = document.getElementById("kpisPocGrafico");
-  const topClientes = dados.por_cliente.slice(0, 10);
-  const maxValor = Math.max(1, ...topClientes.map(c => c.valor_total));
-  graficoDiv.innerHTML = topClientes.map(c => `
-    <div class="barra-linha">
-      <div class="barra-label" title="${escaparHtml(c.cliente)}">${escaparHtml(c.cliente)}</div>
-      <div class="barra-track"><div class="barra-fill" style="width:${(c.valor_total / maxValor * 100).toFixed(1)}%"></div></div>
-      <div class="barra-valor">${escaparHtml(formatarMoeda(c.valor_total))}</div>
-    </div>`).join("") || `<div class="ajuda">Nenhum cliente encontrado.</div>`;
-
-  const tbody = document.querySelector("#tabelaKpisPocClientes tbody");
-  tbody.innerHTML = dados.por_cliente.map(c => `
-    <tr>
-      <td>${escaparHtml(c.cliente)}</td>
-      <td>${c.registros}</td>
-      <td>${escaparHtml(formatarNumeroKpi(c.volume, ""))}</td>
-      <td>${escaparHtml(formatarNumeroKpi(c.peso_bruto, ""))}</td>
-      <td>${escaparHtml(formatarMoeda(c.valor_total))}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="ajuda">Nenhum cliente encontrado.</td></tr>`;
-}
-
-document.getElementById("btnAtualizarKpisPoc").addEventListener("click", carregarKpisPoc);
-
+// A visao executiva (cards, leitura executiva, detalhamento por cliente,
+// qualidade e origem) vive em nuvem.html desde o V1.0 -- o painel duplicado
+// "KPIs da POC" que existia aqui era o plano B da apresentacao da POC e foi
+// removido (divida registrada no P6, resolvida pelo caminho "tirar do admin").
 
 // -------- de-para / armazém: criação --------
 
