@@ -15,6 +15,11 @@ Peso no texto corrido em TONELADAS (V1.0 -- a unidade executiva de peso e
 tonelada, direcionamento V1 secao 11.5; substitui a decisao de 30/jul/2026
 que mantinha "milhoes de kg" na frase). O calculo interno segue em kg;
 conversao e so de exibicao, mesma regra do card.
+
+Volume consolidado SAIU do texto (V1.2, 31/jul/2026): a coluna Volume mistura
+24 embalagens (inclusive KGS) e o direcionamento proibe consolidar -- os
+volumes aparecem separados por embalagem na tela, nao na frase executiva
+(decisao da Maria: separar por embalagem, resumo deixa de citar volume).
 """
 
 _MESES = {
@@ -106,13 +111,11 @@ def gerar(metadados: dict, kpis: list[dict], por_cliente: list[dict]) -> dict:
         return {"frases": frases, "texto": " ".join(frases), "nota_tecnica": _NOTA_TECNICA}
 
     valor_abrev = _abreviar_milhoes(valores["valor_total"])
-    volume_abrev = _abreviar_milhoes(valores["volume"])
 
     sentenca_headline = (
         f"Em {competencia_extenso}, a filial {filial} movimentou "
-        f"R$ {valor_abrev} {_milhao_ou_milhoes(valor_abrev)}, distribuídos em "
-        f"{volume_abrev} {_milhao_ou_milhoes(volume_abrev)} de volumes e "
-        f"{_peso_em_toneladas(valores['peso_bruto'])}."
+        f"R$ {valor_abrev} {_milhao_ou_milhoes(valor_abrev)}, correspondendo a "
+        f"{_peso_em_toneladas(valores['peso_bruto'])} de mercadoria."
     )
 
     qtd_clientes = valores["clientes"]

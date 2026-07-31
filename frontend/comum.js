@@ -117,11 +117,21 @@ function competenciaCurta(competencia) {
   return `${MESES_ABREV[idx]}/${partes[0]}`;
 }
 
-// Cards executivos: so estes 4, nesta ordem -- "registros" fica de fora da
-// visao principal (aparece na area tecnica/qualidade dos dados).
+// Cards executivos, nesta ordem -- "registros" fica de fora da visao
+// principal (aparece na area tecnica/qualidade dos dados). O card "Volume
+// total" foi removido no V1.2: a coluna Volume mistura embalagens (CXS, PCT,
+// UND... e KGS) e nao consolida -- os volumes aparecem separados por
+// embalagem, num card proprio renderizado pela nuvem.html.
 const KPIS_EXECUTIVOS = [
   { chave: "valor_total", titulo: "Valor total movimentado", formatar: k => `R$ ${formatarMilhoesExec(k.valor)} mi` },
-  { chave: "volume", titulo: "Volume total", formatar: k => `${formatarMilhoesExec(k.valor)} mi de volumes` },
   { chave: "peso_bruto", titulo: "Peso bruto movimentado", formatar: k => formatarPesoExecutivo(k.valor) },
   { chave: "clientes", titulo: "Quantidade de clientes", formatar: k => `${k.valor} ${k.valor === 1 ? "cliente" : "clientes"}` },
 ];
+
+// Abrevia contagens pro card de volumes: mil/milhoes com 3 algarismos
+// significativos, inteiro abaixo de mil.
+function formatarContagemExec(valor) {
+  if (valor >= 1_000_000) return `${formatarMilhoesExec(valor)} mi`;
+  if (valor >= 1_000) return `${Number((valor / 1_000).toPrecision(3)).toLocaleString("pt-BR")} mil`;
+  return Number(valor).toLocaleString("pt-BR", { maximumFractionDigits: 0 });
+}

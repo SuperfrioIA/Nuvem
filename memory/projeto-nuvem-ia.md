@@ -13,9 +13,16 @@ status: `docs/V1_PLANO.md` (fonte única — blocos A–G / macro-lotes V1.0–V
 telas sem texto de POC, visão executiva consolidada em `/nuvem` (painel duplicado
 do admin removido — dívida do P6 resolvida), resumo executivo com peso em
 toneladas, filiais com sigla de exibição (001·RMSPII, 015·RMSPIII, 016·RMSPIV —
-fonte única `backend/services/filiais_datahub.py`), 154 testes. **Nenhum bloco
-seguinte autorizado** — Bloco B (catálogo semântico + compatibilidade de medidas)
-aguarda OK da Maria. O texto abaixo é o histórico até a virada.
+fonte única `backend/services/filiais_datahub.py`), 154 testes. **Bloco B
+(V1.1 catálogo semântico + V1.2 compatibilidade de medidas) feito em
+31/jul/2026**: migration 0005 (`unidades`/`conceitos_canonicos`/`catalogo_campos`),
+seed semântico (famílias DataHub como fontes lógicas; 20 campos de
+ENTRADA_MERCADORIAS por posição), motor de compatibilidade (conversão segura,
+bloqueio de soma incompatível, percentual nunca soma), painel "Semântica" no
+admin, e o KPI "Volume total" substituído por "Volumes por embalagem" (24
+embalagens misturadas no dado real, inclusive KGS — decisão da Maria: separar
+por embalagem). **Nenhum bloco seguinte autorizado** — Bloco C (persistência e
+série histórica) aguarda OK da Maria. O texto abaixo é o histórico até a virada.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

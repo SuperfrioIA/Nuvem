@@ -242,12 +242,17 @@ def test_kpis_sucesso(cliente, monkeypatch):
     assert corpo["filial"] == "001"
     # sigla de exibicao confirmada (V1.0) -- backend/services/filiais_datahub.py
     assert corpo["filial_sigla"] == "RMSPII"
-    assert len(corpo["kpis"]) == 5
+    # sem KPI de volume consolidado desde o V1.2 -- volumes saem por embalagem
+    assert len(corpo["kpis"]) == 4
     assert {k["chave"] for k in corpo["kpis"]} == {
-        "registros", "clientes", "volume", "peso_bruto", "valor_total",
+        "registros", "clientes", "peso_bruto", "valor_total",
     }
+    assert corpo["volumes"]["por_embalagem"] == [
+        {"embalagem": "CX", "volume": 10.0, "registros": 1}
+    ]
+    assert "limitacao" in corpo["volumes"]
     assert corpo["por_cliente"] == [
-        {"cliente": "CLIENTE A", "registros": 1, "volume": 10.0, "peso_bruto": 1300.0, "valor_total": 12345.67}
+        {"cliente": "CLIENTE A", "registros": 1, "peso_bruto": 1300.0, "valor_total": 12345.67}
     ]
 
 

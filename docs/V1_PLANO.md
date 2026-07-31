@@ -62,7 +62,7 @@ semântico).
 | Bloco | Macro-lotes | Status |
 |---|---|---|
 | **A** | V1.0 — Transição para produto | **feito** (31/jul/2026) |
-| B | V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas | a fazer — **não autorizado** |
+| **B** | V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas | **feito** (31/jul/2026) |
 | C | V1.3 Persistência e série histórica | a fazer — não autorizado |
 | D | V1.4 Laboratório: seleção e perfil | a fazer — não autorizado |
 | E | V1.5 Laboratório: chat + V1.6 Insight aprovado | a fazer — não autorizado |
@@ -150,7 +150,83 @@ testes existentes de router e nuvem; os asserts de texto do resumo foram ajustad
 de "milhões de kg" pra toneladas — nenhum teste removido).
 **Verificação independente**: `docs/V1_RELATORIO_VERIFICACAO.md`.
 
+## Bloco B — V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas (feito, 31/jul/2026)
+
+Autorizado pela Maria em 31/jul/2026 ("pode seguir para o bloco b").
+
+**V1.1 — Catálogo semântico:**
+
+- **Migration `0005_catalogo_semantico`** (aditiva, com downgrade): `unidades`
+  (categoria + fator de conversão pra base da categoria; no máximo uma base por
+  categoria, por índice único parcial), `conceitos_canonicos` (unidade canônica,
+  categoria, agregação, comparabilidade, versão/vigência/status) e
+  `catalogo_campos` (mapeamento campo a campo por **posição** no cabeçalho — o
+  rótulo `EMB` repete nas posições 10 e 12; `unidade_por_coluna` aponta a coluna
+  que carrega a unidade linha a linha; dimensões, obrigatoriedade, status,
+  versão, vigência, observações, responsável).
+- **`backend/seed_semantico.py`** (literais, idempotente): 12 unidades (kg base
+  de massa com t/g/lb conversíveis; estrutura logística **sem** conversão de
+  propósito — posição/UA/palete/LPN não se convertem), 7 conceitos canônicos,
+  as 9 famílias do DataHub registradas como **fontes lógicas** em
+  `catalogo_fontes` (`tipo_origem='sharepoint_datahub'`) e os 20 campos de
+  `ENTRADA_MERCADORIAS` mapeados (KPIs com status `aprovado` e responsável da
+  conferência; campos de semântica incerta como `rascunho`).
+- **`backend/services/catalogo_semantico.py`** (só SELECT) +
+  **`backend/routers/catalogo.py`** (`GET /api/admin/semantica/*`, autenticados)
+  + painel **"Semântica"** no admin (read-only: conceitos, unidades/conversões,
+  campos por fonte).
+
+**V1.2 — Compatibilidade de medidas:**
+
+- **`backend/services/compatibilidade_medidas.py`**: conversão segura só dentro
+  da mesma categoria com fatores conhecidos (t/g/lb→kg conferidos por teste);
+  bloqueio com mensagem clara pra caixa+kg, unidade+palete, categorias
+  diferentes, unidade fora do catálogo e par sem fator; **percentual nunca soma,
+  nem consigo mesmo**; `somar_medidas()` separa por unidade o que não consolida
+  e devolve limitações declaradas + auditoria item a item.
+- **Aplicado no caminho vivo**: o KPI **"Volume total" foi removido** — conferido
+  no dado real (016/2607 via Graph, 31/jul/2026) que a coluna `Volume` é
+  declarada na embalagem da coluna `EMB`, com **24 embalagens distintas
+  (inclusive KGS)** misturadas; **decisão da Maria (31/jul/2026): separar por
+  embalagem**. A tela executiva ganhou o card "Volumes por embalagem" (top 3 +
+  contagem das demais), a tabela completa no detalhamento e a limitação
+  declarada na qualidade; a soma de volume **por cliente** também saiu (mistura
+  embalagens do mesmo jeito); o resumo executivo deixou de citar volume
+  consolidado. Peso (kg único) e valor (R$ único) seguem somáveis, validados
+  pelo catálogo.
+
+**Decisões do lote:**
+
+1. Tela administrativa do catálogo é **de consulta**; os mapeamentos entram por
+   seed versionado no git (configuráveis e versionados sem `if fonte ==` no
+   código) — edição via UI fica pra quando existir fluxo de aprovação.
+2. Campos semânticos só da família integrada; as outras 8 famílias entram como
+   fonte lógica sem campos (regra 14 do direcionamento — nada de processar tudo
+   automaticamente). As 5 fontes do DW continuam documentadas em
+   `catalogo_colunas`; o mapeamento semântico delas entra quando forem
+   revisitadas (V1.3+).
+3. A unidade canônica de um campo é **derivada do conceito** (uma fonte de
+   verdade só — o campo não guarda cópia).
+4. O painel antigo "Catálogo" do admin passa a listar também as fontes DataHub
+   (sem colunas do Lote 8.5) — conviver é aceitável; consolidar as duas visões é
+   trabalho do cockpit (V1.7).
+5. Enforcement da compatibilidade na **ingestão** (parser/`soma_colunas` do
+   upload manual) fica pro V1.3, junto da persistência — os 5 modelos atuais
+   somam colunas da mesma unidade por construção (conferido no catálogo do
+   Lote 8.5).
+
+**Fora do lote (declarado):** persistência/série histórica (C), Laboratório
+(D/E), cockpit (F); semântica de `Fração`/`EMB` da posição 12 segue `rascunho`
+(não validada com o negócio); devolução no card de valor segue pendência.
+
+**Suíte**: **185 passed** (154 do Bloco A + 31 novos: 18 do motor de
+compatibilidade, 10 do catálogo semântico/endpoints, 3 de volumes por embalagem
+nos KPIs; os asserts de volume consolidado foram substituídos pelos de
+separação — nenhum cenário de teste perdido). **Verificação independente**
+executada antes do commit, com 5 ressalvas corrigidas:
+`docs/V1_RELATORIO_VERIFICACAO.md`.
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco B (V1.1 catálogo semântico + V1.2 compatibilidade de medidas)
-só começa com autorização explícita da Maria.
+**Nenhum.** O Bloco C (V1.3 — persistência e série histórica) só começa com
+autorização explícita da Maria.

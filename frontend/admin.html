@@ -97,6 +97,7 @@
     <button data-painel="execucoes">Execuções</button>
     <button data-painel="catalogo">Catálogo</button>
     <button data-painel="metricas">Métricas</button>
+    <button data-painel="semantica">Semântica</button>
     <button data-painel="datahub">DataHub</button>
   </nav>
 
@@ -274,6 +275,45 @@
       </table>
     </section>
 
+    <!-- SEMANTICA (Bloco B / V1.1) -->
+    <section id="painel-semantica" class="painel">
+      <h3>Catálogo semântico</h3>
+      <p class="ajuda">Conceitos corporativos, unidades com regra de conversão e o mapeamento campo a campo das fontes — o fundamento que decide o que pode (e o que não pode) ser somado. Dados entram por seed versionado; esta tela é de consulta.</p>
+
+      <fieldset>
+        <legend>Conceitos canônicos</legend>
+        <div class="tabela-scroll">
+          <table id="tabelaConceitos">
+            <thead><tr><th>Conceito</th><th>Unidade canônica</th><th>Categoria</th><th>Agregação</th><th>Comparabilidade</th><th>Status</th><th>Versão</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Unidades e conversões</legend>
+        <p class="ajuda">Fator vazio = sem conversão conhecida (a soma só vale dentro da mesma unidade). Percentual nunca soma.</p>
+        <div class="tabela-scroll">
+          <table id="tabelaUnidades">
+            <thead><tr><th>Unidade</th><th>Nome</th><th>Categoria</th><th>Fator p/ base</th><th>Base da categoria</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Campos por fonte</legend>
+        <label for="semanticaFonteSelect">Fonte</label>
+        <select id="semanticaFonteSelect"></select>
+        <div class="tabela-scroll">
+          <table id="tabelaCampos">
+            <thead><tr><th>#</th><th>Campo</th><th>Conceito canônico</th><th>Unidade</th><th>Categoria</th><th>Agregação</th><th>Dimensões</th><th>Status</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </fieldset>
+    </section>
+
     <!-- DATAHUB -->
     <section id="painel-datahub" class="painel">
       <h3>SharePoint DataHub</h3>
@@ -349,6 +389,7 @@ function carregarTudo() {
   carregarExecucoes();
   carregarCatalogo();
   carregarMetricas();
+  carregarSemantica();
   carregarDatahubStatus();
 }
 
@@ -494,6 +535,64 @@ async function carregarMetricas() {
       <td>${m.comparabilidade || "-"}</td>
       <td>${m.ativo ? "sim" : "não"}</td>
     </tr>`).join("") || `<tr><td colspan="8" class="ajuda">Nenhuma métrica cadastrada ainda.</td></tr>`;
+}
+
+// -------- catálogo semântico (Bloco B / V1.1) --------
+
+async function carregarSemantica() {
+  const [conceitos, unidades, fontes] = await Promise.all([
+    api("/semantica/conceitos"),
+    api("/semantica/unidades"),
+    api("/semantica/fontes"),
+  ]);
+
+  const conceitosBody = document.querySelector("#tabelaConceitos tbody");
+  conceitosBody.innerHTML = conceitos.map(c => `
+    <tr title="${escaparHtml(c.descricao || "")}">
+      <td><strong>${escaparHtml(c.nome)}</strong><br><span class="ajuda">${escaparHtml(c.chave)}</span></td>
+      <td>${escaparHtml(c.unidade_canonica || "—")}</td>
+      <td>${escaparHtml(c.categoria_unidade)}</td>
+      <td>${escaparHtml(c.agregacao_padrao)}</td>
+      <td>${escaparHtml(c.comparabilidade || "-")}</td>
+      <td>${escaparHtml(c.status)}</td>
+      <td>v${c.versao}</td>
+    </tr>`).join("") || `<tr><td colspan="7" class="ajuda">Nenhum conceito cadastrado ainda.</td></tr>`;
+
+  const unidadesBody = document.querySelector("#tabelaUnidades tbody");
+  unidadesBody.innerHTML = unidades.map(u => `
+    <tr>
+      <td><strong>${escaparHtml(u.chave)}</strong></td>
+      <td>${escaparHtml(u.nome)}</td>
+      <td>${escaparHtml(u.categoria)}</td>
+      <td>${u.fator_para_base != null ? u.fator_para_base.toLocaleString("pt-BR", { maximumFractionDigits: 8 }) : "—"}</td>
+      <td>${u.base_da_categoria ? "sim" : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="ajuda">Nenhuma unidade cadastrada ainda.</td></tr>`;
+
+  const sel = document.getElementById("semanticaFonteSelect");
+  sel.innerHTML = fontes.map(f =>
+    `<option value="${f.id}">${escaparHtml(f.nome)} (${f.total_campos} campos)</option>`).join("") ||
+    `<option value="">— nenhuma fonte com campos semânticos —</option>`;
+  sel.onchange = () => { if (sel.value) carregarCamposSemantica(sel.value); };
+  if (fontes.length) carregarCamposSemantica(fontes[0].id);
+}
+
+async function carregarCamposSemantica(fonteId) {
+  const campos = await api("/semantica/campos?fonte_id=" + fonteId);
+  const dims = c => [c.dim_temporal ? "tempo" : "", c.dim_filial ? "filial" : "", c.dim_cliente ? "cliente" : ""]
+    .filter(Boolean).join(", ") || "-";
+  const unidade = c => c.unidade_original || (c.unidade_por_coluna ? `via coluna ${c.unidade_por_coluna}` : "—");
+  const tbody = document.querySelector("#tabelaCampos tbody");
+  tbody.innerHTML = campos.map(c => `
+    <tr title="${escaparHtml([c.descricao, c.observacoes].filter(Boolean).join(" · "))}">
+      <td>${c.posicao}</td>
+      <td><strong>${escaparHtml(c.nome_original)}</strong></td>
+      <td>${c.conceito_chave ? `${escaparHtml(c.conceito_nome)}<br><span class="ajuda">${escaparHtml(c.conceito_chave)} → ${escaparHtml(c.unidade_canonica || "—")}</span>` : "-"}</td>
+      <td>${escaparHtml(unidade(c))}</td>
+      <td>${escaparHtml(c.categoria_unidade || "-")}</td>
+      <td>${escaparHtml(c.agregacao || "-")}</td>
+      <td>${escaparHtml(dims(c))}</td>
+      <td>${escaparHtml(c.status)}</td>
+    </tr>`).join("") || `<tr><td colspan="8" class="ajuda">Fonte sem campos cadastrados.</td></tr>`;
 }
 
 // -------- datahub --------

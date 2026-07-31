@@ -235,6 +235,25 @@ metadata:
   o de-para real de ingestão continua sendo o do banco (V1.3); card "Volume
   total" mantido com ressalva declarada (destino no V1.2/V1.7).
 
+- **Bloco B (V1.1 + V1.2) executado em 31/jul/2026** (autorizado pela Maria).
+  Migration 0005: `unidades` (categoria + fator pra base; estrutura logística
+  sem conversão de propósito), `conceitos_canonicos` e `catalogo_campos`
+  (identidade por POSIÇÃO — `EMB` repete nas posições 10/12; `unidade_por_coluna`
+  aponta a coluna que traz a unidade linha a linha). Famílias do DataHub viraram
+  fontes lógicas em `catalogo_fontes` (`tipo_origem='sharepoint_datahub'`);
+  campos semânticos só da família integrada. Motor de compatibilidade
+  (`backend/services/compatibilidade_medidas.py`): converte só na mesma
+  categoria com fator (t/g/lb→kg), bloqueia caixa+kg e afins com mensagem,
+  percentual nunca soma, separa por unidade e devolve auditoria.
+  **Decisão da Maria (31/jul/2026): "separar por embalagem"** — conferido no
+  dado real (016/2607) que `EMB` é a embalagem do `Volume` com 24 embalagens
+  misturadas (inclusive KGS); o KPI "Volume total" consolidado foi REMOVIDO da
+  tela/resumo/por-cliente e virou "Volumes por embalagem" (card top 3 + tabela
+  completa + limitação declarada). Tela "Semântica" no admin é de consulta;
+  mapeamentos entram por seed versionado. Enforcement na ingestão do upload
+  manual fica pro V1.3 (modelos atuais somam colunas da mesma unidade por
+  construção).
+
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026 e 31/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

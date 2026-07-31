@@ -4,7 +4,9 @@ from fastapi import APIRouter, Body, HTTPException, Request
 
 from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
+from ..database import get_conn
 from ..services import (
+    compatibilidade_medidas,
     entrada_mercadorias,
     filiais_datahub,
     graph_datahub,
@@ -100,7 +102,12 @@ def kpis(request: Request):
     # sigla de exibicao (V1.0) -- entra nos metadados antes do resumo pra o
     # texto executivo poder nomear a filial (ex.: "016 (RMSPIV)")
     resultado["filial_sigla"] = filiais_datahub.sigla(resultado["filial"])
-    calculado = kpis_poc.calcular(linhas, fonte)
+    # catalogo de unidades (V1.2) -- alimenta o motor de compatibilidade que
+    # separa os volumes por embalagem em vez de consolidar unidades mistas
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            tabela_unidades = compatibilidade_medidas.carregar_tabela(cur)
+    calculado = kpis_poc.calcular(linhas, fonte, tabela_unidades)
     resumo = resumo_poc.gerar(resultado, calculado["kpis"], calculado["por_cliente"])
 
     return {
@@ -115,6 +122,7 @@ def kpis(request: Request):
         "linhas_validas": resultado["linhas_validas"],
         "linhas_descartadas": resultado["linhas_descartadas"],
         "kpis": calculado["kpis"],
+        "volumes": calculado["volumes"],
         "por_cliente": calculado["por_cliente"],
         "resumo": resumo,
         # previa pra Nuvem do DataHub (Lote P5.5) -- reaproveita a leitura que

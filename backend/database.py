@@ -3,7 +3,7 @@ from contextlib import contextmanager
 
 import psycopg2
 
-from . import seed_catalogo, seed_clientes, seed_depara, seed_metricas, seed_modelos
+from . import seed_catalogo, seed_clientes, seed_depara, seed_metricas, seed_modelos, seed_semantico
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -76,3 +76,9 @@ def init_db():
             # seed: catálogo semântico das métricas atuais (Lote R3) — ver
             # backend/seed_metricas.py
             seed_metricas.aplicar(cur)
+
+            # seed: catálogo semântico — unidades, conceitos canônicos, fontes
+            # do DataHub e campos da família integrada (Bloco B / V1.1) — ver
+            # backend/seed_semantico.py. Roda depois do seed_catalogo (divide a
+            # tabela catalogo_fontes com ele).
+            seed_semantico.aplicar(cur)

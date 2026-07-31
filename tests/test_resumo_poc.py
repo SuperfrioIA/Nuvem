@@ -19,14 +19,13 @@ _METADADOS = {
 _KPIS = [
     {"chave": "registros", "valor": 8411},
     {"chave": "clientes", "valor": 8},
-    {"chave": "volume", "valor": 1_570_000},
     {"chave": "peso_bruto", "valor": 4_281_700},
     {"chave": "valor_total", "valor": 36_600_000},
 ]
 
 _POR_CLIENTE = [
-    {"cliente": "Sapore", "registros": 4000, "volume": 800_000, "peso_bruto": 2_000_000, "valor_total": 20_000_000},
-    {"cliente": "CLIENTE B", "registros": 4411, "volume": 770_000, "peso_bruto": 2_281_700, "valor_total": 16_600_000},
+    {"cliente": "Sapore", "registros": 4000, "peso_bruto": 2_000_000, "valor_total": 20_000_000},
+    {"cliente": "CLIENTE B", "registros": 4411, "peso_bruto": 2_281_700, "valor_total": 16_600_000},
 ]
 
 
@@ -37,9 +36,10 @@ def test_resumo_reproduz_texto_base_da_maria():
     assert "julho de 2026" in resultado["frases"][0]
     assert "filial 016 movimentou" in resultado["frases"][0]
     assert "R$ 36,6 milhões" in resultado["frases"][0]
-    assert "1,57 milhão de volumes" in resultado["frases"][0]
-    assert "4,28 mil toneladas" in resultado["frases"][0]
+    assert "4,28 mil toneladas de mercadoria" in resultado["frases"][0]
     assert "kg" not in resultado["frases"][0]
+    # volume consolidado saiu do texto executivo no V1.2 (embalagens mistas)
+    assert "volumes" not in resultado["frases"][0]
     assert "8 clientes" in resultado["frases"][0]
     assert "forte concentração do valor movimentado em Sapore" in resultado["frases"][0]
 
@@ -75,8 +75,8 @@ def test_resumo_cita_descartadas_quando_houver():
 
 def test_concentracao_neutra_abaixo_do_limiar():
     por_cliente = [
-        {"cliente": "Sapore", "registros": 2000, "volume": 400_000, "peso_bruto": 1_000_000, "valor_total": 10_000_000},
-        {"cliente": "CLIENTE B", "registros": 6411, "volume": 1_170_000, "peso_bruto": 3_281_700, "valor_total": 26_600_000},
+        {"cliente": "Sapore", "registros": 2000, "peso_bruto": 1_000_000, "valor_total": 10_000_000},
+        {"cliente": "CLIENTE B", "registros": 6411, "peso_bruto": 3_281_700, "valor_total": 26_600_000},
     ]
     resultado = resumo_poc.gerar(_METADADOS, _KPIS, por_cliente)
     assert "forte concentração" not in resultado["frases"][0]
@@ -103,9 +103,9 @@ def test_zero_registros_validos_nao_inventa_percentual_nem_recomendacao():
 
 
 def test_singular_milhao_quando_parte_inteira_e_um():
-    kpis = [{**k, "valor": 1_050_000} if k["chave"] == "volume" else k for k in _KPIS]
+    kpis = [{**k, "valor": 1_050_000} if k["chave"] == "valor_total" else k for k in _KPIS]
     resultado = resumo_poc.gerar(_METADADOS, kpis, _POR_CLIENTE)
-    assert "1,05 milhão de volumes" in resultado["frases"][0]
+    assert "R$ 1,05 milhão" in resultado["frases"][0]
 
 
 def test_peso_abaixo_de_mil_toneladas_sai_por_extenso():

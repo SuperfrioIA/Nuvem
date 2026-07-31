@@ -53,3 +53,47 @@ Postgres real), não pelo verificador — ver item 10.
 os 8 achados eram de documentação/cobertura e foram corrigidos ou registrados
 antes do commit. Pendências herdadas (não são deste bloco) listadas no
 `docs/V1_PLANO.md`.
+
+---
+
+## Bloco B — V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas (31/jul/2026)
+
+**Método do verificador** (segundo contexto, somente leitura no repo): além da
+leitura adversarial do diff, o verificador **executou de verdade** a suíte
+completa (183 passed, confirmando a contagem declarada na época), o ciclo de
+migração ao vivo (upgrade head → downgrade pra 0004 → upgrade head → seeds 2× —
+tabelas somem/voltam exatamente, contagens estáveis) e traçou à mão 10 casos
+adversariais no motor de compatibilidade (None, negativo, unidade numérica,
+pct+kg, posicao+ua, tabela vazia, espaços, categoria sem base, colisão kg/g,
+precisão Decimal).
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo (V1.1 + V1.2, sem cadastro de produto/SKU) | atendido | todos os bullets cobertos; Código/Descrição semeados como `rascunho` com nota "fora de escopo"; embalagens tratadas como desconhecidas (nunca conversão por embalagem) |
+| 2 | Modelo semântico (seção 6 do direcionamento) | atendido | migration 0005 + seed cobrem os 20 atributos; unidade canônica derivada do conceito, sem duplicata |
+| 3 | Migration | atendido | aditiva, `down_revision` correto, downgrade validado **ao vivo** |
+| 4 | Seeds | atendido | idempotência executada 2×; 20 colunas na ordem do FONTES_DATAHUB; EMB nas posições 10/12; fatores t=1000, g=0.001, lb=0.45359237 conferidos |
+| 5 | Motor de compatibilidade | atendido | conversão só na mesma categoria com fator (Decimal); percentual excluído de qualquer soma; desconhecida agrupa só pelo literal; bloqueios do direcionamento com mensagem; auditoria por item |
+| 6 | Aplicação no caminho vivo | atendido | volume consolidado fora de kpis/por_cliente/resumo; agrupamento pela 1ª ocorrência de EMB (a do Volume); `/kpis` carrega a tabela do banco e devolve `volumes` com limitação |
+| 7 | Frontend | atendido | card top 3 + "+N outras", tabela por embalagem, colspan ajustado, embalagem (dado do SharePoint) escapada em card e tabela; painel Semântica com escape total; nenhum id órfão |
+| 8 | Segurança | atendido | 4 endpoints `/semantica/*` com `exigir_login`, só leitura, SQL parametrizado |
+| 9 | Testes | atendido | 29 novos conferidos um a um; os 4 cenários antigos de KPIs preservados; "singular milhão" repropositado, não perdido |
+| 10 | Compatibilidade/regressões | atendido | única mudança de contrato é a intencional (volume fora do `/kpis`); migrações antigas e upload intocados |
+| 11 | Documentação | atendido | V1_PLANO/memórias registram bloco, decisão e contagens |
+| 12 | Código morto/dependências | atendido | sem sobras do card antigo; requirements intocados (1 resíduo de fixture — R1) |
+| 13 | Rastreabilidade | atendido | "separar por embalagem" + conferência 016/2607 registradas em 6 pontos |
+
+### Ressalvas do verificador e o que foi feito
+
+| # | Achado | Resolução |
+|---|---|---|
+| R1 | Fixtures de `test_resumo_poc.py` carregavam chave `volume` que saiu do contrato | **corrigido** — resíduo removido |
+| R2 | `converter()` com valor não numérico vazava `decimal.InvalidOperation` | **corrigido** — vira `ConversaoInvalidaError("valor não numérico")`, com teste |
+| R3/R5 | Unidade `None`/com espaços viraria grupo `"None"`/duplicado pra chamador futuro (caminho vivo já protegia) | **corrigido** — `_normalizar_unidade()` no motor (None/vazio → "(sem unidade)", strip), com teste |
+| R4 | Mensagem imprecisa no cenário hipotético "categoria com fator mas sem base" (inalcançável com o seed real; comportamento conservador) | **registrado** — nunca inventa conversão; revisitar se o cenário existir um dia |
+| R6 | "1 embalagens distintas" (gramática) | **corrigido** — singular/plural na tela |
+| R7 | Auditoria item a item do motor não exposta no `/kpis` (só limitação + regra) | **registrado** — escolha de exposição; a auditoria completa entra quando a persistência (V1.3) gravar o que foi convertido/bloqueado |
+
+**Conclusão: Bloco B atendido.** Nenhum defeito real encontrado no caminho vivo;
+5 das 7 ressalvas corrigidas antes do commit, 2 registradas. Suíte final após as
+correções: **185 passed** (183 + 2 testes das correções R2/R3).

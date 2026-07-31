@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from . import migracao
 from .database import init_db
 from .routers.admin import router as admin_router
+from .routers.catalogo import router as catalogo_router
 from .routers.datahub import router as datahub_router
 
 
@@ -29,6 +30,7 @@ app = FastAPI(title="Nuvem IA", lifespan=lifespan)
 
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(datahub_router, prefix="/api/admin")
+app.include_router(catalogo_router, prefix="/api/admin")
 
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 

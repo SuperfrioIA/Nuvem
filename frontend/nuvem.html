@@ -213,6 +213,11 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
 .kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 170px; flex: 1; }
 .kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
 .kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
+/* card de volumes por embalagem (V1.2): lista curta em vez de numero unico --
+ * embalagens nao consolidam num total (decisao de 31/jul/2026) */
+.kpi-card .kpi-lista div { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; font-weight: 700; color: var(--brand-azul-principal); line-height: 1.5; }
+.kpi-card .kpi-lista .embRotulo { color: var(--texto); font-weight: 700; font-size: 12px; align-self: center; }
+.kpi-card .kpi-mais { display: block; font-size: 11px; color: var(--muted); margin-top: 4px; }
 .resumo-executivo { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0; font-size: 13px; line-height: 1.6; }
 .resumo-executivo p { margin: 0 0 8px; }
 .resumo-executivo p:last-child { margin-bottom: 0; }
@@ -322,7 +327,14 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
           <div id="integradoGrafico" class="grafico-clientes"></div>
           <div class="tblWrap">
             <table class="tbl" id="tabelaIntegradoClientes">
-              <thead><tr><th>Cliente</th><th class="num">Registros</th><th class="num">Volume</th><th class="num">Peso bruto (kg)</th><th class="num">Valor total</th></tr></thead>
+              <thead><tr><th>Cliente</th><th class="num">Registros</th><th class="num">Peso bruto (kg)</th><th class="num">Valor total</th></tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <p class="subLabel">Volumes por embalagem (não se somam entre si)</p>
+          <div class="tblWrap">
+            <table class="tbl" id="tabelaVolumesEmbalagem">
+              <thead><tr><th>Embalagem</th><th class="num">Registros</th><th class="num">Volume declarado</th></tr></thead>
               <tbody></tbody>
             </table>
           </div>
@@ -910,14 +922,44 @@ function renderizarIntegrado(dados) {
       <span class="kpi-valor">${escaparHtml(def.formatar(k))}</span>
       <span class="kpi-nome">${escaparHtml(def.titulo)}</span>
     </div>`;
-  }).join("");
+  }).join("") + cardVolumesPorEmbalagem(dados.volumes);
 
   const frases = (dados.resumo && dados.resumo.frases) || [];
   document.getElementById("integradoResumo").innerHTML = frases.map(f => `<p>${escaparHtml(f)}</p>`).join("");
 
   renderizarClientes(dados.por_cliente || []);
+  renderizarVolumes(dados.volumes);
   renderizarPreviaLinhas(dados.linhas_amostra || []);
   renderizarQualidade(dados);
+}
+
+// Card de volumes SEM total consolidado (V1.2): top embalagens + contagem das
+// demais. Embalagens diferentes (CXS, PCT, UND... e KGS) nao se somam --
+// decisao da Maria em 31/jul/2026 ("separar por embalagem").
+function cardVolumesPorEmbalagem(volumes) {
+  const lista = (volumes && volumes.por_embalagem) || [];
+  if (!lista.length) return "";
+  const top = lista.slice(0, 3);
+  const resto = lista.length - top.length;
+  const tooltip = `${volumes.regra} · ${volumes.limitacao}`;
+  return `<div class="kpi-card" title="${escaparHtml(tooltip)}">
+    <span class="kpi-lista">${top.map(v => `
+      <div><span class="embRotulo">${escaparHtml(v.embalagem)}</span><span>${escaparHtml(formatarContagemExec(v.volume))}</span></div>`).join("")}
+    </span>
+    ${resto > 0 ? `<span class="kpi-mais">+ ${resto} outra${resto === 1 ? "" : "s"} embalagen${resto === 1 ? "m" : "s"} — ver detalhamento</span>` : ""}
+    <span class="kpi-nome">Volumes por embalagem</span>
+  </div>`;
+}
+
+function renderizarVolumes(volumes) {
+  const tbody = document.querySelector("#tabelaVolumesEmbalagem tbody");
+  const lista = (volumes && volumes.por_embalagem) || [];
+  tbody.innerHTML = lista.map(v => `
+    <tr>
+      <td>${escaparHtml(v.embalagem)}</td>
+      <td class="num">${v.registros}</td>
+      <td class="num">${escaparHtml(formatarNumeroKpi(v.volume, ""))}</td>
+    </tr>`).join("") || `<tr><td colspan="3" class="tblEmpty">Nenhum volume na amostra.</td></tr>`;
 }
 
 function renderizarClientes(porCliente) {
@@ -931,24 +973,27 @@ function renderizarClientes(porCliente) {
       <div class="barra-valor">${escaparHtml(formatarMoeda(c.valor_total))}</div>
     </div>`).join("") || `<div class="dataHint">Nenhum cliente encontrado.</div>`;
 
+  // sem coluna de volume (V1.2): a soma por cliente misturaria embalagens do
+  // mesmo jeito que o total geral — volumes vivem na tabela por embalagem
   const tbody = document.querySelector("#tabelaIntegradoClientes tbody");
   tbody.innerHTML = porCliente.map(c => `
     <tr>
       <td>${escaparHtml(c.cliente)}</td>
       <td class="num">${c.registros}</td>
-      <td class="num">${escaparHtml(formatarNumeroKpi(c.volume, ""))}</td>
       <td class="num">${escaparHtml(formatarNumeroKpi(c.peso_bruto, ""))}</td>
       <td class="num">${escaparHtml(formatarMoeda(c.valor_total))}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="tblEmpty">Nenhum cliente encontrado.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="4" class="tblEmpty">Nenhum cliente encontrado.</td></tr>`;
 }
 
 function renderizarQualidade(dados) {
   const pesoKpi = (dados.kpis || []).find(k => k.chave === "peso_bruto");
+  const volumes = dados.volumes || {};
   document.getElementById("integradoQualidade").innerHTML = `
     <div><strong>Arquivo:</strong> ${escaparHtml(dados.arquivo)}</div>
     <div><strong>Linhas processadas:</strong> ${escaparHtml(String(dados.linhas_lidas))}</div>
     <div><strong>Registros válidos:</strong> ${escaparHtml(String(dados.qualidade_pct))}% (${dados.linhas_validas}/${dados.linhas_lidas})</div>
     ${pesoKpi ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoKpi.valor))}</div>` : ""}
+    ${volumes.total_embalagens ? `<div><strong>Volumes:</strong> ${volumes.total_embalagens} ${volumes.total_embalagens === 1 ? "embalagem distinta" : "embalagens distintas"}. ${escaparHtml(volumes.limitacao || "")}</div>` : ""}
     <div><strong>Sincronizado em:</strong> ${dados.sincronizado_em ? new Date(dados.sincronizado_em).toLocaleString("pt-BR") : "-"}</div>
     <div class="nota-tecnica">${dados.resumo && dados.resumo.nota_tecnica ? escaparHtml(dados.resumo.nota_tecnica) : ""}</div>`;
 }
