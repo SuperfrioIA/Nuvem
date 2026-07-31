@@ -21,8 +21,18 @@ ENTRADA_MERCADORIAS por posição), motor de compatibilidade (conversão segura,
 bloqueio de soma incompatível, percentual nunca soma), painel "Semântica" no
 admin, e o KPI "Volume total" substituído por "Volumes por embalagem" (24
 embalagens misturadas no dado real, inclusive KGS — decisão da Maria: separar
-por embalagem). **Nenhum bloco seguinte autorizado** — Bloco C (persistência e
-série histórica) aguarda OK da Maria. O texto abaixo é o histórico até a virada.
+por embalagem). **Bloco C (V1.3 persistência e série histórica) feito em
+31/jul/2026**: migration 0006 (`medidas` com grão cliente via `cliente_id` +
+UNIQUE NULLS NOT DISTINCT; inventário do DataHub persistido; controle de
+processamento por arquivo; pendências de cliente), processamento da família
+ENTRADA_MERCADORIAS pra camada canônica (execução → recebidas → medidas,
+idempotente, reprocessa só o alterado, remove célula órfã), consulta
+`GET /datahub/serie` (mensal/anual/acumulado, só métrica aditiva;
+`clientes_atendidos` derivado por contagem distinta) e botão "Processar
+arquivos" no admin. Decisões da Maria no C: volumes por embalagem FORA da série
+persistida; SEM auto-cadastro de cliente (pendência + balde "sem cliente
+identificado"). **Nenhum bloco seguinte autorizado** — Bloco D (Laboratório:
+seleção e perfil) aguarda OK da Maria. O texto abaixo é o histórico até a virada.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

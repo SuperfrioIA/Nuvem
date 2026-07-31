@@ -171,6 +171,55 @@ METRICAS = [
         "agregacao_padrao": "ultimo",
         "comparabilidade": "entre_filiais",
     },
+    # Bloco C (V1.3) -- metricas da familia integrada do DataHub
+    # (ENTRADA_MERCADORIAS), persistidas no grao competencia x filial x
+    # cliente. Nomes = conceitos canonicos do V1.1 (backend/seed_semantico.py).
+    {
+        "nome": "peso_bruto_movimentado",
+        "nome_executivo": "Peso bruto movimentado",
+        "dominio": "volumetria",
+        "descricao": (
+            "Peso bruto da mercadoria movimentada (entrada), somado das linhas de "
+            "item do DataHub. Calculo interno em kg; exibicao executiva em toneladas."
+        ),
+        "granularidade_esperada": "armazem_cliente_competencia",
+        "periodicidade": "mensal",
+        "tipo": "quantidade",
+        "direcao_risco": "informativo",
+        "agregacao_padrao": "soma",
+        "comparabilidade": "entre_filiais, por_cliente, no_tempo",
+    },
+    {
+        "nome": "valor_mercadoria_movimentada",
+        "nome_executivo": "Valor da mercadoria movimentada",
+        "dominio": "financeiro",
+        "descricao": (
+            "Valor declarado nas notas dos clientes para a mercadoria movimentada -- "
+            "NAO e faturamento SuperFrio (decisao pendente da Maria sobre devolucao "
+            "dentro/fora do total, docs/ENTREGA_POC.md secao 3)."
+        ),
+        "granularidade_esperada": "armazem_cliente_competencia",
+        "periodicidade": "mensal",
+        "tipo": "valor_financeiro",
+        "direcao_risco": "informativo",
+        "agregacao_padrao": "soma",
+        "comparabilidade": "entre_filiais, por_cliente, no_tempo",
+    },
+    {
+        "nome": "registros_movimentacao",
+        "nome_executivo": "Registros de movimentacao",
+        "dominio": "volumetria",
+        "descricao": (
+            "Quantidade de linhas de item validas no arquivo -- indicador de volume "
+            "de dados, nao de negocio."
+        ),
+        "granularidade_esperada": "armazem_cliente_competencia",
+        "periodicidade": "mensal",
+        "tipo": "quantidade",
+        "direcao_risco": "informativo",
+        "agregacao_padrao": "soma",
+        "comparabilidade": "somente_historico_proprio",
+    },
     {
         "nome": "ocupacao_manual",
         "nome_executivo": "Ocupacao manual (fora do WMS)",

@@ -285,6 +285,79 @@ def test_kpis_traz_amostra_de_linhas(cliente, monkeypatch):
     assert corpo["linhas_amostra"][0]["Cliente"] == "CLIENTE A"
 
 
+# --- POST /processar, GET /processamentos, GET /serie (Bloco C / V1.3) --------
+
+
+def test_processar_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.post("/api/admin/datahub/processar", json={})
+    assert resposta.status_code == 401
+
+
+def test_processamentos_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.get("/api/admin/datahub/processamentos")
+    assert resposta.status_code == 401
+
+
+def test_serie_sem_login_da_401(banco_migrado):
+    with TestClient(app) as c:
+        resposta = c.get("/api/admin/datahub/serie", params={"metrica": "peso_bruto_movimentado"})
+    assert resposta.status_code == 401
+
+
+def test_processar_sem_sincronizacao_da_400(cliente):
+    resposta = cliente.post("/api/admin/datahub/processar", json={})
+    assert resposta.status_code == 400
+    assert "Sincronizar agora" in resposta.json()["detail"]
+
+
+def test_processar_persiste_e_serie_devolve(cliente, monkeypatch):
+    """Caminho fim a fim pelo endpoint: sincronizar -> processar -> pular
+    inalterado -> forcar -> listar processamentos/pendencias -> consultar a
+    serie da filial (via codigo do DataHub)."""
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+
+    resposta = cliente.post("/api/admin/datahub/processar", json={})
+    assert resposta.status_code == 200
+    corpo = resposta.json()
+    assert corpo["total_familia"] == 1
+    assert len(corpo["processados"]) == 1
+    assert corpo["processados"][0]["status"] == "ok"
+    assert corpo["erros"] == []
+
+    # inalterado e pulado; forcar reprocessa (idempotente)
+    assert cliente.post("/api/admin/datahub/processar", json={}).json()["pulados"] == 1
+    reforcado = cliente.post("/api/admin/datahub/processar", json={"forcar": True}).json()
+    assert len(reforcado["processados"]) == 1
+
+    listagem = cliente.get("/api/admin/datahub/processamentos").json()
+    assert [p["status"] for p in listagem["processamentos"]] == ["ok"]
+    assert listagem["processamentos"][0]["arquivo"] == _ARQUIVO_EM["nome"]
+    # o cliente do arquivo (raiz 12345678) esta fora do cadastro: vira
+    # pendencia e soma no balde "sem cliente identificado" (sem auto-cadastro)
+    assert [p["cliente_na_fonte"] for p in listagem["pendencias_cliente"]] == ["12345678"]
+    assert listagem["pendencias_filial"] == []
+
+    serie = cliente.get(
+        "/api/admin/datahub/serie",
+        params={"metrica": "peso_bruto_movimentado", "filial": "001"},
+    ).json()
+    assert serie["filtros"]["filial"] == "RMSPII"
+    assert serie["mensal"] == [{"competencia": "2026-07", "valor": 1300.0}]
+    assert serie["anual"] == [{"ano": 2026, "valor": 1300.0}]
+    assert serie["acumulado"] == 1300.0
+
+
+def test_serie_parametro_invalido_da_400(cliente):
+    resposta = cliente.get("/api/admin/datahub/serie", params={"metrica": "nao_existe"})
+    assert resposta.status_code == 400
+    assert "nao cadastrada" in resposta.json()["detail"]
+
+
 # --- GET /nuvem (Lote P5.5) ----------------------------------------------
 
 

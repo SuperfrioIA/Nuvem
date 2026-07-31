@@ -63,7 +63,7 @@ semântico).
 |---|---|---|
 | **A** | V1.0 — Transição para produto | **feito** (31/jul/2026) |
 | **B** | V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas | **feito** (31/jul/2026) |
-| C | V1.3 Persistência e série histórica | a fazer — não autorizado |
+| **C** | V1.3 Persistência e série histórica | **feito** (31/jul/2026) |
 | D | V1.4 Laboratório: seleção e perfil | a fazer — não autorizado |
 | E | V1.5 Laboratório: chat + V1.6 Insight aprovado | a fazer — não autorizado |
 | F | V1.7 Cockpit executivo | a fazer — não autorizado |
@@ -226,7 +226,120 @@ separação — nenhum cenário de teste perdido). **Verificação independente*
 executada antes do commit, com 5 ressalvas corrigidas:
 `docs/V1_RELATORIO_VERIFICACAO.md`.
 
+## Bloco C — V1.3 Persistência e série histórica (feito, 31/jul/2026)
+
+Autorizado pela Maria em 31/jul/2026 ("vamos para o proximo" + plano aprovado
+via pergunta estruturada: "Pode executar"). Duas decisões dela no mesmo ato:
+**volumes por embalagem ficam fora da série persistida** (exigiria dimensão de
+embalagem; o card segue ao vivo do arquivo) e **sem auto-cadastro de cliente**
+(cliente fora do cadastro vira pendência; as linhas dele somam no balde "sem
+cliente identificado" até o cadastro).
+
+**O que o lote entregou:**
+
+- **Migration `0006_persistencia_datahub`** (downgrade validado por teste de
+  ciclo completo): `medidas` ganha `cliente_id` e a UNIQUE de 3 colunas vira
+  `UNIQUE NULLS NOT DISTINCT` de 4 (Postgres 16) — única mudança não puramente
+  aditiva do bloco, exigida pelo grão mínimo do direcionamento (seção 8) na
+  camada existente; nenhum dado muda (linhas antigas ficam `cliente_id NULL`).
+  Tabelas novas: `sincronizacoes_datahub` (inventário persistido — restart não
+  zera mais a lista de permissão de downloads), `processamentos_datahub`
+  (estado corrente por arquivo; o histórico de rodadas segue em `execucoes`) e
+  `cliente_pendencias`.
+- **Grão único por métrica = prevenção de dupla contagem por construção**: as
+  métricas do DataHub são persistidas SÓ no grão competência × filial ×
+  cliente (`cliente_id NULL` = sem cliente identificado, nunca "total da
+  filial"); o total da filial é sempre a soma das linhas. `clientes_atendidos`
+  não é persistido (contagem distinta não é somável — derivado na consulta).
+- **Processamento** (`backend/services/processamento_datahub.py`): cada
+  arquivo da família vira execução (`origem='datahub'`, conector novo
+  `sharepoint_datahub`) → `medidas_recebidas` (append-only, com unidade
+  canônica do conceito e arquivo de origem — linhagem preservada) → upsert das
+  células canônicas. Idempotente (2× não muda nada); reprocessamento de
+  arquivo alterado cria execução nova, atualiza células e **remove células
+  órfãs** (ex.: cliente cadastrado depois sai do balde NULL). Cliente
+  resolvido pela raiz do CNPJ (8 dígitos = `nk_erp`), tolerante a célula
+  numérica do Excel (zeros à esquerda); filial pelo de-para real do banco
+  (001/015/016 semeados do mesmo mapa da exibição — fonte única
+  `filiais_datahub.SIGLA_POR_CODIGO`); 002 vira pendência de de-para.
+- **Métricas novas governadas**: `peso_bruto_movimentado` (kg),
+  `valor_mercadoria_movimentada` (R$), `registros_movimentacao` — nomes dos
+  conceitos canônicos do V1.1, com atributos semânticos no seed_metricas.
+- **Consulta por intervalo** (`backend/services/serie_datahub.py`, `GET
+  /datahub/serie`): série mensal, consolidação anual e acumulado, filtráveis
+  por filial (sigla ou código do export) e cliente (nk_erp), lendo SÓ o
+  Postgres (teste prova que o Graph não é chamado). Só métrica aditiva
+  consolida; média/último/percentual são recusados com mensagem
+  (regra da seção 7 do direcionamento). `clientes_atendidos` refaz a contagem
+  distinta no mês/ano/acumulado (somar meses duplicaria) e declara a limitação
+  do balde sem cliente.
+- **Motor de scores**: passa a somar por competência (série da filial) — pro
+  dado antigo (1 linha por célula) o resultado é idêntico; as séries novas
+  ganham score no grão filial sem violar a unicidade de `scores`.
+- **Admin**: bloco "Série histórica (V1.3)" no painel DataHub — "Processar
+  arquivos" (pula inalterados, por `modificado_em`), "Reprocessar tudo",
+  tabela de processamentos e pendências (filial e cliente). `POST
+  /datahub/processar`, `GET /datahub/processamentos`, `GET /datahub/serie`,
+  todos autenticados.
+- **`/nuvem` não muda** neste bloco: segue a leitura ao vivo do arquivo mais
+  recente; quem consome a série é o cockpit (V1.7).
+
+**Decisões do lote:**
+
+1. Volumes por embalagem fora da série persistida (Maria, 31/jul/2026) — o
+   card/tabela ao vivo continuam; persistir exigiria dimensão de embalagem.
+2. Sem auto-cadastro de cliente (Maria, 31/jul/2026) — pendência + balde
+   "sem cliente identificado"; reprocessar depois do cadastro move os valores.
+3. Enforcement de unidade na ingestão do DataHub por construção: a unidade
+   gravada vem do conceito canônico aprovado; sem conceito aprovado com
+   unidade, o processamento recusa (teste cobre). O enforcement no parser do
+   upload manual segue adiado: as 5 fontes do DW ainda não têm mapeamento
+   semântico de campo (registrado no Bloco B, decisão 2).
+4. Inventário persistido com o serviço puro: quem grava é o endpoint de
+   sincronização e quem reidrata o cache é o startup do app — testes de
+   unidade continuam sem banco.
+5. Consulta de série restrita a métricas aditivas + `clientes_atendidos`
+   derivado; consolidar média/último/percentual exige regra específica e fica
+   pra quando um KPI assim for publicado (seção 7 do direcionamento).
+
+**Fora do lote (declarado):** telas de série/cockpit (V1.7 — filtros globais,
+comparações, rankings, participação, variação: a série que os alimenta está
+pronta); Laboratório (D/E); demais famílias do DataHub (a família integrada
+segue sendo só ENTRADA_MERCADORIAS — `DADOS_GERAIS` e afins entram com seus
+obstáculos declarados quando forem integradas); devolução no card de valor
+(pendência da Maria); de-para da filial 002 (agora visível como pendência no
+admin).
+
+**Limitações registradas** (achados da verificação independente, sem defeito
+no caminho vivo):
+
+- O controle de processamento é por **nome** de arquivo; dois arquivos
+  homônimos em subpastas diferentes do DataHub disputariam o mesmo registro
+  (sem dupla contagem — as células são upsertadas —, mas o controle
+  flip-floparia e reprocessaria a cada clique). Premissa atual: um arquivo por
+  filial × competência na família (verdade hoje).
+- O grão único por métrica é invariante **de código**, não de schema: um
+  modelo de upload manual futuro que gravasse uma das 3 métricas do DataHub no
+  grão filial causaria dupla contagem na série — nenhum modelo atual referencia
+  essas métricas; não criar sem revisar esta regra.
+- Arquivo republicado onde todas as linhas viraram inválidas zera as células
+  daquela filial × competência (espelho fiel do último estado — intencional,
+  coberto por teste).
+
+**Pendências herdadas** (não-código): as mesmas do Bloco A/B — validar `/nuvem`
+ao vivo, subir pra VM com o `UPDATE` de `ativo` das filiais, devolução no card
+de valor, pendências humanas das fontes. Nova: **processar o histórico na VM**
+(clicar "Processar arquivos" depois do deploy) e cadastrar os clientes que
+aparecerem como pendência.
+
+**Suíte**: **232 passed** (185 do Bloco B + 47 novos: 20 do processamento, 12
+da consulta de série, 6 da persistência do inventário, 6 dos endpoints novos,
+2 do ciclo da migration 0006, 1 do motor com grão cliente; o teste do
+seed_metricas foi atualizado de 12 pra 15 métricas — nenhum cenário perdido).
+**Verificação independente** antes do commit (15/15 atendido, 6 ressalvas —
+2 corrigidas, 4 registradas): `docs/V1_RELATORIO_VERIFICACAO.md`.
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco C (V1.3 — persistência e série histórica) só começa com
+**Nenhum.** O Bloco D (V1.4 — Laboratório: seleção e perfil) só começa com
 autorização explícita da Maria.

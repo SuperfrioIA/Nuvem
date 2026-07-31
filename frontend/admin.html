@@ -359,6 +359,24 @@
           </div>
         </fieldset>
       </div>
+
+      <fieldset>
+        <legend>Série histórica (V1.3)</legend>
+        <p class="ajuda">Processa os arquivos ENTRADA_MERCADORIAS sincronizados pra dentro do banco
+          (competência × filial × cliente). Arquivo inalterado é pulado; "Reprocessar tudo" força
+          todos de novo (idempotente — nunca duplica).</p>
+        <div id="datahubProcessarMsg"></div>
+        <button class="acao" id="btnProcessarDatahub">Processar arquivos</button>
+        <button id="btnReprocessarDatahub">Reprocessar tudo</button>
+        <div class="tabela-scroll">
+          <table id="tabelaProcessamentos">
+            <thead><tr><th>Arquivo</th><th>Filial</th><th>Competência</th><th>Status</th>
+              <th>Linhas válidas</th><th>Medidas</th><th>Processado em</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="datahubPendencias" class="ajuda"></div>
+      </fieldset>
     </section>
 
   </main>
@@ -391,6 +409,7 @@ function carregarTudo() {
   carregarMetricas();
   carregarSemantica();
   carregarDatahubStatus();
+  carregarProcessamentos();
 }
 
 let conectorUploadManualId = null;
@@ -676,6 +695,81 @@ document.getElementById("btnSincronizarDatahub").addEventListener("click", async
     btn.textContent = "Sincronizar agora";
   }
 });
+
+// -------- datahub: serie historica (V1.3) --------
+
+async function carregarProcessamentos() {
+  try {
+    const dados = await api("/datahub/processamentos");
+    renderizarProcessamentos(dados);
+  } catch (e) {
+    document.getElementById("datahubProcessarMsg").innerHTML =
+      `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function renderizarProcessamentos(dados) {
+  const body = document.querySelector("#tabelaProcessamentos tbody");
+  body.innerHTML = dados.processamentos.map(p => `
+    <tr>
+      <td>${escaparHtml(p.arquivo)}</td>
+      <td>${escaparHtml(p.filial)}</td>
+      <td>${escaparHtml((p.competencia || "").slice(0, 7))}</td>
+      <td>${escaparHtml(p.status)}${p.detalhe ? " — " + escaparHtml(p.detalhe) : ""}</td>
+      <td>${p.linhas_validas == null ? "-" : p.linhas_validas}</td>
+      <td>${p.medidas_gravadas == null ? "-" : p.medidas_gravadas}</td>
+      <td>${p.processado_em ? new Date(p.processado_em).toLocaleString("pt-BR") : "-"}</td>
+    </tr>`).join("") ||
+    `<tr><td colspan="7" class="ajuda">Nenhum arquivo processado ainda.</td></tr>`;
+
+  const pendencias = [];
+  if (dados.pendencias_filial.length) {
+    pendencias.push("<strong>Filiais sem de-para:</strong> " +
+      dados.pendencias_filial.map(p => escaparHtml(p.filial_na_fonte)).join(", "));
+  }
+  if (dados.pendencias_cliente.length) {
+    pendencias.push(`<strong>Clientes fora do cadastro (${dados.pendencias_cliente.length})</strong> ` +
+      "— somam no balde “sem cliente identificado” até serem cadastrados: " +
+      dados.pendencias_cliente.map(p =>
+        `${escaparHtml(p.nome_na_fonte || "(sem nome)")} (${escaparHtml(p.cliente_na_fonte)})`).join(" · "));
+  }
+  document.getElementById("datahubPendencias").innerHTML =
+    pendencias.length ? pendencias.join("<br>") : "Nenhuma pendência de de-para ou cliente.";
+}
+
+async function processarDatahub(botao, forcar) {
+  const msgDiv = document.getElementById("datahubProcessarMsg");
+  const rotulo = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = "Processando...";
+  msgDiv.innerHTML = "";
+  try {
+    const r = await api("/datahub/processar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ forcar }),
+    });
+    const erros = r.erros.length
+      ? ` — <strong>${r.erros.length} erro(s)</strong>: ` +
+        r.erros.map(e => `${escaparHtml(e.arquivo)} (${escaparHtml(e.erro)})`).join(" · ")
+      : "";
+    msgDiv.innerHTML = `<div class="msg ${r.erros.length ? "" : "msg-ok"}">` +
+      `${r.processados.length} arquivo(s) processado(s), ${r.pulados} pulado(s) ` +
+      `de ${r.total_familia} da família${erros}</div>`;
+    carregarProcessamentos();
+    carregarPendencias();
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  } finally {
+    botao.disabled = false;
+    botao.textContent = rotulo;
+  }
+}
+
+document.getElementById("btnProcessarDatahub").addEventListener("click", (ev) =>
+  processarDatahub(ev.target, false));
+document.getElementById("btnReprocessarDatahub").addEventListener("click", (ev) =>
+  processarDatahub(ev.target, true));
 
 // A visao executiva (cards, leitura executiva, detalhamento por cliente,
 // qualidade e origem) vive em nuvem.html desde o V1.0 -- o painel duplicado

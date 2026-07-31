@@ -24,11 +24,17 @@ def calcular_scores(cur) -> int:
 
     gravados = 0
     for metrica_id, armazem_id in pares:
+        # soma por competencia: desde o V1.3 a mesma celula (metrica x armazem
+        # x competencia) pode ter varias linhas (grao cliente, DataHub) -- a
+        # serie do score e sempre a da FILIAL (total = soma; so metricas
+        # aditivas sao persistidas no grao cliente). Pra metrica com uma linha
+        # por celula (todas as anteriores), a soma devolve o proprio valor.
         cur.execute(
             """
-            SELECT competencia, valor
+            SELECT competencia, SUM(valor)
             FROM medidas
             WHERE metrica_id = %s AND armazem_id = %s
+            GROUP BY competencia
             ORDER BY competencia
             """,
             (metrica_id, armazem_id),

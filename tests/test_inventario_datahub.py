@@ -117,6 +117,67 @@ def test_resumo_guarda_lista_completa_de_arquivos(monkeypatch):
     assert {a["id"] for a in lista} == {f"id-{i}" for i in range(1, 13)}
 
 
+# --- persistencia da sincronizacao (Bloco C / V1.3) ---------------------------
+
+
+def _estado_ok(total=3):
+    from datetime import datetime, timezone
+
+    return {
+        "sincronizado_em": datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc),
+        "ok": True,
+        "mensagem_erro": None,
+        "resumo": {"total_arquivos": total, "arquivos": [_item_arquivo("a.xlsx")]},
+    }
+
+
+def test_salvar_e_carregar_persistido(cursor):
+    estado = _estado_ok()
+    inventario_datahub.salvar_persistido(cursor, estado)
+
+    sincronizado_em, resumo = inventario_datahub.carregar_persistido(cursor)
+    assert sincronizado_em == estado["sincronizado_em"]
+    assert resumo == estado["resumo"]
+
+
+def test_salvar_ignora_estado_com_erro_ou_sem_resumo(cursor):
+    inventario_datahub.salvar_persistido(cursor, {"ok": False, "resumo": {"x": 1}, "sincronizado_em": None})
+    inventario_datahub.salvar_persistido(cursor, {"ok": True, "resumo": None, "sincronizado_em": None})
+    assert inventario_datahub.carregar_persistido(cursor) == (None, None)
+
+
+def test_carregar_persistido_pega_a_ultima_sincronizacao(cursor):
+    inventario_datahub.salvar_persistido(cursor, _estado_ok(total=1))
+    inventario_datahub.salvar_persistido(cursor, _estado_ok(total=2))
+    _, resumo = inventario_datahub.carregar_persistido(cursor)
+    assert resumo["total_arquivos"] == 2
+
+
+def test_restaurar_reidrata_cache_vazio():
+    estado = _estado_ok()
+    inventario_datahub.restaurar(estado["sincronizado_em"], estado["resumo"])
+
+    atual = inventario_datahub.status()
+    assert atual["ok"] is True
+    assert atual["resumo"] == estado["resumo"]
+    assert atual["sincronizado_em"] == estado["sincronizado_em"]
+
+
+def test_restaurar_nao_sobrescreve_sincronizacao_do_processo():
+    inventario_datahub._cache.update(
+        {"sincronizado_em": "agora", "ok": True, "mensagem_erro": None, "resumo": {"total_arquivos": 9}}
+    )
+    inventario_datahub.restaurar("antes", {"total_arquivos": 1})
+    assert inventario_datahub.status()["resumo"] == {"total_arquivos": 9}
+
+
+def test_restaurar_sem_persistido_nao_muda_nada():
+    inventario_datahub.restaurar(None, None)
+    assert inventario_datahub.status() == {
+        "sincronizado_em": None, "ok": None, "mensagem_erro": None, "resumo": None,
+    }
+
+
 def test_erro_preserva_resumo_anterior(monkeypatch):
     arvore_ok = {None: [_item_arquivo("a.xlsx")]}
     monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: arvore_ok[item_id])

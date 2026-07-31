@@ -191,8 +191,8 @@ def test_seeds_idempotentes(banco_migrado):
 
 
 def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
-    """R3: as 12 metricas atuais nascem com os campos semanticos preenchidos --
-    nenhuma fica so com nome+unidade."""
+    """R3: toda metrica semeada nasce com os campos semanticos preenchidos --
+    nenhuma fica so com nome+unidade. 12 do piloto/POC + 3 do DataHub (V1.3)."""
     linhas = consultar(
         """
         SELECT nome, nome_executivo, dominio, tipo, direcao_risco, agregacao_padrao,
@@ -200,7 +200,7 @@ def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
         FROM metricas
         """
     )
-    assert len(linhas) == 12
+    assert len(linhas) == 15
     for nome, nome_executivo, dominio, tipo, direcao_risco, agregacao_padrao, comparabilidade, ativo in linhas:
         assert nome_executivo, nome
         assert dominio, nome
@@ -215,6 +215,13 @@ def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
     assert dominios["posicoes_ocupadas"] == "ocupacao"
     assert dominios["comercial_vigente"] == "comercial"
     assert dominios["volumetria_recebimento"] == "volumetria"
+
+    # as 3 do DataHub (Bloco C / V1.3): aditivas e com dominio executivo
+    agregacoes = dict(consultar("SELECT nome, agregacao_padrao FROM metricas"))
+    assert agregacoes["peso_bruto_movimentado"] == "soma"
+    assert agregacoes["valor_mercadoria_movimentada"] == "soma"
+    assert agregacoes["registros_movimentacao"] == "soma"
+    assert dominios["valor_mercadoria_movimentada"] == "financeiro"
 
 
 def test_seed_metricas_nao_sobrescreve_edicao_manual(cursor):

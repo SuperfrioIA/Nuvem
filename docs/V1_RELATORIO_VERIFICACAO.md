@@ -97,3 +97,55 @@ precisão Decimal).
 **Conclusão: Bloco B atendido.** Nenhum defeito real encontrado no caminho vivo;
 5 das 7 ressalvas corrigidas antes do commit, 2 registradas. Suíte final após as
 correções: **185 passed** (183 + 2 testes das correções R2/R3).
+
+---
+
+## Bloco C — V1.3 Persistência e série histórica (31/jul/2026)
+
+**Método do verificador** (segundo contexto, somente leitura no repo): `git
+status`/`git diff` completos sobre o working tree (base 947fcb3), leitura
+integral dos arquivos novos e dos diffs; greps adversariais no repo inteiro
+(sobra do `ON CONFLICT` antigo — zero; `pertence_a_familia` — zero;
+auto-cadastro de cliente — zero); arqueologia do DDL legado da VM (commit
+`439ab62`) confirmando que o nome da constraint que a 0006 dropa existe também
+em banco criado pelo `init_db` antigo; execução **real** da suíte completa no
+ambiente de referência (230 passed na rodada do verificador) e 12 casos
+adversariais traçados à mão no código novo (CNPJ 13 dígitos como float, arquivo
+sem linhas válidas, clientes com mesma raiz, consolidação cruzando ano,
+`forcar` com pendência de de-para, célula de outra métrica no delete de órfãs,
+`fonte_id` NULL, restart com tabela vazia, reprocesso 2×, cadastro posterior,
+falha no meio do lote, upload manual pós-migração).
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo (V1.3 + decisões da Maria) | atendido | volumes fora da série; sem auto-cadastro (único `INSERT INTO clientes` é o seed); sem scope creep |
+| 2 | Arquitetura (aditiva, camada existente) | atendido | execução → recebidas → medidas usada de verdade, com asserts; nada movido/renomeado |
+| 3 | Migration 0006 | atendido | upgrade não muda dado; nome da constraint antiga confere com legado e baseline; downgrade testado em ciclo completo contra Postgres real |
+| 4 | Compatibilidade/regressões | atendido | upload manual idêntico (NULL conflita com NULL); zero sobras do conflict target antigo; `/kpis`/`/nuvem` fora do diff; motor devolve o mesmo resultado pro dado antigo |
+| 5 | Segurança | atendido | `exigir_login` + teste de 401 nos 3 endpoints novos; SQL parametrizado; todo conteúdo SharePoint escapado no admin; download segue só pela lista de permissão |
+| 6 | Cálculos | atendido | agregação por cliente conferida; balde NULL soma no total; delete de órfãs não alcança outra métrica/filial/competência |
+| 7 | Unidades | atendido | unidade das recebidas vem do conceito canônico **aprovado** (sem ele, recusa antes de gravar); série recusa média/último/percentual com mensagem |
+| 8 | Dupla contagem | atendido | grão único por construção; reprocesso espelha o último estado (upsert + órfãs); casos traçados à mão |
+| 9 | Qualidade/pendências | atendido | 002 e cliente desconhecido visíveis com mensagens claras; erro em um arquivo não derruba o lote |
+| 10 | Testes | atendido | suíte executada pelo verificador: 230 passed; breakdown dos testes novos confirmado por contagem estática; asserts exatos |
+| 11 | Documentação | atendido | V1_PLANO/V1_ARQUITETURA/README/CLAUDE/memórias coerentes; superação da decisão antiga `medidas_cliente` registrada |
+| 12 | Código morto/dependências | atendido | requirements intocados; nenhuma referência órfã |
+| 13 | Rastreabilidade | atendido | `medida_recebida_id` nunca NULL no caminho novo; execuções acumulam; decisões datadas |
+| 14 | Erros | atendido | exceções → 400/502; erros por arquivo acontecem antes de qualquer escrita canônica; exceção não capturada = rollback do lote inteiro |
+| 15 | Exposição de dados | atendido | nenhum endpoint novo sem login; respostas sem segredo |
+
+### Ressalvas do verificador e o que foi feito
+
+| # | Achado | Resolução |
+|---|---|---|
+| R1 | Controle de processamento é por **nome** de arquivo — homônimos em subpastas diferentes flip-flopariam o controle (sem dupla contagem; premissa "um arquivo por filial×competência" vale por pasta) | **registrado** — limitação no `V1_PLANO.md`; verdade no DataHub real de hoje |
+| R2 | `ValueError` de métrica fora do catálogo viraria HTTP 500 sem mensagem clara | **corrigido** — ids das métricas resolvidos antes de qualquer escrita, erro vira `ProcessamentoDatahubError` (400), com teste |
+| R3 | Grão único por métrica é invariante de código, não de schema — um modelo de upload futuro gravando as métricas do DataHub no grão filial duplicaria a série | **registrado** — limitação no `V1_PLANO.md`; nenhum modelo atual referencia essas métricas |
+| R4 | Arquivos órfãos no working tree (screenshots antigos, fora do bloco) poderiam entrar no commit por descuido | **acatado** — commit com staging explícito, sem `git add -A`; arquivos deixados no disco (não são deste bloco) |
+| R5 | Seção do Bloco C deste relatório precisava existir antes do commit | **corrigido** — esta seção |
+| R6 | Sem teste pro arquivo republicado que fica com 0 linhas válidas (espelho apaga a competência) | **corrigido** — teste novo fixa o comportamento como intencional |
+
+**Conclusão: Bloco C atendido.** Nenhum defeito real no caminho vivo; 3 das 6
+ressalvas corrigidas antes do commit, 3 registradas (R1/R3 como limitação
+documentada, R4 como cuidado de staging). Suíte final após as correções:
+**232 passed** (230 + 2 testes das correções R2/R6).

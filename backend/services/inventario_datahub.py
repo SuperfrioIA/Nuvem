@@ -1,15 +1,17 @@
 """Inventario da pasta do SharePoint DataHub: contagens, extensoes, pastas e
-arquivos recentes (Lote P2).
+arquivos recentes (Lote P2; persistencia no Bloco C / V1.3).
 
 Cache em memoria do processo -- reconstruido por inteiro a cada chamada de
 sincronizar(), nunca "por requisicao" (senao a data da ultima sincronizacao se
-perderia entre requests). Sem tabela nova: o volume da POC (228 arquivos, 8
-familias) cabe folgado em memoria; criar tabela sem necessidade clara foi
-descartado no P1 (ver docs/POC_ATUAL.md). Custo aceito: o cache zera num
-restart do container -- tudo bem pra POC, e so clicar "Sincronizar agora" de
-novo.
+perderia entre requests). Desde o V1.3 o resumo tambem e persistido
+(`sincronizacoes_datahub`): quem grava e o endpoint de sincronizacao (via
+salvar_persistido) e quem reidrata o cache e o startup do app (main.py, via
+carregar_persistido + restaurar) -- o servico continua puro (o banco entra
+sempre por `cur` injetado), os testes de unidade continuam sem banco, e um
+restart do container deixa de zerar a lista de permissao de downloads.
 """
 
+import json
 from datetime import datetime, timezone
 
 from . import graph_datahub
@@ -48,6 +50,40 @@ def sincronizar() -> dict:
     _cache["sincronizado_em"] = datetime.now(timezone.utc)
     _cache["resumo"] = resumo
     return dict(_cache)
+
+
+def restaurar(sincronizado_em, resumo) -> None:
+    """Reidrata o cache com o estado persistido (chamado no startup do app).
+    Nunca sobrescreve uma sincronizacao ja feita neste processo."""
+    if resumo is None or _cache["resumo"] is not None:
+        return
+    _cache["ok"] = True
+    _cache["mensagem_erro"] = None
+    _cache["sincronizado_em"] = sincronizado_em
+    _cache["resumo"] = resumo
+
+
+def salvar_persistido(cur, estado: dict) -> None:
+    """Grava o resumo de uma sincronizacao OK (append; a leitura pega sempre a
+    ultima). Chamado pelo endpoint de sincronizacao, nunca daqui de dentro."""
+    if not estado.get("ok") or estado.get("resumo") is None:
+        return
+    cur.execute(
+        "INSERT INTO sincronizacoes_datahub (sincronizado_em, resumo) VALUES (%s, %s)",
+        (estado["sincronizado_em"], json.dumps(estado["resumo"], ensure_ascii=False)),
+    )
+
+
+def carregar_persistido(cur):
+    """(sincronizado_em, resumo) da ultima sincronizacao persistida, ou
+    (None, None)."""
+    cur.execute(
+        "SELECT sincronizado_em, resumo FROM sincronizacoes_datahub ORDER BY id DESC LIMIT 1"
+    )
+    row = cur.fetchone()
+    if row is None:
+        return None, None
+    return row[0], row[1]
 
 
 def _construir_resumo() -> dict:

@@ -71,6 +71,40 @@ def test_desvio_zero(cursor):
     assert (estado, z) == ("fora_padrao", None)
 
 
+def test_grao_cliente_soma_na_serie_da_filial(cursor):
+    """V1.3: a mesma celula (metrica x armazem x competencia) pode ter varias
+    linhas (uma por cliente) -- o score e calculado sobre a SOMA (serie da
+    filial), uma linha de score por competencia, sem violar a unicidade."""
+    from datetime import date
+
+    cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    armazem_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    metrica_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM clientes WHERE nk_erp = '67945071'")
+    sapore = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM clientes WHERE nk_erp = '02905110'")
+    gr = cursor.fetchone()[0]
+
+    # 7 competencias; na ultima, o total (60+40=100) so salta se somar os clientes
+    serie = [(1, 50, 50), (2, 49, 51), (3, 51, 49), (4, 50, 50), (5, 48, 52), (6, 52, 48), (7, 60, 40)]
+    for mes, valor_sapore, valor_gr in serie:
+        for cliente_id, valor in ((sapore, valor_sapore), (gr, valor_gr)):
+            cursor.execute(
+                "INSERT INTO medidas (metrica_id, armazem_id, competencia, cliente_id, valor) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (metrica_id, armazem_id, date(2026, mes, 1), cliente_id, valor),
+            )
+
+    motor.calcular_scores(cursor)
+
+    estados = _estados(cursor, metrica_id, armazem_id)
+    assert len(estados) == 7  # um score por competencia, nao por cliente
+    # todos os meses somam 100: o 7o e normal contra o historico constante
+    assert [e for _, e, _ in estados] == ["historico_curto"] * 6 + ["normal"]
+    assert float(estados[6][2]) == 0.0
+
+
 def test_recalculo_idempotente(cursor):
     _semear_serie(cursor, "RPI", "volumetria", [10, 11, 9, 10, 12, 10, 11, 30])
 

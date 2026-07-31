@@ -8,10 +8,10 @@ uma visão única por período, filial e cliente.
 **Status: construção da V1 de produção, em blocos.** A POC da integração SharePoint
 DataHub foi concluída com sucesso em 30/jul/2026 (balanço em
 [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md)); a partir daí o projeto entrou na
-construção da V1. **Blocos A (V1.0 — transição para produto) e B (V1.1 catálogo
-semântico + V1.2 compatibilidade de medidas) feitos em 31/jul/2026; Blocos C–G
-aguardam autorização.** Fonte única do status:
-[docs/V1_PLANO.md](docs/V1_PLANO.md).
+construção da V1. **Blocos A (V1.0 — transição para produto), B (V1.1 catálogo
+semântico + V1.2 compatibilidade de medidas) e C (V1.3 persistência e série
+histórica) feitos em 31/jul/2026; Blocos D–G aguardam autorização.** Fonte única
+do status: [docs/V1_PLANO.md](docs/V1_PLANO.md).
 
 ## Documentos ativos (V1)
 

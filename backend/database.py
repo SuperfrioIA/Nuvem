@@ -3,7 +3,15 @@ from contextlib import contextmanager
 
 import psycopg2
 
-from . import seed_catalogo, seed_clientes, seed_depara, seed_metricas, seed_modelos, seed_semantico
+from . import (
+    seed_catalogo,
+    seed_clientes,
+    seed_datahub,
+    seed_depara,
+    seed_metricas,
+    seed_modelos,
+    seed_semantico,
+)
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -82,3 +90,12 @@ def init_db():
             # backend/seed_semantico.py. Roda depois do seed_catalogo (divide a
             # tabela catalogo_fontes com ele).
             seed_semantico.aplicar(cur)
+
+            # seed: ingestão do DataHub — conector sharepoint_datahub, de-para
+            # das filiais confirmadas e métricas da família integrada (Bloco C /
+            # V1.3) — ver backend/seed_datahub.py. Roda depois do seed_depara
+            # (precisa dos armazéns); o seed_metricas roda de novo em seguida
+            # pra classificar as métricas recém-criadas (ele só preenche quem
+            # está sem domínio, então repetir é inócuo pras demais).
+            seed_datahub.aplicar(cur)
+            seed_metricas.aplicar(cur)

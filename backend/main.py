@@ -5,10 +5,11 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import migracao
-from .database import init_db
+from .database import get_conn, init_db
 from .routers.admin import router as admin_router
 from .routers.catalogo import router as catalogo_router
 from .routers.datahub import router as datahub_router
+from .services import inventario_datahub
 
 
 @asynccontextmanager
@@ -22,6 +23,12 @@ async def lifespan(app: FastAPI):
     # e so pra sair da API deprecada do FastAPI.
     migracao.migrar()
     init_db()
+    # V1.3: reidrata o inventario do DataHub da ultima sincronizacao persistida
+    # -- um restart do container nao zera mais a lista de permissao de downloads
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            sincronizado_em, resumo = inventario_datahub.carregar_persistido(cur)
+    inventario_datahub.restaurar(sincronizado_em, resumo)
     yield
 
 

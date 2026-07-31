@@ -275,6 +275,89 @@ def test_migrar_para_r2_preserva_medidas_como_legado(banco_vazio):
     ]
 
 
+def test_migracao_0006_ciclo_completo_preserva_grao_filial(banco_vazio):
+    """Bloco C: upgrade -> downgrade -> upgrade da 0006. O downgrade restaura a
+    constraint antiga e descarta SO as linhas no grao cliente (nao
+    representaveis nela); a linha sem cliente sobrevive ao ciclo inteiro."""
+    from alembic import command
+
+    migracao.migrar()
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('upload_manual', 'Upload manual');
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        INSERT INTO clientes (nk_erp, nome) VALUES ('11111111', 'Cliente Teste');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    cliente_id = consultar("SELECT id FROM clientes")[0][0]
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 10)"
+    )
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, cliente_id, valor) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', {cliente_id}, 7)"
+    )
+
+    command.downgrade(migracao._config(), "0005_catalogo_semantico")
+
+    for tabela in ("sincronizacoes_datahub", "processamentos_datahub", "cliente_pendencias"):
+        assert consultar(f"SELECT to_regclass('public.{tabela}') IS NULL")[0][0] is True
+    # a linha do grao cliente foi descartada; a do grao filial sobreviveu
+    assert consultar("SELECT valor FROM medidas") == [(10,)]
+    # a constraint antiga (3 colunas) voltou a valer
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'medidas' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [("UNIQUE (metrica_id, armazem_id, competencia)",)]
+
+    command.upgrade(migracao._config(), "head")
+
+    assert _versao_alembic() == _head()
+    assert consultar("SELECT valor, cliente_id FROM medidas") == [(10, None)]
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'medidas' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [
+        ("UNIQUE NULLS NOT DISTINCT (metrica_id, armazem_id, competencia, cliente_id)",)
+    ]
+
+
+def test_constraint_nova_deduplica_cliente_null(banco_vazio):
+    """A celula sem cliente tem identidade (NULLS NOT DISTINCT): inserir a
+    mesma celula NULL duas vezes viola a constraint -- e o que garante o
+    upsert idempotente do caminho do upload E do DataHub."""
+    migracao.migrar()
+    _executar(
+        """
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 10)"
+    )
+    with pytest.raises(psycopg2.errors.UniqueViolation):
+        _executar(
+            f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+            f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 20)"
+        )
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

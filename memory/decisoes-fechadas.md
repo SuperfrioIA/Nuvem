@@ -254,6 +254,27 @@ metadata:
   manual fica pro V1.3 (modelos atuais somam colunas da mesma unidade por
   construção).
 
+- **Bloco C (V1.3) executado em 31/jul/2026** (autorizado pela Maria: "vamos
+  para o proximo" + plano aprovado). Migration 0006: `medidas` ganhou
+  `cliente_id` com `UNIQUE NULLS NOT DISTINCT (metrica, armazem, competencia,
+  cliente)` — **supera a decisão de 15/jul/2026 de "dimensão cliente = v2 com
+  segunda tabela-fato `medidas_cliente`"**: o direcionamento V1 (seção 8) manda
+  o grão competência×filial×cliente na camada existente, e a Maria aprovou o
+  desenho. Grão ÚNICO por métrica (cliente; NULL = "sem cliente identificado",
+  nunca "total da filial"; total = soma) — dupla contagem impossível por
+  construção; `clientes_atendidos` nunca persiste (derivado por contagem
+  distinta). Conector `sharepoint_datahub` com de-para 001/015/016 semeado do
+  mesmo mapa da exibição (`filiais_datahub.SIGLA_POR_CODIGO`, fonte única).
+  **Decisões da Maria (31/jul/2026): volumes por embalagem FORA da série
+  persistida** (exigiria dimensão embalagem; card segue ao vivo) **e SEM
+  auto-cadastro de cliente** (fora do cadastro → `cliente_pendencias` + balde
+  NULL; reprocessar depois do cadastro move os valores e remove a célula órfã).
+  Cliente resolvido pela raiz do CNPJ (= `nk_erp`). Inventário do DataHub
+  persistido (`sincronizacoes_datahub`; endpoint grava, startup reidrata — o
+  serviço continua puro). Motor de scores soma por competência (série da
+  filial). Consulta de série só consolida métrica aditiva; média/último/
+  percentual recusados com mensagem até existir regra específica (seção 7).
+
 **Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026 e 31/jul/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

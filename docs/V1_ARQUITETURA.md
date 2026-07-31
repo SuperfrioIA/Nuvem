@@ -25,7 +25,8 @@ Não mover arquivos por estética.
   métrica extinta; `catalogo_fontes`/`catalogo_colunas` como fonte lógica.
 - **DataHub (P1–P5.5)**: cliente Graph somente leitura (`Sites.Selected` + `read`,
   Client Credentials, cache de token, download por `item_id` com corte de
-  tamanho); inventário em cache de processo; leitura validada de
+  tamanho); inventário em cache de processo (persistido desde o V1.3 —
+  `sincronizacoes_datahub`, reidratado no startup); leitura validada de
   `ENTRADA_MERCADORIAS` (coluna por nome, cabeçalho conferido); KPIs
   determinísticos; resumo por template; página `/nuvem`.
 - **Motor de scores** (Lote 3): z-score por métrica×armazém, intocado.
@@ -43,6 +44,8 @@ backend/
 ├── services/
 │   ├── catalogo_semantico.py    ← V1.1
 │   ├── compatibilidade_medidas.py ← V1.2 (bloqueio de soma incompatível)
+│   ├── processamento_datahub.py ← V1.3 (arquivo → execução → recebidas → canônicas)
+│   ├── serie_datahub.py         ← V1.3 (consultas por intervalo, só Postgres)
 │   ├── perfil_dados.py          ← V1.4 (perfil determinístico pré-IA)
 │   ├── laboratorio_insights.py  ← V1.5 (sessões, chat, rastreabilidade)
 │   ├── promocao_kpi.py          ← V1.6 (especificação a partir do insight)
@@ -87,21 +90,35 @@ versão/vigência, status, aprovação, linhagem e testes esperados. Percentuais
 nunca são somados diretamente; semi-aditivos (ex.: ocupação) definem regra por
 dimensão (última fotografia válida / média ponderada / não permitido).
 
-## Persistência e série histórica (V1.3)
+## Persistência e série histórica (V1.3 — construído no Bloco C, 31/jul/2026)
 
 O fluxo da POC (ler só o arquivo mais recente, calcular em memória, não
-persistir) **não atende à V1**. O caminho passa a ser a camada existente:
+persistir) não atendia à V1. O caminho agora é a camada existente:
 
 ```
-execuções → medidas_recebidas → medidas canônicas → consultas do cockpit
+execuções → medidas_recebidas → medidas canônicas → consultas (GET /datahub/serie)
 ```
 
-Granularidade mínima recomendada: competência × filial × cliente × métrica.
-Fonte sem cliente: manter ausente (não inventar) e restringir análises
-dependentes. Suportar série mensal, consolidação anual, mês contra mês,
-período anterior, acumulado, rankings, participação e visão consolidada.
-Reprocessamento idempotente; competência corrente republicada substitui.
-Insumos já mapeados: `docs/PLANO.md` Lote 11 (ressalvas do dado) e
+Como foi construído (migration `0006_persistencia_datahub`):
+
+- `medidas` ganhou `cliente_id`; identidade da célula é
+  `UNIQUE NULLS NOT DISTINCT (metrica_id, armazem_id, competencia, cliente_id)`.
+- **Grão único por métrica**: as métricas do DataHub existem SÓ no grão
+  cliente (`cliente_id NULL` = "sem cliente identificado", nunca "total da
+  filial"); o total da filial é sempre a soma das linhas — nunca há duas
+  granularidades da mesma métrica, então não existe dupla contagem por
+  construção. `clientes_atendidos` é derivado na consulta (contagem distinta,
+  não somável). Fonte sem cliente: mantém ausente (não inventa) e a consulta
+  declara a limitação.
+- Reprocessamento idempotente: mesma competência 2× upserta as mesmas células;
+  arquivo alterado gera execução nova, atualiza células e remove as órfãs.
+- O motor de scores soma por competência (série da filial).
+- Consulta: série mensal, consolidação anual e acumulado, só de métrica
+  aditiva (média/último/percentual recusados com mensagem — regra da seção 7).
+  Mês contra mês, rankings, participação e visão consolidada são leituras da
+  série no cockpit (V1.7).
+
+Insumos pras próximas famílias: `docs/PLANO.md` Lote 11 (ressalvas do dado) e
 `docs/FONTES_DATAHUB.md` (obstáculos 1–8 — cabeçalho variável, `_f1/_f2/_f3`,
 `DADOS_GERAIS` quebrado, 711 MB → conector incremental).
 

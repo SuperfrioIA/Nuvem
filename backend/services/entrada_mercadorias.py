@@ -82,18 +82,28 @@ def _arquivo_do_inventario(item_id: str) -> dict:
     )
 
 
+def dados_da_familia(nome) -> tuple[str, str] | None:
+    """(filial, competencia) quando o nome pertence a familia
+    ENTRADA_MERCADORIAS; None caso contrario (V1.3 usa pra listar e rotular o
+    que processar)."""
+    m = _PADRAO_NOME.match(nome or "")
+    if not m:
+        return None
+    filial, aa, mm = m.group(1), m.group(2), m.group(3)
+    return filial, f"20{aa}-{mm}"
+
+
 def _validar_nome(nome: str) -> tuple[str, str]:
     if not nome.lower().endswith(".xlsx"):
         raise EntradaMercadoriasError(f"extensao invalida (esperado .xlsx): {nome}")
 
-    m = _PADRAO_NOME.match(nome)
-    if not m:
+    dados = dados_da_familia(nome)
+    if dados is None:
         raise EntradaMercadoriasError(
             "nome de arquivo fora do padrao "
             f"ENTRADA_MERCADORIAS_{{filial}}_{{AAMM}}.xlsx: {nome}"
         )
-    filial, aa, mm = m.group(1), m.group(2), m.group(3)
-    return filial, f"20{aa}-{mm}"
+    return dados
 
 
 def _abrir_aba(conteudo: bytes):

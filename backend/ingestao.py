@@ -40,6 +40,30 @@ def registrar_pendencia(cur, conector_id: int, armazem_na_fonte: str) -> None:
     )
 
 
+def resolver_cliente(cur, nk_erp: str):
+    """Cliente pela chave do cadastro (nk_erp = raiz do CNPJ / NK_CLIENTE do
+    DW). Sem auto-cadastro (decisao da Maria, 31/jul/2026): cliente fora do
+    cadastro devolve None e o chamador registra a pendencia."""
+    cur.execute("SELECT id FROM clientes WHERE nk_erp = %s", (nk_erp,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def registrar_cliente_pendencia(cur, conector_id: int, cliente_na_fonte: str, nome_na_fonte=None) -> None:
+    """Mesmo padrao do de-para de filial: acumula primeira/ultima vez em que o
+    cliente desconhecido apareceu; o nome ajuda a Maria a cadastrar depois."""
+    cur.execute(
+        """
+        INSERT INTO cliente_pendencias (conector_id, cliente_na_fonte, nome_na_fonte)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (conector_id, cliente_na_fonte)
+        DO UPDATE SET ultima_vez_em = now(),
+                      nome_na_fonte = COALESCE(EXCLUDED.nome_na_fonte, cliente_pendencias.nome_na_fonte)
+        """,
+        (conector_id, cliente_na_fonte, nome_na_fonte),
+    )
+
+
 def upsert_medida(
     cur,
     metrica_id: int,
@@ -48,17 +72,23 @@ def upsert_medida(
     valor: float,
     conector_id: int,
     medida_recebida_id: int,
+    cliente_id: int | None = None,
 ) -> None:
+    """cliente_id NULL = celula sem cliente (todo o caminho do upload manual e
+    as linhas do DataHub sem cliente identificado). A identidade da celula e a
+    constraint medidas_celula_unica (V1.3, NULLS NOT DISTINCT) -- NULL conflita
+    com NULL, entao o upsert continua idempotente nos dois graos."""
     cur.execute(
         """
-        INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, conector_id, medida_recebida_id, origem_tipo)
-        VALUES (%s, %s, %s, %s, %s, %s, 'recebida')
-        ON CONFLICT (metrica_id, armazem_id, competencia)
+        INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, conector_id,
+                             medida_recebida_id, origem_tipo, cliente_id)
+        VALUES (%s, %s, %s, %s, %s, %s, 'recebida', %s)
+        ON CONFLICT ON CONSTRAINT medidas_celula_unica
         DO UPDATE SET valor = EXCLUDED.valor, conector_id = EXCLUDED.conector_id,
                       medida_recebida_id = EXCLUDED.medida_recebida_id, origem_tipo = 'recebida',
                       atualizado_em = now()
         """,
-        (metrica_id, armazem_id, competencia, valor, conector_id, medida_recebida_id),
+        (metrica_id, armazem_id, competencia, valor, conector_id, medida_recebida_id, cliente_id),
     )
 
 
@@ -80,6 +110,35 @@ def registrar_medida_recebida(
         RETURNING id
         """,
         (execucao_id, armazem_id, metrica_id, competencia, valor, execucao_id),
+    )
+    return cur.fetchone()[0]
+
+
+def registrar_recebida_datahub(
+    cur,
+    execucao_id: int,
+    fonte_id: int | None,
+    armazem_id: int,
+    cliente_id: int | None,
+    metrica_id: int,
+    competencia,
+    valor: float,
+    unidade: str | None,
+    arquivo_origem: str | None,
+) -> int:
+    """Variante do DataHub (V1.3): sem modelo de importacao (a leitura e a do
+    P3, nao a dos modelos), com fonte logica, cliente, unidade canonica e
+    arquivo de origem explicitos. Mesma tabela, mesmo append-only."""
+    cur.execute(
+        """
+        INSERT INTO medidas_recebidas
+            (execucao_id, fonte_id, armazem_id, cliente_id, metrica_id,
+             competencia, valor, unidade, arquivo_origem)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        RETURNING id
+        """,
+        (execucao_id, fonte_id, armazem_id, cliente_id, metrica_id,
+         competencia, valor, unidade, arquivo_origem),
     )
     return cur.fetchone()[0]
 
@@ -121,7 +180,7 @@ def registrar_medida_derivada(
         """
         INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, origem_tipo, regra_codigo, regra_versao, calculado_em)
         VALUES (%s, %s, %s, %s, 'derivada', %s, %s, now())
-        ON CONFLICT (metrica_id, armazem_id, competencia)
+        ON CONFLICT ON CONSTRAINT medidas_celula_unica
         DO UPDATE SET valor = EXCLUDED.valor, origem_tipo = 'derivada',
                       regra_codigo = EXCLUDED.regra_codigo, regra_versao = EXCLUDED.regra_versao,
                       calculado_em = now(), medida_recebida_id = NULL, atualizado_em = now()

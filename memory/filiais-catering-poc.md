@@ -45,9 +45,12 @@ armazém em vez de código numérico) e tinha uma inconsistência não resolvida
 filtre por armazém ativo (`backend/routers/admin.py`, listagem de armazéns).
 **How to apply:** ao mostrar filial na UI ou ao interpretar competências futuras da
 filial `015`, usar esta tabela. Desde o V1.0 (31/jul/2026) o de-para de **exibição**
-está construído em `backend/services/filiais_datahub.py` (fonte única; exposto como
-`filial_sigla` em `/kpis` e `/nuvem`, rótulo `016 · RMSPIV` nas telas e
-`016 (RMSPIV)` no resumo) — mudou a decisão antiga de "não fazer de-para na tela".
-É só rótulo: o de-para de ingestão continua sendo o do banco (`depara_armazem`),
-que assume quando a série histórica persistir por filial (V1.3). Filial `002`
-segue só código. Ver também [[chaves-nf-entrada-datahub]].
+está construído em `backend/services/filiais_datahub.py` (fonte única
+`SIGLA_POR_CODIGO`; exposto como `filial_sigla` em `/kpis` e `/nuvem`, rótulo
+`016 · RMSPIV` nas telas e `016 (RMSPIV)` no resumo). Desde o V1.3 (31/jul/2026)
+o MESMO mapa é semeado em `depara_armazem` sob o conector `sharepoint_datahub`
+(`backend/seed_datahub.py`) e é o de-para real da ingestão da série histórica.
+Filial `002` segue sem de-para — quando um arquivo dela for processado, vira
+pendência visível no admin (painel DataHub, "Série histórica"); pra destravar,
+basta a Maria confirmar a sigla e criar o de-para. Ver também
+[[chaves-nf-entrada-datahub]].

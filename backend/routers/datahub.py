@@ -13,7 +13,9 @@ from ..services import (
     inventario_datahub,
     kpis_poc,
     nuvem_datahub,
+    processamento_datahub,
     resumo_poc,
+    serie_datahub,
 )
 
 router = APIRouter(prefix="/datahub")
@@ -49,7 +51,13 @@ def status(request: Request):
 @router.post("/sincronizar")
 def sincronizar(request: Request):
     exigir_login(request)
-    return _serializar(inventario_datahub.sincronizar())
+    estado = inventario_datahub.sincronizar()
+    # V1.3: sincronizacao OK e persistida -- o startup reidrata o cache dela
+    if estado.get("ok"):
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                inventario_datahub.salvar_persistido(cur, estado)
+    return _serializar(estado)
 
 
 @contextmanager
@@ -129,6 +137,54 @@ def kpis(request: Request):
         # este endpoint ja faz, sem baixar o arquivo de novo.
         "linhas_amostra": linhas[:_MAX_LINHAS_RESPOSTA],
     }
+
+
+@router.post("/processar")
+def processar(request: Request, forcar: bool = Body(False, embed=True)):
+    """Processa a familia ENTRADA_MERCADORIAS inteira pro banco (V1.3): arquivo
+    novo/alterado e processado, inalterado e pulado (forcar=true reprocessa
+    tudo). Erro em um arquivo nao derruba o lote -- vem no relatorio."""
+    exigir_login(request)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                return processamento_datahub.processar_todos(cur, forcar=forcar)
+    except processamento_datahub.ProcessamentoDatahubError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/processamentos")
+def processamentos(request: Request):
+    """Estado corrente por arquivo + pendencias de de-para (filial e cliente)
+    do conector do DataHub, pro painel do admin."""
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            return {
+                "processamentos": processamento_datahub.listar_processamentos(cur),
+                "pendencias_filial": processamento_datahub.listar_pendencias_filial(cur),
+                "pendencias_cliente": processamento_datahub.listar_pendencias_cliente(cur),
+            }
+
+
+@router.get("/serie")
+def serie(
+    request: Request,
+    metrica: str,
+    de: str | None = None,
+    ate: str | None = None,
+    filial: str | None = None,
+    cliente: str | None = None,
+):
+    """Serie historica persistida (V1.3): mensal + consolidacao anual +
+    acumulado, do que esta em `medidas` -- nunca recalcula do arquivo."""
+    exigir_login(request)
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                return serie_datahub.serie(cur, metrica, de=de, ate=ate, filial=filial, cliente=cliente)
+    except serie_datahub.SerieDatahubError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/nuvem")
