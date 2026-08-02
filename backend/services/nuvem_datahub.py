@@ -17,19 +17,27 @@ import re
 
 from . import filiais_datahub
 
+# linha_cabecalho: linha (1-based) onde o cabecalho REALMENTE comeca em cada
+# familia -- conferido arquivo por arquivo em docs/FONTES_DATAHUB.md (obstaculo
+# 1: varia entre 1, 2, 3, 5 e 6; as linhas acima sao titulo/faixa de
+# agrupamento). E atributo da familia, entao mora aqui junto do resto da
+# identificacao; o leitor generico do V1.4 (leitura_datahub.py) consome daqui.
+# None = nao ha cabecalho conhecido (PALLETS_EXCEDENTES e so PDF).
 _FAMILIAS = (
-    {"familia": "ENTRADA_MERCADORIAS", "area": "ENTRADA", "estado": "integrada"},
-    {"familia": "GUIAS_ENTRADA", "area": "ENTRADA", "estado": "mapeada"},
-    {"familia": "CORTES_PRODUTOS", "area": "SAIDA", "estado": "mapeada"},
-    {"familia": "GUIAS_SAIDA", "area": "SAIDA", "estado": "mapeada"},
-    {"familia": "SAIDA_MERCADORIAS", "area": "SAIDA", "estado": "mapeada"},
-    {"familia": "DADOS_GERAIS", "area": "ENTREGAS", "estado": "mapeada"},
-    {"familia": "OCORRENCIAS_ENTREGAS", "area": "ENTREGAS", "estado": "mapeada"},
-    {"familia": "ESTOQUE_POR_LOTE", "area": "ESTOQUE", "estado": "mapeada"},
-    {"familia": "PALLETS_EXCEDENTES", "area": "ESTOQUE", "estado": "só_pdf"},
+    {"familia": "ENTRADA_MERCADORIAS", "area": "ENTRADA", "estado": "integrada", "linha_cabecalho": 1},
+    {"familia": "GUIAS_ENTRADA", "area": "ENTRADA", "estado": "mapeada", "linha_cabecalho": 2},
+    {"familia": "CORTES_PRODUTOS", "area": "SAIDA", "estado": "mapeada", "linha_cabecalho": 5},
+    {"familia": "GUIAS_SAIDA", "area": "SAIDA", "estado": "mapeada", "linha_cabecalho": 2},
+    {"familia": "SAIDA_MERCADORIAS", "area": "SAIDA", "estado": "mapeada", "linha_cabecalho": 6},
+    {"familia": "DADOS_GERAIS", "area": "ENTREGAS", "estado": "mapeada", "linha_cabecalho": 3},
+    {"familia": "OCORRENCIAS_ENTREGAS", "area": "ENTREGAS", "estado": "mapeada", "linha_cabecalho": 2},
+    {"familia": "ESTOQUE_POR_LOTE", "area": "ESTOQUE", "estado": "mapeada", "linha_cabecalho": 5},
+    {"familia": "PALLETS_EXCEDENTES", "area": "ESTOQUE", "estado": "só_pdf", "linha_cabecalho": None},
 )
 
-_FAMILIA_OUTROS = {"familia": "Outros", "area": "OUTROS", "estado": "não classificado"}
+_FAMILIA_OUTROS = {
+    "familia": "Outros", "area": "OUTROS", "estado": "não classificado", "linha_cabecalho": None,
+}
 
 # Ordem visual das areas -- a mesma ordem citada em docs/POC_ATUAL.md pro P5.5
 # ("agrupadas nas 4 areas: ENTRADA, SAIDA, ENTREGAS, ESTOQUE"). OUTROS por
@@ -49,6 +57,18 @@ def _identificar_familia(nome: str) -> dict:
         if nome.startswith(definicao["familia"]):
             return definicao
     return _FAMILIA_OUTROS
+
+
+def definicao_do_arquivo(nome: str) -> dict:
+    """Familia/area/estado/linha_cabecalho de um arquivo, pelo prefixo do nome
+    (fonte unica desse conhecimento -- ver _FAMILIAS). Arquivo desconhecido
+    devolve a definicao 'Outros', nunca erro."""
+    return dict(_identificar_familia(nome or ""))
+
+
+def filial_competencia_do_arquivo(nome: str) -> tuple[str | None, str | None]:
+    """(filial, competencia) pelo fim do nome, quando o padrao existir."""
+    return _extrair_filial_competencia(nome or "")
 
 
 def _extrair_filial_competencia(nome: str) -> tuple[str | None, str | None]:

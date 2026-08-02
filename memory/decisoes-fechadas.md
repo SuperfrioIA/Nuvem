@@ -275,6 +275,23 @@ metadata:
   filial). Consulta de série só consolida métrica aditiva; média/último/
   percentual recusados com mensagem até existir regra específica (seção 7).
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026 e 31/jul/2026 — evita rediscutir do zero.
+- **Bloco D (V1.4) executado em 02/ago/2026** (autorizado pela Maria). Três
+  decisões dela na abertura: (1) **qualquer arquivo do DataHub é selecionável**
+  no Laboratório — perfil estrutural genérico, com soma só onde o catálogo
+  aprova (destrava as 8 famílias sem semântica sem inventar significado);
+  (2) **tela nova `/laboratorio`**, não painel do admin (o Laboratório é
+  separado do Cockpit por decisão fixa do direcionamento e vai crescer com o
+  chat no E); (3) **amostra gravada sem mascaramento** — logo, **mascarar antes
+  de enviar à IA é requisito do Bloco E**. Regras técnicas fixadas: linha de
+  cabeçalho é atributo da FAMÍLIA (fonte única em `nuvem_datahub`), coluna é
+  identificada por POSIÇÃO, e o catálogo semântico só é aplicado quando os
+  rótulos das posições catalogadas batem com o arquivo — divergiu, descarta o
+  catálogo inteiro e o perfil sai estrutural (protege contra as variantes que
+  apareceram na reestruturação: RJ com 18 colunas, família `ENTRADA_MERCADORIAS
+  (UA)`). Soma bloqueada também quando o catálogo declara agregação `nenhuma`
+  (caso `Vlr. Unitário`). Sessão grava `usuario='admin'` — senha única, sem
+  identidade por pessoa até o V1.8.
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026, 31/jul/2026 e 02/ago/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

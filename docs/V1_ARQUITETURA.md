@@ -46,8 +46,10 @@ backend/
 │   ├── compatibilidade_medidas.py ← V1.2 (bloqueio de soma incompatível)
 │   ├── processamento_datahub.py ← V1.3 (arquivo → execução → recebidas → canônicas)
 │   ├── serie_datahub.py         ← V1.3 (consultas por intervalo, só Postgres)
+│   ├── leitura_datahub.py       ← V1.4 (leitura estrutural genérica, por posição)
 │   ├── perfil_dados.py          ← V1.4 (perfil determinístico pré-IA)
-│   ├── laboratorio_insights.py  ← V1.5 (sessões, chat, rastreabilidade)
+│   ├── laboratorio.py           ← V1.4 (seleção, limites, sessão de análise)
+│   ├── laboratorio_insights.py  ← V1.5 (chat, rastreabilidade)
 │   ├── promocao_kpi.py          ← V1.6 (especificação a partir do insight)
 │   ├── cockpit.py               ← V1.7 (consultas com filtros globais)
 │   └── (existentes: graph_datahub, inventario_datahub, entrada_mercadorias,
@@ -130,6 +132,22 @@ catálogo → pergunta (sugerida ou livre) → análise controlada → resposta 
 amostra segura — nunca descobre os números livremente. Aprovação gera
 especificação técnica; publicação de KPI é sempre implementação determinística
 posterior (V1.6 → implementação → testes → validação → publicação).
+
+**V1.4 construído (Bloco D, 02/ago/2026)** — tela `/laboratorio`, leitura
+estrutural genérica (`leitura_datahub`), perfil puro (`perfil_dados`) e sessão
+persistida (`laboratorio` + `laboratorio_sessoes`, migration `0007`):
+
+- Qualquer arquivo do inventário é selecionável; a leitura resolve a linha de
+  cabeçalho **pela família** e identifica coluna por **posição** (rótulo repete).
+- **Soma só quando o catálogo autoriza**, com o motivo declarado quando não —
+  e, antes de aplicar o catálogo, o perfil confere se os rótulos das posições
+  catalogadas batem com o arquivo (variantes da mesma família existem desde a
+  reestruturação da fonte; aplicar por posição daria conceito/unidade errados).
+- Limites de quantidade, linhas, tempo e tamanho aplicados e **declarados** na
+  sessão; truncamento vira limitação escrita, não número silenciosamente parcial.
+- A sessão gravada é o insumo do V1.5. Como a amostra é gravada sem
+  mascaramento (decisão da Maria), **mascarar antes de enviar à IA é requisito
+  do V1.5**. `usuario` é sempre `admin` até o V1.8 dar identidade por pessoa.
 
 ## Segurança e governança da IA (V1.5+)
 

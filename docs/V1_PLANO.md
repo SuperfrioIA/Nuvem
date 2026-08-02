@@ -64,7 +64,7 @@ semântico).
 | **A** | V1.0 — Transição para produto | **feito** (31/jul/2026) |
 | **B** | V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas | **feito** (31/jul/2026) |
 | **C** | V1.3 Persistência e série histórica | **feito** (31/jul/2026) |
-| D | V1.4 Laboratório: seleção e perfil | a fazer — não autorizado |
+| **D** | V1.4 Laboratório: seleção e perfil | **feito** (02/ago/2026) |
 | E | V1.5 Laboratório: chat + V1.6 Insight aprovado | a fazer — não autorizado |
 | F | V1.7 Cockpit executivo | a fazer — não autorizado |
 | G | V1.8 Produção e entrega | a fazer — não autorizado |
@@ -318,6 +318,11 @@ no caminho vivo):
   (sem dupla contagem — as células são upsertadas —, mas o controle
   flip-floparia e reprocessaria a cada clique). Premissa atual: um arquivo por
   filial × competência na família (verdade hoje).
+  **⚠ SUPERADO EM 31/jul/2026 — a premissa caiu**: a fonte foi reestruturada em
+  quatro unidades e há 7 colisões reais, entre armazéns **diferentes** sob o
+  mesmo código de filial (caso pior que o previsto aqui: a linhagem em
+  `medidas_recebidas` fica com o armazém errado, de forma permanente). Ver a
+  seção "ABERTO — a fonte foi reestruturada" no fim deste documento.
 - O grão único por métrica é invariante **de código**, não de schema: um
   modelo de upload manual futuro que gravasse uma das 3 métricas do DataHub no
   grão filial causaria dupla contagem na série — nenhum modelo atual referencia
@@ -339,7 +344,257 @@ seed_metricas foi atualizado de 12 pra 15 métricas — nenhum cenário perdido)
 **Verificação independente** antes do commit (15/15 atendido, 6 ressalvas —
 2 corrigidas, 4 registradas): `docs/V1_RELATORIO_VERIFICACAO.md`.
 
+## Bloco D — V1.4 Laboratório: seleção e perfil (feito, 02/ago/2026)
+
+Autorizado pela Maria em 02/ago/2026 ("podemos iniciar o bloco D"), com três
+decisões dela na abertura do lote: **qualquer arquivo do DataHub é selecionável**
+(perfil estrutural genérico, soma só onde o catálogo aprova), **tela nova em
+`/laboratorio`** (não um painel do admin) e **amostra sem mascaramento** — o
+mascaramento passa a ser obrigação explícita do Bloco E, antes de enviar
+qualquer coisa ao provedor de IA.
+
+**O que o lote entregou:**
+
+- **Migration `0007_laboratorio_sessoes`** (aditiva): a sessão de análise
+  (usuário, título, seleção, filtros, limites aplicados e perfil em JSONB). O
+  `status` já aceita `em_analise`/`descartada`/`aprovada` para o Bloco E/F não
+  precisar de migration de enum. Mensagens/modelo/parâmetros/feedback **não**
+  têm coluna vazia esperando aqui — entram em tabela própria no V1.5.
+- **`backend/services/leitura_datahub.py`** — leitura estrutural genérica, que
+  destrava as 8 famílias sem semântica: linha de cabeçalho **por família**
+  (1, 2, 3, 5 ou 6, conforme conferido no `FONTES_DATAHUB`), detectada quando a
+  família é desconhecida e sobreponível à mão na tela; coluna identificada por
+  **posição** (o rótulo `EMB` repete); aba `SLIN` preferida com a escolha
+  declarada. As guardas do P3 continuam: só `item_id` que apareceu numa
+  sincronização, só `.xlsx`, limite de tamanho no download.
+- **`backend/services/perfil_dados.py`** — o perfil determinístico da seção 9.4,
+  função pura. Tipo **dominante** com conformidade em percentual (uma célula
+  suja não transforma coluna numérica em texto, e o que não bate fica fora das
+  somas e é contado), nulos, distintos, mín/máx, duplicidades, chaves
+  candidatas (simples e compostas), cobertura temporal, clientes, granularidade
+  provável, qualidade, limitações e amostra.
+- **Soma só quando permitida, e a decisão é do catálogo** — não do formato do
+  dado. Cada coluna numérica sem soma traz o motivo: sem mapeamento aprovado,
+  mapeamento em rascunho, unidade declarada linha a linha (o caso `Volume`×`EMB`),
+  categoria não consolidável, **agregação declarada `nenhuma`** (o caso
+  `Vlr. Unitário`) ou percentual. Quando é permitida, a soma sai do motor do
+  V1.2 — a regra de somar continua num lugar só.
+- **`backend/services/laboratorio.py` + `routers/laboratorio.py`** — seleção →
+  limites → perfil → sessão gravada. Limites: 5 arquivos por sessão, 50 mil
+  linhas por arquivo, 120s de leitura, amostra de 20 linhas (tamanho por arquivo
+  reusa o `UPLOAD_MAX_MB`). Filtros de filial e competência escolhem **arquivos**
+  (vêm do nome); filtro de cliente filtra **linhas**, e quando o arquivo não tem
+  coluna de cliente o aviso é explícito em vez de silêncio. Falha de um arquivo
+  não derruba a sessão.
+- **Tela nova `/laboratorio`** com a identidade visual das outras: famílias
+  expansíveis com os arquivos, filtros, limites visíveis, e o perfil renderizado
+  por arquivo (colunas, chaves, cobertura, clientes, qualidade, limitações e
+  amostra) + histórico de sessões. Todo conteúdo de origem SharePoint escapado;
+  `web_url` validada antes de virar link.
+
+**Guarda estrutural (achado do lote):** o catálogo semântico casa campo por
+**posição**. Com a fonte reestruturada (seção ABERTO abaixo) existem variantes
+da mesma família com outra estrutura — a `ENTRADA_MERCADORIAS` da unidade RJ tem
+18 colunas, sem `Cliente`/`Cliente CNPJ`, e há a família
+`ENTRADA_MERCADORIAS (UA)`, que o classificador por prefixo lê como a família
+integrada. Aplicar o catálogo nesses casos daria **conceito e unidade trocados,
+e soma liberada na coluna errada**. Então, antes de usar o catálogo, o perfil
+confere se o rótulo de cada posição catalogada bate com o do arquivo; divergiu
+em qualquer posição, o catálogo **inteiro** é descartado para aquele arquivo
+(meio-catálogo seria pior que nenhum), o perfil sai estrutural e a divergência
+é declarada em texto. Coberto por teste com a estrutura real da RJ.
+
+**Decisões do lote:**
+
+1. Seleção por arquivo do inventário, com a **unidade visível pelo caminho** na
+   tela — desde a reestruturação o mesmo nome de arquivo existe em unidades
+   diferentes; sem o caminho, dois arquivos ficariam indistinguíveis na lista.
+2. Perfil é por arquivo, não consolidado entre arquivos: consolidar exigiria
+   afirmar que as estruturas são compatíveis, que é exatamente o que o bloco
+   não pode assumir. A sessão traz um resumo (famílias, filiais, competências,
+   totais e limitações reunidas), não uma soma cruzada.
+3. `usuario` da sessão é sempre `admin`: a autenticação do projeto é senha
+   única, sem identidade por pessoa. Acesso por usuário é do V1.8 (Bloco G) —
+   limitação declarada, não esquecimento.
+4. Amostra gravada **sem** mascaramento (decisão da Maria). Como a sessão é o
+   insumo do chat, **mascarar antes de enviar à IA é requisito do Bloco E** e
+   está registrado aqui para não se perder.
+5. O `nuvem_datahub` passou a ser a fonte única também da linha de cabeçalho por
+   família (atributo da família, junto do resto da identificação) e ganhou dois
+   acessores públicos; a lista de permissão de download virou função pública do
+   `inventario_datahub`, usada pelos dois leitores — antes só o leitor do P3 a
+   implementava.
+
+**Fora do lote (declarado):** chat e IA (V1.5), promoção a KPI (V1.6), cockpit
+(V1.7); consolidação entre arquivos; arquivos retidos do upload manual como
+fonte do Laboratório; e **a correção da reestruturação da fonte** (seção ABERTO)
+— o Bloco D não a resolve, só se protege dela no seu caminho.
+
+**Limitações registradas** (achados da verificação independente que não foram
+corrigidos; nenhuma é defeito no caminho vivo, todas afetam robustez ou
+completude do perfil):
+
+- **Data como serial não formatado do Excel** é lida como número: a cobertura
+  temporal daquela coluna volta vazia e, se houvesse catálogo aprovado, o
+  serial poderia ser somado. Afeta justamente as famílias sem semântica, que
+  são o principal uso do Laboratório.
+- **`dim_filial` do catálogo não é consultado**: a filial vem só do padrão do
+  nome do arquivo. Famílias que não seguem o padrão (`ESTOQUE_POR_LOTE` diário
+  e segregado) saem com filial nula, sem fallback por coluna.
+- **Arquivo com coluna a mais no fim** tem o catálogo aplicado sem nota — está
+  posicionalmente correto (o prefixo não deslocou), mas o perfil deveria dizer
+  "o arquivo tem N colunas, o catálogo cobre 20".
+- **O limite de tempo é orçamento entre arquivos, não deadline**: o primeiro
+  arquivo nunca é interrompido, e o download tem o timeout próprio do cliente
+  Graph. Quando estoura, o aviso da sessão diz quantos arquivos entraram.
+- **Colunas finais sem rótulo são cortadas** e linhas mais largas que o
+  cabeçalho são truncadas à largura dele, sem declarar.
+- **`linha_cabecalho` informada na tela vale para todos os arquivos** da sessão:
+  numa seleção mista, os que não batem falham alto e claro (entram em `falhas`),
+  mas a tela oferece um campo único sem avisar disso.
+- **Filtro de cliente que não casa nenhuma linha** produz um perfil de zero
+  linhas que se lê como "arquivo vazio" — o filtro é declarado, mas não há uma
+  frase dizendo "o filtro não casou com nenhuma linha".
+- **`docs/V1_CRITERIOS_ACEITE.md` está com todos os checkboxes vazios** (blocos
+  A–D). Não é regressão deste bloco; o registro de aceite efetivo vive neste
+  documento e no relatório de verificação.
+
+**Suíte**: **311 passed** (232 do Bloco C + 79 novos: 35 do perfil
+determinístico, 18 do leitor estrutural e 26 do laboratório/endpoints — nenhum
+teste anterior removido ou enfraquecido). Dois defeitos foram pegos pela própria
+suíte e corrigidos no **código**, não no teste: (1) duas sessões gravadas na
+mesma transação têm `criado_em` idêntico (é o relógio da transação), o que
+deixava "mais recente primeiro" indeterminado — a listagem passou a desempatar
+por `id`; (2) a coluna `observacoes` da migration não tinha escritor nenhum e
+foi removida.
+
+**Verificação independente** (`docs/V1_RELATORIO_VERIFICACAO.md`): **este foi o
+primeiro bloco reprovado na primeira passada** — 3 defeitos reais no caminho
+vivo, todos a mesma falha de fundo (número parcial apresentado como completo,
+justamente o que o V1.4 existe para evitar): o filtro de um arquivo suprimindo a
+declaração de outro, a mensagem de truncamento com número pós-filtro, e a sessão
+gravando o resultado dos filtros em vez do pedido. Os três caíram antes do
+commit, com teste cada um, junto de 7 outras correções (allowlist de agregação,
+variante de família por nome, amostra crua declarada no artefato, teto do
+`limite`, mensagem de coluna vazia, teste da estrutura real da RJ, esta seção do
+relatório). 8 ressalvas de robustez ficaram registradas acima.
+
+## ABERTO — a fonte foi reestruturada e derrubou uma premissa do Bloco C (31/jul/2026)
+
+**Status: não corrigido. Nenhuma linha de código, migration ou doc alterada.**
+Registrado aqui para ser tratado em outra sessão. Levantamento completo (com o
+rastreio do cliente SAPORE que originou a investigação):
+`docs/VERIFICACAO_DATAHUB_31JUL2026.html`.
+
+### O que mudou na fonte
+
+Varredura recursiva pelo Graph em 31/jul/2026 (app `nuvem-ia`, somente leitura):
+a pasta passou de **249 arquivos / 31 pastas / 711 MB** (levantamento de 29/jul,
+`docs/FONTES_DATAHUB.md`) para **367 arquivos / 61 pastas / 955 MB**.
+
+A raiz deixou de ter as quatro áreas operacionais direto e passou a ter **quatro
+unidades**; o que o projeto conhecia como a pasta inteira é hoje só o galho
+`RMSPII`:
+
+| Unidade | Arquivos | MB | Filiais nos nomes |
+|---|---:|---:|---|
+| `RMSPII` | 272 | 751,0 | 001, 002, 015, 016 (o que já era conhecido) |
+| `RJ` | 42 | 121,0 | 004-001, 004-003, 005-001 |
+| `CWB3` | 30 | 44,9 | 001 |
+| `SANCA` | 21 | 37,8 | 025 |
+
+Família nova, não catalogada: **`ENTRADA_MERCADORIAS (UA)`** (35 arquivos,
+31,6 MB, em RMSPII/CWB3/RJ/SANCA; cabeçalho na linha 1, com `Cliente` e
+`Cliente CNPJ`).
+
+### O defeito
+
+A limitação já estava registrada acima, na lista de "Limitações registradas" do
+Bloco C, **como hipótese** — com a premissa "um arquivo por filial ×
+competência na família (verdade hoje)". **A premissa caiu.** E a análise de lá
+subestima o caso que de fato ocorreu, porque assume homônimos da *mesma* filial:
+
+`ENTRADA_MERCADORIAS_001_2601.xlsx` a `_2607.xlsx` existem em
+`RMSPII/ENTRADA/ENTRADA MERCADORIAS` **e** em `CWB3/ENTRADA/ENTRADA MERCADORIAS`
+— **7 colisões**. Mesmo nome, mesmo código de filial `001`, armazéns
+**diferentes**, e o de-para resolve os dois para RMSPII.
+
+Rastreando `processar_todos` com o inventário real:
+
+1. `resumo["arquivos"]` vem ordenado por caminho
+   (`inventario_datahub.py`), então `CWB3` processa antes de `RMSPII`.
+2. `_ja_processado` compara `modificado_em` contra o registro **daquele nome**.
+   Como as duas datas diferem, nenhum dos dois é reconhecido como inalterado —
+   o "pula inalterados" para de funcionar nesses 7 e os 14 arquivos são
+   reprocessados a cada rodada.
+3. `_remover_celulas_orfas` apaga as células de (métrica, armazém, competência)
+   que o processamento atual não emitiu — cada um apaga as células do outro.
+4. `medidas_recebidas` é append-only: as linhas da CWB3 entram com o
+   `armazem_id` da RMSPII e **ficam**. A linhagem passa a afirmar que dado de
+   Curitiba é da RMSPII, e isso não se autocorrige.
+
+O agravante é a invisibilidade: como RMSPII processa por último numa varredura
+completa, as células de `medidas` acabam com o valor certo **por acidente da
+ordem alfabética**. A série na tela pareceria correta; o erro fica só em
+`medidas_recebidas`. Processar um arquivo isolado, ou a unidade ser renomeada
+para algo depois de "RMSPII", inverte o resultado visível.
+
+### Duas lacunas relacionadas
+
+- **A RJ é ignorada em silêncio.** O padrão de nome em
+  `entrada_mercadorias.py` exige só dígitos na filial e `004-003` tem hífen:
+  os arquivos não entram no processamento e **não viram nem pendência de
+  de-para** — diferente da SANCA (`025`), que cai corretamente como pendência
+  visível no admin. Dos 367 arquivos, 34 casam no padrão hoje (20 RMSPII +
+  7 CWB3 + 7 SANCA), e 7 desses 34 são a colisão.
+- **A `ENTRADA_MERCADORIAS` da RJ tem 18 colunas, não 20** — faltam `Cliente` e
+  `Cliente CNPJ`, as duas primeiras (RMSPII, CWB3 e SANCA têm as 20 idênticas).
+  Corrigir só o filtro de nome sem tratar isso troca um problema por outro: o
+  leitor recusaria o arquivo (erro claro, comportamento correto).
+
+### Ação imediata, antes de qualquer código
+
+A pendência de deploy do Bloco C — "processar o histórico na VM" — está em
+aberto. **Rodar "Processar arquivos" na VM como está suja a linhagem na
+primeira execução**, porque a varredura pega a árvore inteira. Restringir o
+processamento ao galho `RMSPII` antes do deploy.
+
+### Decisão de fundo (para o lote de correção)
+
+Qual passa a ser a identidade de um arquivo do DataHub, hoje o nome:
+
+1. **Caminho completo** — menor mudança, resolve a colisão, mas quebra se a
+   fonte for reorganizada de novo (acabou de acontecer).
+2. **`item_id` do Graph** — estável a movimentação e renomeação, mas ilegível
+   no painel do admin e some se o arquivo for recriado.
+3. **Unidade + filial + competência como colunas** — mais trabalho (migration
+   com backfill), mas é o único que torna a unidade um conceito de primeira
+   classe, o que os de-paras novos (`025`, `004-*`, `005-*`) vão exigir de
+   qualquer jeito.
+
+Envolve migration em `processamentos_datahub` e revisão de
+`_remover_celulas_orfas` e do de-para de filial (hoje o código de filial é
+único por conector; passaria a ser único por unidade × conector).
+
+### Também pendente de atualização documental
+
+`docs/FONTES_DATAHUB.md` está defasado desde 31/jul: inventário, as quatro
+unidades, a família `ENTRADA_MERCADORIAS (UA)` e duas correções conferidas no
+dado — o `ESTOQUE_POR_LOTE` **tem** `Cliente` e `CNPJ Cliente` na linha 5 (o
+doc lista 21 das 41 colunas e corta justamente essas), e a competência corrente
+é republicada (o `ENTRADA_MERCADORIAS_016_2607` passou de 8.411 para 9.111
+linhas entre 30 e 31/jul).
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco D (V1.4 — Laboratório: seleção e perfil) só começa com
-autorização explícita da Maria.
+**Nenhum.** O Bloco E (V1.5 chat do Laboratório + V1.6 insight aprovado) só
+começa com autorização explícita da Maria.
+
+**Recomendação de ordem:** antes do Bloco E, tratar o **lote de correção da
+seção "ABERTO"** (identidade do arquivo do DataHub, de-para por unidade, filial
+com hífen da RJ, `FONTES_DATAHUB` defasado). O Bloco D foi executado sem
+resolvê-lo: o Laboratório se protege da estrutura divergente (guarda descrita na
+seção do Bloco D) e mostra a unidade no caminho, mas a linhagem do Bloco C
+continua exposta e **"Processar arquivos" na VM segue perigoso sem recortar para
+o galho `RMSPII`**. Além disso, o Bloco E manda o perfil pra uma IA — quanto mais
+correta a identidade do dado antes disso, melhor.

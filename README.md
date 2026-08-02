@@ -10,8 +10,14 @@ DataHub foi concluída com sucesso em 30/jul/2026 (balanço em
 [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md)); a partir daí o projeto entrou na
 construção da V1. **Blocos A (V1.0 — transição para produto), B (V1.1 catálogo
 semântico + V1.2 compatibilidade de medidas) e C (V1.3 persistência e série
-histórica) feitos em 31/jul/2026; Blocos D–G aguardam autorização.** Fonte única
-do status: [docs/V1_PLANO.md](docs/V1_PLANO.md).
+histórica) feitos em 31/jul/2026; D (V1.4 Laboratório: seleção e perfil) em
+02/ago/2026; Blocos E–G aguardam autorização.** Fonte única do status:
+[docs/V1_PLANO.md](docs/V1_PLANO.md) — que traz também um **defeito aberto**
+(a fonte do SharePoint foi reestruturada em 31/jul e derrubou uma premissa do
+Bloco C; ver a seção "ABERTO").
+
+Telas: `/nuvem` (visão executiva da família integrada), `/laboratorio`
+(exploração e perfil determinístico) e `/admin` (administração).
 
 ## Documentos ativos (V1)
 

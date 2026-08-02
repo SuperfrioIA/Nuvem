@@ -31,8 +31,18 @@ idempotente, reprocessa só o alterado, remove célula órfã), consulta
 `clientes_atendidos` derivado por contagem distinta) e botão "Processar
 arquivos" no admin. Decisões da Maria no C: volumes por embalagem FORA da série
 persistida; SEM auto-cadastro de cliente (pendência + balde "sem cliente
-identificado"). **Nenhum bloco seguinte autorizado** — Bloco D (Laboratório:
-seleção e perfil) aguarda OK da Maria. O texto abaixo é o histórico até a virada.
+identificado"). **Bloco D (V1.4 Laboratório: seleção e perfil) feito em
+02/ago/2026**: tela nova `/laboratorio`, leitura estrutural genérica de qualquer
+arquivo do DataHub (cabeçalho por família, coluna por posição), perfil
+determinístico completo (tipos com conformidade, nulos, distintos, mín/máx,
+duplicidades, chaves candidatas, cobertura temporal, clientes, granularidade,
+qualidade, limitações, amostra) com **soma só onde o catálogo autoriza** e
+guarda que descarta o catálogo quando a estrutura do arquivo diverge, migration
+0007 (`laboratorio_sessoes`). Decisões da Maria no D: qualquer arquivo é
+selecionável; tela separada; amostra sem mascaramento (mascarar vira requisito
+do Bloco E). **Nenhum bloco seguinte autorizado** — Bloco E (chat + insight
+aprovado) aguarda OK; antes dele, recomendado tratar
+[[reestruturacao-datahub-4-unidades]]. O texto abaixo é o histórico até a virada.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

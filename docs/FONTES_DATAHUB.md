@@ -1,5 +1,17 @@
 # Fontes do SharePoint DataHub
 
+> **⚠ DEFASADO DESDE 31/jul/2026 — a fonte foi reestruturada.** A pasta passou a ter
+> **quatro unidades** na raiz (`RMSPII`, `CWB3`, `RJ`, `SANCA`) e cresceu para
+> **367 arquivos / 61 pastas / 955 MB**. Tudo o que este documento descreve abaixo
+> corresponde hoje apenas ao galho `RMSPII`. Há também uma família nova
+> (`ENTRADA_MERCADORIAS (UA)`) e duas correções conferidas no dado: o
+> `ESTOQUE_POR_LOTE` **tem** `Cliente` e `CNPJ Cliente` (a lista da seção 3 mostra 21
+> das 41 colunas e corta essas), e a `ENTRADA_MERCADORIAS` da RJ tem 18 colunas, sem
+> as duas de cliente. **Ler antes de agir sobre este documento:** seção "ABERTO — a
+> fonte foi reestruturada" em [V1_PLANO.md](V1_PLANO.md) e o levantamento completo em
+> `VERIFICACAO_DATAHUB_31JUL2026.html`. Atualizar este arquivo faz parte do lote de
+> correção, ainda não autorizado.
+
 Levantamento de **29/jul/2026**, feito com o token do próprio app (`nuvem-ia`) via
 Microsoft Graph — não é print de tela nem export manual, é o que o sistema vê.
 

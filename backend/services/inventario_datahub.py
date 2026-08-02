@@ -52,6 +52,22 @@ def sincronizar() -> dict:
     return dict(_cache)
 
 
+def arquivo_por_item_id(item_id: str) -> dict | None:
+    """Arquivo da ultima sincronizacao com esse item_id, ou None.
+
+    Fonte UNICA da lista de permissao de download (guarda de seguranca do P3,
+    reusada pelo leitor generico do V1.4): so um id que apareceu numa
+    sincronizacao pode ser baixado -- nunca um id digitado ou uma URL externa.
+    """
+    resumo = _cache.get("resumo")
+    if not resumo:
+        return None
+    for arquivo in resumo.get("arquivos", []):
+        if arquivo.get("id") == item_id:
+            return arquivo
+    return None
+
+
 def restaurar(sincronizado_em, resumo) -> None:
     """Reidrata o cache com o estado persistido (chamado no startup do app).
     Nunca sobrescreve uma sincronizacao ja feita neste processo."""

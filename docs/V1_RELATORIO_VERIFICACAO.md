@@ -149,3 +149,71 @@ falha no meio do lote, upload manual pós-migração).
 ressalvas corrigidas antes do commit, 3 registradas (R1/R3 como limitação
 documentada, R4 como cuidado de staging). Suíte final após as correções:
 **232 passed** (230 + 2 testes das correções R2/R6).
+
+---
+
+## Bloco D — V1.4 Laboratório: seleção e perfil (02/ago/2026)
+
+**Este é o primeiro bloco que a verificação REPROVOU na primeira passada.** O
+verificador encontrou 3 defeitos reais no caminho vivo — todos a mesma falha de
+fundo: número parcial apresentado como completo, que é exatamente o que o V1.4
+existe para evitar. Foram corrigidos antes do commit, com teste cada um.
+
+**Método do verificador** (segundo contexto, somente leitura): leitura integral
+dos 4 arquivos novos de backend, da migration, do HTML novo e dos diffs;
+autoridades lidas (direcionamento §9 inteira, §14, §5, critérios de aceite, o
+`V1_PLANO` incluindo a seção ABERTO e `memory/reestruturacao-datahub-4-unidades.md`);
+grep por vestígio de IA nos arquivos novos (zero); execução da suíte completa
+(299 passed, conferindo a contagem declarada); e — o diferencial desta rodada —
+**4 scripts de trace executados contra o código real** (perfil puro; e
+`perfilar_selecao`/`ler_estrutura` com cursor falso e xlsx sintéticos), cobrindo
+16 casos adversariais, entre eles coluna extra no fim, família
+`ENTRADA_MERCADORIAS (UA)`, cabeçalho detectado caindo em linha de dados, coluna
+100% nula, filtro que não casa nada, estouro de tempo no 3º de 5 arquivos, data
+como serial do Excel e planilha de uma coluna sem dado.
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo (V1.4 + as 3 decisões da Maria) | atendido | zero ocorrência de IA/provedor/chave nos arquivos novos; as 3 decisões implementadas; sem scope creep |
+| 2 | Arquitetura (aditiva; pureza do perfil) | atendido | `perfil_dados` importa só `datetime` e o motor do V1.2 — **pureza e determinismo comprovados por execução** (2 rodadas, JSON igual byte a byte) |
+| 3 | Migration 0007 | atendido | aditiva, CHECK com os 4 estados, índice, downgrade exercitado de fato pela suíte (coluna `observacoes` sem escritor foi removida na correção) |
+| 4 | Compatibilidade/regressões | atendido | `arquivo_por_item_id` é extração fiel do loop que estava no leitor do P3; `montar_bolinhas`/`_identificar_familia` intocados; `/nuvem`, `/kpis` e o processamento do V1.3 sem alteração; 232 testes anteriores verdes |
+| 5 | Segurança | atendido | `exigir_login` nos 4 endpoints + teste 401×4; SQL 100% parametrizado; **cada** interpolação do HTML novo auditada (todo conteúdo SharePoint escapado; `web_url` com `^https?://`; ids por `Number()`); lista de permissão respeitada nos dois leitores |
+| 6 | Perfil determinístico (18 itens da §9.4) | atendido após correção | 16 de 18 corretos na primeira passada; R7/R8 registrados como limitação; a amostra crua passou a ser declarada no próprio artefato (R15) |
+| 7 | Soma apenas quando permitida | **corrigido** | a soma sai do motor do V1.2 e os motivos existem, mas o portão era blocklist — virou allowlist (`agregacao == 'soma'`), alinhado ao `serie_datahub` (R4) |
+| 8 | Guarda estrutural | atendido após correção | descarte total confirmado; rótulo com espaço/maiúscula casa; posição faltando diverge; a variante por **nome** (`(UA)`) passou a ser barrada explicitamente (R5) |
+| 9 | Limites | atendido após correção | quantidade/linhas/amostra/tamanho aplicados e gravados; mensagem de truncamento corrigida (R2); tempo é orçamento entre arquivos, **declarado** quando estoura (R10 registrado) |
+| 10 | Testes | atendido | 299 passed reproduzidos pelo verificador; 28/18/21 conferidos um a um; nenhum teste anterior removido ou enfraquecido; gaps de R13 fechados nas correções |
+| 11 | Documentação | atendido após correção | coerente entre si e com o código; o defeito ABERTO segue corretamente sinalizado como **não resolvido** em 5 lugares; afirmações falsas corrigidas (R14) |
+| 12 | Código morto/dependências | atendido após correção | `requirements` intocados; 12/12 ids do HTML usados; coluna `observacoes` órfã removida |
+| 13 | Rastreabilidade (§9.6) | **corrigido** | usuário/data/arquivos/filtros/perfil/limites/status gravados e o requisito de mascaramento do Bloco E registrado em 4 lugares; a seleção passou a gravar o **pedido**, não só o resultado (R3) |
+| 14 | Erros | atendido | exceção inesperada sobe (não vira "falha de arquivo"); falha parcial não corrompe (gravação é a última operação, `get_conn` faz rollback); todos falhando → 400 com os motivos |
+| 15 | Exposição de dados | atendido após correção | nenhum endpoint devolve além do perfil da própria sessão; amostra crua agora **declarada no payload e na tela** (R15) |
+
+### Defeitos reais e o que foi feito
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| R1 | O aviso de um arquivo **suprimia a declaração de filtro do outro**: a flag era da sessão, não do arquivo. Numa seleção com um arquivo sem coluna de cliente, o perfil do arquivo filtrado descrevia metade das linhas sem dizer — e dependia da ordem da seleção | defeito real no caminho vivo | **corrigido** — filtro declarado **por arquivo** (`filtro_aplicado` no perfil + primeira limitação), com teste que força a ordem adversa |
+| R2 | Mensagem de truncamento afirmava "as primeiras N de M" usando o número **pós-filtro** — as N não eram as primeiras | defeito real no caminho vivo | **corrigido** — leitura e filtro são fatos separados: "Leitura limitada às primeiras N de M" (números da leitura) + "N de M lidas passaram no filtro" |
+| R3 | A sessão gravava o **resultado** dos filtros: arquivo pedido e descartado desaparecia da sessão sem aviso, contra a §9.6 e contra o docstring da própria migration | defeito real (rastreabilidade) | **corrigido** — `item_ids_pedidos` + `descartados_pelos_filtros` na seleção, e aviso por arquivo descartado |
+| R4 | Portão da soma era blocklist (só barrava `agregacao='nenhuma'`): `media`/`ultimo`/`contagem_distinta` somariam. Latente hoje, e divergente do `serie_datahub` | ressalva forte | **corrigido** — allowlist `agregacao == 'soma'`, com teste parametrizado nos 5 casos |
+| R5 | Alegação de que a guarda estrutural protegia a família `ENTRADA_MERCADORIAS (UA)` **não se sustentava**: se os rótulos coincidirem, o catálogo da família integrada seria herdado por uma família de grão não conferido | ressalva forte | **corrigido** — variante por nome (sufixo depois da família) não recebe catálogo e o aviso é explícito; teste cobre |
+| R9 | Coluna catalogada 100% nula dizia "coluna não numérica" — falso | ressalva | **corrigido** — mensagem própria ("sem nenhum valor preenchido"), com teste |
+| R13c | O `V1_PLANO` afirmava "coberto por teste com a estrutura real da RJ", mas o teste usava arquivo de 2 colunas | ressalva (doc × teste) | **corrigido** — o teste passou a usar as 18 colunas reais da RJ (as 20 sem `Cliente`/`Cliente CNPJ`) |
+| R14a | O `V1_PLANO` já afirmava que a verificação estava neste relatório, que não tinha seção do Bloco D | ressalva (doc) | **corrigido** — esta seção |
+| R15 | Amostra sem mascaramento estava declarada em 4 documentos, **mas não no artefato** que vai pra IA | ressalva (exposição) | **corrigido** — limitação no próprio perfil e no resumo da sessão |
+| R16 | `limite` da listagem sem piso/teto (LIMIT negativo → 500) | cosmético | **corrigido** — `Query(20, ge=1, le=100)`, com teste |
+| R6 | Arquivo com coluna **a mais no fim** tem o catálogo aplicado sem nota (posicionalmente correto, mas silencioso) | ressalva | **registrado** no `V1_PLANO` |
+| R7 | Data como **serial não formatado** do Excel é lida como número: cobertura temporal volta vazia e o serial pode ser somado se houver catálogo | ressalva | **registrado** — afeta as famílias sem semântica, que é onde o Laboratório mais atua |
+| R8 | `dim_filial` do catálogo nunca é consultado: filial vem só do nome do arquivo | ressalva | **registrado** |
+| R10 | Limite de tempo é orçamento entre arquivos, não deadline: o 1º arquivo nunca é limitado | ressalva | **registrado** — o estouro é declarado no aviso da sessão |
+| R11 | Colunas finais sem rótulo são cortadas e linhas mais largas que o cabeçalho truncadas, sem nota | ressalva | **registrado** |
+| R12 | `linha_cabecalho` informada vale para todos os arquivos da sessão (falha alto e claro nos que não batem) | ressalva | **registrado** |
+| R14d | `docs/V1_CRITERIOS_ACEITE.md` está com todos os checkboxes vazios, inclusive dos blocos A–C | ressalva pré-existente | **registrado** — não é regressão do D; o registro de aceite vive no `V1_PLANO` e neste relatório |
+
+**Conclusão: Bloco D atendido após as correções.** Os 3 defeitos reais e as 7
+ressalvas corrigíveis caíram antes do commit, cada um com teste; 8 ressalvas de
+robustez ficaram registradas como limitação conhecida no `docs/V1_PLANO.md`.
+Suíte final após as correções: **311 passed** (299 da rodada verificada + 12
+testes novos das correções).

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuvem IA — Laboratório de Insights</title>
+<link rel="icon" href="/frontend/logo-superfrio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand-azul-institucional: #071A3A;
+  --brand-azul-corporativo:   #0A2A5E;
+  --brand-azul-principal:     #1E6FD9;
+  --brand-azul-conexao:       #3FA9F5;
+  --brand-amarelo:            #FFC400;
+  --brand-amarelo-suave:      #FFD84D;
+  --brand-cinza-claro:        #C7D2E3;
+
+  --font-primary: 'Montserrat', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
+  --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+
+  --card:   #FFFFFF;
+  --card-2: #F0F4FA;
+  --card-3: #F7F9FC;
+  --texto:  #071A3A;
+  --muted:  #5A6B85;
+  --line:        rgba(30, 111, 217, 0.16);
+  --line-strong: rgba(30, 111, 217, 0.30);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
+    #FBFCFE;
+  color: var(--texto);
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.oculto { display: none !important; }
+
+#login { max-width: 320px; margin: 100px auto; background: var(--card); padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
+#login img { height: 34px; margin-bottom: 18px; }
+#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--brand-azul-institucional); }
+#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; }
+#login button { width: 100%; padding: 10px; background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); font-weight: 700; cursor: pointer; font-family: var(--font-primary); }
+#loginErro { color: #b3261e; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+.section { padding: 32px 0 64px; width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
+.appHeader { display: flex; justify-content: flex-end; gap: 10px; padding: 16px min(90px, calc((100% - 1180px)/2 + 20px)) 0; }
+.appHeader a, .appHeader button {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  border-radius: var(--radius-pill); padding: 7px 16px; cursor: pointer; font-family: var(--font-primary);
+  font-weight: 600; font-size: 13px; text-decoration: none;
+}
+.brandBar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brandLogo { height: 40px; width: auto; display: block; }
+.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--brand-cinza-claro), transparent); }
+
+.eyebrow {
+  display: inline-block; color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08);
+  border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px;
+  font-size: 0.82rem; font-weight: 700;
+}
+h1.titulo {
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem); color: var(--brand-azul-institucional); letter-spacing: -0.02em;
+  line-height: 1.1; margin: 14px 0 10px; font-weight: 700;
+}
+h1.titulo .accent { box-shadow: inset 0 -0.32em 0 var(--brand-amarelo-suave); }
+p.intro { max-width: 720px; color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+.msg { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 14px; }
+.msg-erro { background: #fbe1df; color: #b3261e; }
+.msg-ok   { background: #e2f3e6; color: #0f5132; }
+.msg-aviso{ background: #fff4d6; color: #6b4e00; }
+
+.wrap { display: grid; grid-template-columns: 1.5fr 1fr; gap: 22px; align-items: start; margin-top: 26px; }
+@media (max-width: 900px) { .wrap { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); padding: 18px 20px;
+}
+.card h2 { margin: 0 0 4px; font-size: 1rem; color: var(--brand-azul-institucional); }
+.card .ajuda { color: var(--muted); font-size: 0.82rem; line-height: 1.45; margin: 0 0 14px; }
+
+.familia { border-top: 1px solid var(--line); padding: 10px 0; }
+.familia:first-of-type { border-top: 0; }
+.familiaHead { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.familiaNome { font-weight: 700; font-size: 0.9rem; }
+.familiaMeta { color: var(--muted); font-size: 0.76rem; }
+.chip {
+  border-radius: var(--radius-pill); padding: 2px 9px; font-size: 0.7rem; font-weight: 700;
+  background: var(--card-2); color: var(--brand-azul-corporativo); border: 1px solid var(--line);
+}
+.chip.integrada { background: rgba(30,111,217,.12); color: var(--brand-azul-principal); }
+.arquivos { margin: 8px 0 0 6px; display: none; }
+.arquivos.aberta { display: block; }
+.arquivoItem { display: flex; align-items: baseline; gap: 8px; padding: 4px 0; font-size: 0.8rem; }
+.arquivoItem label { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.arquivoItem.bloqueado { color: var(--muted); }
+.arquivoMeta { color: var(--muted); font-size: 0.74rem; }
+
+.campo { display: block; margin-bottom: 12px; }
+.campo span.rot { display: block; font-size: 0.76rem; font-weight: 700; color: var(--brand-azul-corporativo); margin-bottom: 4px; }
+.campo input, .campo select {
+  width: 100%; padding: 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  font-family: var(--font-primary); font-size: 0.82rem; background: #fff; color: var(--texto);
+}
+.campo select[multiple] { height: 96px; }
+.campo .dica { color: var(--muted); font-size: 0.72rem; margin-top: 3px; display: block; }
+
+.acao {
+  width: 100%; margin-top: 6px; padding: 11px; background: var(--brand-amarelo);
+  color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill);
+  font-weight: 700; cursor: pointer; font-family: var(--font-primary); font-size: 0.88rem;
+}
+.acao:disabled { opacity: .55; cursor: default; }
+.limites { color: var(--muted); font-size: 0.74rem; margin-top: 10px; line-height: 1.5; }
+
+.selecionados { font-size: 0.78rem; color: var(--brand-azul-principal); font-weight: 700; margin-bottom: 10px; }
+
+.perfilCard { margin-top: 22px; }
+.perfilHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.perfilArquivo { font-weight: 700; font-size: 0.95rem; color: var(--brand-azul-institucional); }
+.perfilMeta { color: var(--muted); font-size: 0.78rem; }
+.subLabel { font-size: 0.78rem; font-weight: 700; color: var(--brand-azul-corporativo); margin: 18px 0 6px; text-transform: uppercase; letter-spacing: .04em; }
+
+.stats { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 4px; }
+.stat { background: var(--card-3); border: 1px solid var(--line); border-radius: var(--radius-md); padding: 8px 12px; min-width: 108px; }
+.statNum { display: block; font-size: 1.05rem; font-weight: 700; color: var(--brand-azul-institucional); }
+.statLab { display: block; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+
+.tblWrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-md); }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 0.78rem; background: #fff; }
+table.tbl th, table.tbl td { padding: 7px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+table.tbl th { background: var(--card-2); font-weight: 700; color: var(--brand-azul-corporativo); position: sticky; top: 0; }
+table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.tbl tr:last-child td { border-bottom: 0; }
+
+.naoSoma { color: var(--muted); cursor: help; border-bottom: 1px dotted var(--muted); }
+.somaOk { font-weight: 700; color: var(--brand-azul-principal); font-variant-numeric: tabular-nums; }
+
+.limitacoes { background: #fff4d6; border: 1px solid #f0d896; border-radius: var(--radius-md); padding: 12px 14px; margin-top: 16px; }
+.limitacoes strong { font-size: 0.8rem; color: #6b4e00; }
+.limitacoes ul { margin: 8px 0 0; padding-left: 18px; }
+.limitacoes li { font-size: 0.78rem; color: #6b4e00; line-height: 1.5; margin-bottom: 4px; }
+
+.listaSessoes { list-style: none; margin: 0; padding: 0; }
+.listaSessoes li { border-top: 1px solid var(--line); padding: 8px 0; font-size: 0.8rem; }
+.listaSessoes li:first-child { border-top: 0; }
+.listaSessoes button {
+  background: none; border: 0; padding: 0; color: var(--brand-azul-principal); font-weight: 700;
+  cursor: pointer; font-family: var(--font-primary); font-size: 0.8rem; text-align: left;
+}
+.listaSessoes .sessaoMeta { color: var(--muted); font-size: 0.74rem; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <img src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+  <h2>Laboratório de Insights</h2>
+  <input type="password" id="senhaInput" placeholder="Senha" aria-label="Senha">
+  <button id="btnEntrar">Entrar</button>
+  <div id="loginErro"></div>
+</div>
+
+<div id="app" class="oculto">
+  <div class="appHeader">
+    <a href="/nuvem">Nuvem do DataHub</a>
+    <a href="/admin">Administração</a>
+    <button id="btnSair">Sair</button>
+  </div>
+
+  <main class="section" aria-labelledby="lab-titulo">
+    <div class="brandBar">
+      <img class="brandLogo" src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+      <hr class="brandRule" aria-hidden="true">
+    </div>
+    <span class="eyebrow">Exploração controlada · antes de virar indicador</span>
+    <h1 class="titulo" id="lab-titulo">Entenda o dado <span class="accent">antes</span> de confiar nele</h1>
+    <p class="intro">Escolha arquivos do DataHub e gere um perfil calculado em código: colunas, tipos, nulos,
+      valores distintos, chaves candidatas, cobertura de datas, duplicidades e limitações. Somas só aparecem
+      onde o catálogo semântico autoriza — o resto vem com o motivo escrito. Nada aqui usa IA.</p>
+
+    <div id="labMsg"></div>
+
+    <div class="wrap">
+      <section class="card">
+        <h2>1. Escolha os arquivos</h2>
+        <p class="ajuda">Famílias do último inventário sincronizado. Arquivo que não é planilha aparece
+          desabilitado (a família de pallets excedentes só é publicada em PDF).</p>
+        <div class="selecionados" id="labSelecionados">Nenhum arquivo selecionado.</div>
+        <div id="labFamilias"></div>
+      </section>
+
+      <aside class="card">
+        <h2>2. Filtros e limites</h2>
+        <p class="ajuda">Filial e competência vêm do nome do arquivo (filtram quais arquivos entram);
+          cliente filtra as linhas.</p>
+
+        <label class="campo">
+          <span class="rot">Título da sessão (opcional)</span>
+          <input type="text" id="labTitulo" placeholder="ex.: conferir saída de mercadorias">
+        </label>
+        <label class="campo">
+          <span class="rot">Filiais</span>
+          <select id="labFiliais" multiple aria-label="Filtrar por filial"></select>
+          <span class="dica">Vazio = todas.</span>
+        </label>
+        <label class="campo">
+          <span class="rot">Competências</span>
+          <select id="labCompetencias" multiple aria-label="Filtrar por competência"></select>
+          <span class="dica">Vazio = todas.</span>
+        </label>
+        <label class="campo">
+          <span class="rot">Clientes</span>
+          <input type="text" id="labClientes" placeholder="separados por vírgula">
+          <span class="dica">Filtra linhas pela coluna de cliente, quando existir.</span>
+        </label>
+        <label class="campo">
+          <span class="rot">Linha do cabeçalho</span>
+          <input type="number" id="labLinhaCabecalho" min="1" placeholder="automática pela família">
+          <span class="dica">Só preencha se o cabeçalho não estiver onde a família declara.</span>
+        </label>
+
+        <button class="acao" id="btnPerfilar" disabled>Gerar perfil</button>
+        <div class="limites" id="labLimites"></div>
+      </aside>
+    </div>
+
+    <div id="labResultado"></div>
+
+    <section class="card perfilCard">
+      <h2>Sessões anteriores</h2>
+      <p class="ajuda">Cada perfil gerado fica salvo com a seleção, os filtros e os limites aplicados.</p>
+      <ul class="listaSessoes" id="labSessoes"></ul>
+    </section>
+  </main>
+</div>
+
+<script src="/frontend/comum.js"></script>
+<script>
+// api()/escaparHtml()/iniciarLoginPadrao() vem de comum.js (compartilhado com
+// admin.html e nuvem.html)
+iniciarLoginPadrao(carregarLaboratorio);
+
+const selecionados = new Set();
+let limitesAtuais = { max_arquivos: 5 };
+
+function fmtNum(valor, decimais = 0) {
+  if (valor === null || valor === undefined) return "-";
+  return Number(valor).toLocaleString("pt-BR", {
+    minimumFractionDigits: decimais, maximumFractionDigits: decimais,
+  });
+}
+
+function fmtValor(valor) {
+  if (valor === null || valor === undefined || valor === "") return "-";
+  if (typeof valor === "number") return fmtNum(valor, Number.isInteger(valor) ? 0 : 2);
+  return escaparHtml(String(valor));
+}
+
+function mostrarMsg(texto, classe = "msg-erro") {
+  document.getElementById("labMsg").innerHTML =
+    `<div class="msg ${classe}">${escaparHtml(texto)}</div>`;
+}
+
+async function carregarLaboratorio() {
+  document.getElementById("labMsg").innerHTML = `<div class="msg">Carregando fontes...</div>`;
+  try {
+    const dados = await api("/laboratorio/fontes");
+    limitesAtuais = dados.limites;
+    renderizarFamilias(dados.familias);
+    renderizarLimites(dados.limites);
+    document.getElementById("labMsg").innerHTML = "";
+  } catch (e) {
+    mostrarMsg(e.message);
+  }
+  carregarSessoes();
+}
+
+function renderizarLimites(limites) {
+  document.getElementById("labLimites").textContent =
+    `Limites por sessão: até ${limites.max_arquivos} arquivos, ` +
+    `${fmtNum(limites.max_linhas_por_arquivo)} linhas por arquivo, ` +
+    `${limites.max_segundos}s de leitura e amostra de ${limites.max_linhas_amostra} linhas.`;
+}
+
+function renderizarFamilias(familias) {
+  const filiais = new Set();
+  const competencias = new Set();
+
+  document.getElementById("labFamilias").innerHTML = familias.map((f, i) => {
+    const arquivos = f.arquivos.map(a => {
+      if (a.filial) filiais.add(a.filial);
+      if (a.competencia) competencias.add(a.competencia);
+      const rotulo = a.filial ? rotuloFilial(a.filial, a.filial_sigla) : "sem filial no nome";
+      // o caminho carrega a UNIDADE (RMSPII/CWB3/RJ/SANCA): desde a
+      // reestruturação de 31/jul/2026 o mesmo nome de arquivo existe em
+      // unidades diferentes — sem o caminho, dois arquivos ficam idênticos aqui
+      const meta = `${escaparHtml(rotulo)} · ${escaparHtml(a.competencia || "sem competência")}`
+        + `<br>${escaparHtml(a.caminho || "")}`;
+      if (!a.perfilavel) {
+        return `<div class="arquivoItem bloqueado">
+          <input type="checkbox" disabled aria-label="não perfilável">
+          <span>${escaparHtml(a.nome)} <span class="arquivoMeta">— não é planilha</span></span>
+        </div>`;
+      }
+      return `<div class="arquivoItem">
+        <label>
+          <input type="checkbox" class="checkArquivo" value="${escaparHtml(a.item_id)}">
+          <span>${escaparHtml(a.nome)}<br><span class="arquivoMeta">${meta}</span></span>
+        </label>
+      </div>`;
+    }).join("");
+
+    const cabecalho = f.linha_cabecalho
+      ? `cabeçalho na linha ${f.linha_cabecalho}`
+      : "cabeçalho detectado automaticamente";
+    return `<div class="familia">
+      <div class="familiaHead" data-familia="${i}" role="button" tabindex="0"
+           aria-expanded="false" aria-controls="arquivos-${i}">
+        <span class="familiaNome">${escaparHtml(f.familia)}</span>
+        <span class="chip ${f.estado === "integrada" ? "integrada" : ""}">${escaparHtml(f.estado)}</span>
+        <span class="familiaMeta">${f.total_arquivos} arquivo(s) · ${escaparHtml(cabecalho)}</span>
+      </div>
+      <div class="arquivos" id="arquivos-${i}">${arquivos}</div>
+    </div>`;
+  }).join("") || `<p class="ajuda">Nenhuma família encontrada no inventário.</p>`;
+
+  preencherSelect("labFiliais", [...filiais].sort());
+  preencherSelect("labCompetencias", [...competencias].sort());
+
+  document.querySelectorAll(".familiaHead").forEach(head => {
+    const alternar = () => {
+      const lista = document.getElementById("arquivos-" + head.dataset.familia);
+      const aberta = lista.classList.toggle("aberta");
+      head.setAttribute("aria-expanded", aberta ? "true" : "false");
+    };
+    head.addEventListener("click", alternar);
+    head.addEventListener("keydown", ev => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); alternar(); }
+    });
+  });
+
+  document.querySelectorAll(".checkArquivo").forEach(check => {
+    check.addEventListener("change", () => {
+      if (check.checked) {
+        if (selecionados.size >= limitesAtuais.max_arquivos) {
+          check.checked = false;
+          mostrarMsg(`Limite de ${limitesAtuais.max_arquivos} arquivos por sessão.`, "msg-aviso");
+          return;
+        }
+        selecionados.add(check.value);
+      } else {
+        selecionados.delete(check.value);
+      }
+      atualizarSelecionados();
+    });
+  });
+}
+
+function preencherSelect(id, valores) {
+  document.getElementById(id).innerHTML =
+    valores.map(v => `<option value="${escaparHtml(v)}">${escaparHtml(v)}</option>`).join("");
+}
+
+function atualizarSelecionados() {
+  const total = selecionados.size;
+  document.getElementById("labSelecionados").textContent = total
+    ? `${total} arquivo(s) selecionado(s) de até ${limitesAtuais.max_arquivos}.`
+    : "Nenhum arquivo selecionado.";
+  document.getElementById("btnPerfilar").disabled = total === 0;
+}
+
+function valoresSelecionados(id) {
+  return [...document.getElementById(id).selectedOptions].map(o => o.value);
+}
+
+document.getElementById("btnPerfilar").addEventListener("click", async () => {
+  const botao = document.getElementById("btnPerfilar");
+  const linha = document.getElementById("labLinhaCabecalho").value.trim();
+  const clientes = document.getElementById("labClientes").value
+    .split(",").map(c => c.trim()).filter(Boolean);
+
+  botao.disabled = true;
+  botao.textContent = "Calculando perfil...";
+  document.getElementById("labMsg").innerHTML = `<div class="msg">Lendo e perfilando...</div>`;
+  try {
+    const sessao = await api("/laboratorio/perfil", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_ids: [...selecionados],
+        filtros: {
+          filiais: valoresSelecionados("labFiliais"),
+          competencias: valoresSelecionados("labCompetencias"),
+          clientes,
+        },
+        linha_cabecalho: linha ? Number(linha) : null,
+        titulo: document.getElementById("labTitulo").value.trim() || null,
+      }),
+    });
+    document.getElementById("labMsg").innerHTML = "";
+    renderizarSessao(sessao);
+    carregarSessoes();
+  } catch (e) {
+    mostrarMsg(e.message);
+  } finally {
+    botao.disabled = selecionados.size === 0;
+    botao.textContent = "Gerar perfil";
+  }
+});
+
+function renderizarSessao(sessao) {
+  const perfil = sessao.perfil;
+  const resumo = perfil.resumo;
+  const partes = [];
+
+  partes.push(`<section class="card perfilCard">
+    <h2>Perfil da sessão #${Number(sessao.id)}${sessao.titulo ? " — " + escaparHtml(sessao.titulo) : ""}</h2>
+    <p class="ajuda">Calculado em código, sem IA. ${escaparHtml(sessao.criado_em || "")}</p>
+    <div class="stats">
+      ${stat(resumo.total_arquivos, "arquivos")}
+      ${stat(fmtNum(resumo.linhas_perfiladas), "linhas perfiladas")}
+      ${stat(fmtNum(resumo.linhas_no_arquivo), "linhas nos arquivos")}
+      ${stat(resumo.familias.length, "famílias")}
+      ${stat(resumo.colunas_com_soma_permitida.length, "colunas somáveis")}
+    </div>
+    <p class="ajuda" style="margin-top:10px">
+      Famílias: ${escaparHtml(resumo.familias.join(", ") || "-")} ·
+      Filiais: ${escaparHtml(resumo.filiais.join(", ") || "-")} ·
+      Competências: ${escaparHtml(resumo.competencias.join(", ") || "-")}
+    </p>
+    ${listaLimitacoes("Limitações declaradas da sessão", resumo.limitacoes)}
+    ${perfil.avisos && perfil.avisos.length ? listaLimitacoes("Avisos", perfil.avisos) : ""}
+    ${perfil.falhas && perfil.falhas.length ? listaLimitacoes("Arquivos que falharam",
+        perfil.falhas.map(f => `${f.arquivo}: ${f.erro}`)) : ""}
+  </section>`);
+
+  perfil.arquivos.forEach(arquivo => partes.push(cardDoArquivo(arquivo)));
+  document.getElementById("labResultado").innerHTML = partes.join("");
+  document.getElementById("labResultado").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function stat(numero, rotulo) {
+  return `<div class="stat"><span class="statNum">${escaparHtml(String(numero))}</span>
+    <span class="statLab">${escaparHtml(rotulo)}</span></div>`;
+}
+
+function listaLimitacoes(titulo, itens) {
+  if (!itens || !itens.length) return "";
+  return `<div class="limitacoes"><strong>${escaparHtml(titulo)}</strong>
+    <ul>${itens.map(i => `<li>${escaparHtml(i)}</li>`).join("")}</ul></div>`;
+}
+
+function cardDoArquivo(arquivo) {
+  const q = arquivo.qualidade;
+  const linkSeguro = typeof arquivo.web_url === "string" && /^https?:\/\//i.test(arquivo.web_url);
+  const nome = escaparHtml(arquivo.arquivo);
+  const titulo = linkSeguro
+    ? `<a href="${escaparHtml(arquivo.web_url)}" target="_blank" rel="noopener">${nome}</a>`
+    : nome;
+
+  const colunas = arquivo.colunas.map(c => `<tr>
+    <td class="num">${c.posicao}</td>
+    <td>${escaparHtml(c.nome)}</td>
+    <td>${escaparHtml(c.tipo)}</td>
+    <td class="num">${fmtNum(c.nulos_pct, 1)}%</td>
+    <td class="num">${fmtNum(c.distintos)}</td>
+    <td class="num">${fmtValor(c.minimo)}</td>
+    <td class="num">${fmtValor(c.maximo)}</td>
+    <td class="num">${celulaSoma(c)}</td>
+    <td>${escaparHtml(c.conceito || "-")}</td>
+    <td>${escaparHtml(c.unidade || "-")}</td>
+  </tr>`).join("");
+
+  const chaves = arquivo.chaves_candidatas.length
+    ? arquivo.chaves_candidatas.map(k =>
+        `<li>${escaparHtml(k.colunas.join(" + "))} <span class="arquivoMeta">(${escaparHtml(k.tipo)})</span></li>`
+      ).join("")
+    : `<li>Nenhuma chave única encontrada.</li>`;
+
+  const datas = arquivo.cobertura_temporal.colunas_de_data.length
+    ? arquivo.cobertura_temporal.colunas_de_data.map(d =>
+        `<li>${escaparHtml(d.coluna)}: ${escaparHtml(d.de)} → ${escaparHtml(d.ate)}</li>`
+      ).join("")
+    : `<li>Nenhuma coluna de data reconhecida.</li>`;
+
+  const topClientes = arquivo.clientes.top.length
+    ? arquivo.clientes.top.map(t =>
+        `<li>${escaparHtml(String(t.valor))} — ${fmtNum(t.linhas)} linha(s)</li>`
+      ).join("")
+    : `<li>Sem coluna de cliente identificada.</li>`;
+
+  const amostraCabecalho = arquivo.amostra.colunas
+    .map(c => `<th>${escaparHtml(c)}</th>`).join("");
+  const amostraLinhas = arquivo.amostra.linhas
+    .map(l => `<tr>${l.map(v => `<td>${fmtValor(v)}</td>`).join("")}</tr>`).join("");
+
+  return `<section class="card perfilCard">
+    <div class="perfilHead">
+      <span class="perfilArquivo">${titulo}</span>
+      <span class="chip">${escaparHtml(arquivo.familia)}</span>
+      <span class="perfilMeta">aba ${escaparHtml(arquivo.aba)} · cabeçalho na linha
+        ${arquivo.linha_cabecalho} (${escaparHtml(arquivo.origem_linha_cabecalho)})</span>
+    </div>
+    <div class="stats">
+      ${stat(fmtNum(q.linhas_perfiladas), "linhas perfiladas")}
+      ${stat(q.colunas, "colunas")}
+      ${stat(fmtNum(q.celulas_preenchidas_pct, 1) + "%", "células preenchidas")}
+      ${stat(fmtNum(q.linhas_identicas_repetidas), "linhas repetidas")}
+      ${stat(escaparHtml(arquivo.clientes.coluna ? fmtNum(arquivo.clientes.distintos) : "-"), "clientes distintos")}
+    </div>
+    <p class="ajuda" style="margin-top:10px"><strong>Granularidade provável:</strong>
+      ${escaparHtml(arquivo.granularidade_provavel)}</p>
+
+    <p class="subLabel">Colunas</p>
+    <div class="tblWrap"><table class="tbl">
+      <thead><tr><th class="num">#</th><th>Coluna</th><th>Tipo</th><th class="num">Nulos</th>
+        <th class="num">Distintos</th><th class="num">Mínimo</th><th class="num">Máximo</th>
+        <th class="num">Soma</th><th>Conceito</th><th>Unidade</th></tr></thead>
+      <tbody>${colunas}</tbody>
+    </table></div>
+
+    <div class="wrap" style="margin-top:16px">
+      <div>
+        <p class="subLabel">Chaves candidatas</p>
+        <ul class="listaSessoes">${chaves}</ul>
+        <p class="subLabel">Cobertura temporal</p>
+        <ul class="listaSessoes">${datas}</ul>
+      </div>
+      <div>
+        <p class="subLabel">Clientes mais frequentes</p>
+        <ul class="listaSessoes">${topClientes}</ul>
+      </div>
+    </div>
+
+    ${listaLimitacoes("Limitações deste arquivo", arquivo.limitacoes)}
+
+    <p class="subLabel">Amostra (${arquivo.amostra.linhas.length} linha(s))</p>
+    <div class="tblWrap"><table class="tbl">
+      <thead><tr>${amostraCabecalho}</tr></thead>
+      <tbody>${amostraLinhas}</tbody>
+    </table></div>
+  </section>`;
+}
+
+function celulaSoma(coluna) {
+  if (coluna.soma_permitida && coluna.soma) {
+    return `<span class="somaOk">${fmtNum(coluna.soma.total, 2)}</span>`;
+  }
+  return `<span class="naoSoma" title="${escaparHtml(coluna.soma_motivo)}">não somável</span>`;
+}
+
+async function carregarSessoes() {
+  try {
+    const dados = await api("/laboratorio/sessoes");
+    const lista = document.getElementById("labSessoes");
+    lista.innerHTML = dados.sessoes.map(s => {
+      const resumo = s.resumo || {};
+      const familias = (resumo.familias || []).join(", ");
+      return `<li>
+        <button data-sessao="${Number(s.id)}">#${Number(s.id)} —
+          ${escaparHtml(s.titulo || familias || "sessão")}</button>
+        <div class="sessaoMeta">${escaparHtml(s.criado_em || "")} ·
+          ${escaparHtml(String(resumo.total_arquivos || 0))} arquivo(s) ·
+          ${escaparHtml(String(resumo.linhas_perfiladas || 0))} linha(s) ·
+          ${escaparHtml(s.status)}</div>
+      </li>`;
+    }).join("") || `<li class="sessaoMeta">Nenhuma sessão ainda.</li>`;
+
+    lista.querySelectorAll("button[data-sessao]").forEach(botao => {
+      botao.addEventListener("click", async () => {
+        try {
+          renderizarSessao(await api("/laboratorio/sessoes/" + botao.dataset.sessao));
+        } catch (e) {
+          mostrarMsg(e.message);
+        }
+      });
+    });
+  } catch (e) {
+    mostrarMsg(e.message);
+  }
+}
+</script>
+</body>
+</html>

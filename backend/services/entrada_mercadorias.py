@@ -67,19 +67,19 @@ def _limite_bytes() -> int:
 
 def _arquivo_do_inventario(item_id: str) -> dict:
     """So aceita item_id que apareceu na ultima sincronizacao do P2 -- o cache
-    vira lista de permissao. Sem sincronizacao ainda, ou id desconhecido,
-    falha com mensagem clara em vez de tentar baixar de qualquer forma."""
-    resumo = inventario_datahub.status().get("resumo")
-    if not resumo:
+    vira lista de permissao (fonte unica: inventario_datahub.arquivo_por_item_id).
+    Sem sincronizacao ainda, ou id desconhecido, falha com mensagem clara em vez
+    de tentar baixar de qualquer forma."""
+    if not inventario_datahub.status().get("resumo"):
         raise EntradaMercadoriasError(
             "nenhuma sincronizacao do DataHub ainda -- clique em 'Sincronizar agora' primeiro"
         )
-    for arquivo in resumo.get("arquivos", []):
-        if arquivo.get("id") == item_id:
-            return arquivo
-    raise EntradaMercadoriasError(
-        "item_id nao encontrado na ultima sincronizacao do DataHub"
-    )
+    arquivo = inventario_datahub.arquivo_por_item_id(item_id)
+    if arquivo is None:
+        raise EntradaMercadoriasError(
+            "item_id nao encontrado na ultima sincronizacao do DataHub"
+        )
+    return arquivo
 
 
 def dados_da_familia(nome) -> tuple[str, str] | None:

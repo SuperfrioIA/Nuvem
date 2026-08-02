@@ -22,7 +22,9 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 ## Regras para IA
 
 - Fase atual: **construção da V1 em blocos** (A, B e C feitos em 31/jul/2026;
-  D–G aguardam autorização). Não construir código sem pedido explícito da Maria.
+  D em 02/ago/2026; E–G aguardam autorização). Não construir código sem pedido
+  explícito da Maria. Há um **defeito aberto** herdado da reestruturação da
+  fonte (V1_PLANO, seção "ABERTO") — ler antes de mexer em ingestão do DataHub.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
   explícito. "Beleza" vago não é OK.
 - Commits **sem** co-autor Anthropic (nada de `Co-Authored-By`).

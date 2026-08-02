@@ -9,6 +9,7 @@ from .database import get_conn, init_db
 from .routers.admin import router as admin_router
 from .routers.catalogo import router as catalogo_router
 from .routers.datahub import router as datahub_router
+from .routers.laboratorio import router as laboratorio_router
 from .services import inventario_datahub
 
 
@@ -38,6 +39,7 @@ app = FastAPI(title="Nuvem IA", lifespan=lifespan)
 app.include_router(admin_router, prefix="/api/admin")
 app.include_router(datahub_router, prefix="/api/admin")
 app.include_router(catalogo_router, prefix="/api/admin")
+app.include_router(laboratorio_router, prefix="/api/admin")
 
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 
@@ -50,6 +52,13 @@ def admin_page():
 @app.get("/nuvem")
 def nuvem_page():
     return FileResponse("frontend/nuvem.html")
+
+
+@app.get("/laboratorio")
+def laboratorio_page():
+    # Laboratorio de Insights (V1.4): exploracao controlada, separada do
+    # cockpit por decisao fixa do direcionamento (secao 5.6)
+    return FileResponse("frontend/laboratorio.html")
 
 
 @app.get("/")
