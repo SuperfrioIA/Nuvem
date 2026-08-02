@@ -358,6 +358,109 @@ def test_constraint_nova_deduplica_cliente_null(banco_vazio):
         )
 
 
+def _preparar_datahub_sem_qualificacao():
+    """Estado de um banco na 0007: conector do DataHub, um de-para de filial
+    com codigo NU e uma pendencia idem -- exatamente o que o seed do Bloco C
+    escrevia antes da 0008."""
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub');
+        INSERT INTO armazens (nome, sigla) VALUES ('Barueri/SP', 'RMSPII');
+        """
+    )
+    conector_id = consultar(
+        "SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'"
+    )[0][0]
+    armazem_id = consultar("SELECT id FROM armazens WHERE sigla = 'RMSPII'")[0][0]
+    _executar(
+        "INSERT INTO depara_armazem (conector_id, armazem_na_fonte, armazem_id) "
+        f"VALUES ({conector_id}, '001', {armazem_id})"
+    )
+    _executar(
+        "INSERT INTO depara_pendencias (conector_id, armazem_na_fonte) "
+        f"VALUES ({conector_id}, '002')"
+    )
+    return conector_id, armazem_id
+
+
+def test_migracao_0008_qualifica_o_depara_preservando_o_armazem(banco_vazio):
+    """Lote de correcao: o de-para do DataHub passa a ser qualificado pela
+    unidade. O UPDATE preserva o armazem_id de cada linha (nao e delete +
+    reseed, senao um ajuste manual de de-para se perderia), e a pendencia de
+    codigo nu e descartada -- nao da pra afirmar a unidade dela."""
+    from alembic import command
+
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0007_laboratorio_sessoes")
+    _, armazem_id = _preparar_datahub_sem_qualificacao()
+
+    command.upgrade(migracao._config(), "head")
+
+    assert consultar("SELECT armazem_na_fonte, armazem_id FROM depara_armazem") == [
+        ("RMSPII/001", armazem_id)
+    ]
+    assert consultar("SELECT COUNT(*) FROM depara_pendencias")[0][0] == 0
+
+    # e volta: o downgrade desfaz a qualificacao sem perder o vinculo
+    command.downgrade(migracao._config(), "0007_laboratorio_sessoes")
+    assert consultar("SELECT armazem_na_fonte, armazem_id FROM depara_armazem") == [
+        ("001", armazem_id)
+    ]
+
+
+def test_migracao_0008_chave_do_processamento_vira_item_id(banco_vazio):
+    """A identidade do arquivo deixa de ser o nome: dois homonimos de unidades
+    diferentes passam a conviver, e o mesmo item_id nao entra duas vezes. O
+    downgrade descarta o homonimo excedente (politica declarada na 0006)."""
+    from alembic import command
+
+    migracao.migrar()
+
+    for item_id, unidade in (("item-rmspii", "RMSPII"), ("item-cwb3", "CWB3")):
+        _executar(
+            f"""
+            INSERT INTO processamentos_datahub
+                (arquivo, item_id, caminho, unidade, filial, competencia, status)
+            VALUES ('ENTRADA_MERCADORIAS_001_2601.xlsx', '{item_id}',
+                    '{unidade}/ENTRADA/ENTRADA_MERCADORIAS_001_2601.xlsx',
+                    '{unidade}', '001', '2026-01-01', 'ok')
+            """
+        )
+    assert consultar("SELECT COUNT(*) FROM processamentos_datahub")[0][0] == 2
+
+    with pytest.raises(psycopg2.errors.UniqueViolation):
+        _executar(
+            """
+            INSERT INTO processamentos_datahub
+                (arquivo, item_id, filial, competencia, status)
+            VALUES ('outro_nome.xlsx', 'item-cwb3', '001', '2026-01-01', 'ok')
+            """
+        )
+
+    command.downgrade(migracao._config(), "0007_laboratorio_sessoes")
+
+    assert consultar("SELECT item_id FROM processamentos_datahub") == [("item-cwb3",)]
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'processamentos_datahub' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [("UNIQUE (arquivo)",)]
+
+    command.upgrade(migracao._config(), "head")
+    assert _versao_alembic() == _head()
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'processamentos_datahub' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [("UNIQUE (item_id)",)]
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

@@ -364,13 +364,16 @@
         <legend>Série histórica (V1.3)</legend>
         <p class="ajuda">Processa os arquivos ENTRADA_MERCADORIAS sincronizados pra dentro do banco
           (competência × filial × cliente). Arquivo inalterado é pulado; "Reprocessar tudo" força
-          todos de novo (idempotente — nunca duplica).</p>
+          todos de novo (idempotente — nunca duplica). A origem é a unidade + a filial
+          (<code>RMSPII/001</code>): origem sem de-para não é processada nem baixada, aparece
+          abaixo como pendência. Dois arquivos na mesma origem e competência abortam a rodada
+          inteira, sem gravar nada.</p>
         <div id="datahubProcessarMsg"></div>
         <button class="acao" id="btnProcessarDatahub">Processar arquivos</button>
         <button id="btnReprocessarDatahub">Reprocessar tudo</button>
         <div class="tabela-scroll">
           <table id="tabelaProcessamentos">
-            <thead><tr><th>Arquivo</th><th>Filial</th><th>Competência</th><th>Status</th>
+            <thead><tr><th>Arquivo</th><th>Unidade</th><th>Filial</th><th>Competência</th><th>Status</th>
               <th>Linhas válidas</th><th>Medidas</th><th>Processado em</th></tr></thead>
             <tbody></tbody>
           </table>
@@ -711,8 +714,9 @@ async function carregarProcessamentos() {
 function renderizarProcessamentos(dados) {
   const body = document.querySelector("#tabelaProcessamentos tbody");
   body.innerHTML = dados.processamentos.map(p => `
-    <tr>
+    <tr title="${escaparHtml(p.caminho || "")}">
       <td>${escaparHtml(p.arquivo)}</td>
+      <td>${escaparHtml(p.unidade || "-")}</td>
       <td>${escaparHtml(p.filial)}</td>
       <td>${escaparHtml((p.competencia || "").slice(0, 7))}</td>
       <td>${escaparHtml(p.status)}${p.detalhe ? " — " + escaparHtml(p.detalhe) : ""}</td>
@@ -720,12 +724,13 @@ function renderizarProcessamentos(dados) {
       <td>${p.medidas_gravadas == null ? "-" : p.medidas_gravadas}</td>
       <td>${p.processado_em ? new Date(p.processado_em).toLocaleString("pt-BR") : "-"}</td>
     </tr>`).join("") ||
-    `<tr><td colspan="7" class="ajuda">Nenhum arquivo processado ainda.</td></tr>`;
+    `<tr><td colspan="8" class="ajuda">Nenhum arquivo processado ainda.</td></tr>`;
 
   const pendencias = [];
   if (dados.pendencias_filial.length) {
-    pendencias.push("<strong>Filiais sem de-para:</strong> " +
-      dados.pendencias_filial.map(p => escaparHtml(p.filial_na_fonte)).join(", "));
+    pendencias.push("<strong>Origens sem de-para</strong> (unidade/filial) — precisam de decisão " +
+      "antes de virarem série: " +
+      dados.pendencias_filial.map(p => escaparHtml(p.origem_na_fonte)).join(", "));
   }
   if (dados.pendencias_cliente.length) {
     pendencias.push(`<strong>Clientes fora do cadastro (${dados.pendencias_cliente.length})</strong> ` +

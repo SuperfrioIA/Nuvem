@@ -53,10 +53,12 @@ def _xlsx(linhas, aba="SLIN"):
     return buffer.getvalue()
 
 
-def _arquivo(nome, id_, modificado_em="2026-07-13T00:00:00Z"):
+def _arquivo(nome, id_, modificado_em="2026-07-13T00:00:00Z", unidade="RMSPII"):
+    """Item do inventario. `unidade` e o galho de primeiro nivel do caminho --
+    e ela que qualifica o codigo de filial no de-para (`RMSPII/016`)."""
     return {
         "nome": nome,
-        "caminho": f"ENTRADA/ENTRADA MERCADORIAS/{nome}",
+        "caminho": f"{unidade}/ENTRADA/ENTRADA MERCADORIAS/{nome}",
         "tamanho": 1000,
         "modificado_em": modificado_em,
         "id": id_,
@@ -264,7 +266,11 @@ def test_filial_sem_depara_vira_pendencia(cursor, monkeypatch):
     assert cursor.fetchone()[0] == 0
     cursor.execute("SELECT COUNT(*) FROM execucoes")
     assert cursor.fetchone()[0] == 0
-    assert [p["filial_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)] == ["002"]
+    # a pendencia sai QUALIFICADA pela unidade: e a origem, nao o codigo nu,
+    # que precisa de decisao humana pra virar de-para
+    assert [
+        p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
+    ] == ["RMSPII/002"]
     cursor.execute("SELECT status FROM processamentos_datahub")
     assert cursor.fetchall() == [("pendencia_depara",)]
 
@@ -390,3 +396,231 @@ def test_processar_todos_ignora_outras_familias(cursor, monkeypatch):
     relatorio = processamento_datahub.processar_todos(cursor)
     assert relatorio["total_familia"] == 1
     assert [p["arquivo"] for p in relatorio["processados"]] == [familia["nome"]]
+
+
+# --- identidade do arquivo e unidade da fonte (lote de correcao) ----------------
+#
+# A fonte foi reestruturada em 31/jul/2026 e passou a ter quatro unidades
+# publicando com a mesma convencao de nome. O que estes testes fixam: o nome
+# nao identifica mais o arquivo (item_id identifica), o codigo de filial nao
+# identifica mais o armazem (unidade + codigo identificam), nada some em
+# silencio e colisao aborta a rodada.
+
+
+def _depara_extra(cur, codigo_origem: str, sigla: str) -> int:
+    """Acrescenta um de-para do conector do DataHub apontando uma origem
+    qualificada pra um armazem do cadastro. Devolve o armazem_id."""
+    cur.execute("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")
+    conector_id = cur.fetchone()[0]
+    cur.execute("SELECT id FROM armazens WHERE sigla = %s", (sigla,))
+    armazem_id = cur.fetchone()[0]
+    cur.execute(
+        "INSERT INTO depara_armazem (conector_id, armazem_na_fonte, armazem_id) "
+        "VALUES (%s, %s, %s)",
+        (conector_id, codigo_origem, armazem_id),
+    )
+    return armazem_id
+
+
+def _medidas_por_armazem(cur, metrica: str):
+    """[(sigla do armazem, valor)] das celulas da metrica."""
+    cur.execute(
+        """
+        SELECT a.sigla, m.valor::float
+        FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        JOIN armazens a ON a.id = m.armazem_id
+        WHERE mt.nome = %s
+        ORDER BY a.sigla
+        """,
+        (metrica,),
+    )
+    return cur.fetchall()
+
+
+def test_homonimos_de_unidades_diferentes_tem_registros_distintos(cursor, monkeypatch):
+    """O caso real: ENTRADA_MERCADORIAS_001_2601.xlsx existe em RMSPII e em
+    CWB3. Com a chave antiga (nome) os dois disputavam o mesmo registro; agora
+    cada item_id tem o seu, e a CWB3 -- que nao tem de-para -- para na
+    pendencia sem contaminar a RMSPII."""
+    rmspii = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-rmspii")
+    cwb3 = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-cwb3", unidade="CWB3")
+    _preparar(monkeypatch, [(rmspii, _xlsx([_linha()])), (cwb3, _xlsx([_linha()]))])
+
+    relatorio = processamento_datahub.processar_todos(cursor)
+
+    assert relatorio["total_familia"] == 2
+    por_status = {p["status"] for p in relatorio["processados"]}
+    assert por_status == {"ok", "pendencia_depara"}
+
+    cursor.execute(
+        "SELECT item_id, unidade, status FROM processamentos_datahub ORDER BY item_id"
+    )
+    assert cursor.fetchall() == [
+        ("item-cwb3", "CWB3", "pendencia_depara"),
+        ("item-rmspii", "RMSPII", "ok"),
+    ]
+    # so a RMSPII virou celula canonica
+    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [("RMSPII", 100.0)]
+    assert [
+        p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
+    ] == ["CWB3/001"]
+
+
+def test_pula_inalterado_mesmo_com_homonimo_de_outra_unidade(cursor, monkeypatch):
+    """Era o flip-flop: como os dois homonimos escreviam no mesmo registro com
+    modificado_em diferente, NENHUM era reconhecido como inalterado e os dois
+    reprocessavam a cada rodada."""
+    rmspii = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-rmspii")
+    cwb3 = _arquivo(
+        "ENTRADA_MERCADORIAS_001_2601.xlsx", "item-cwb3", unidade="CWB3",
+        modificado_em="2026-07-20T00:00:00Z",
+    )
+    _depara_extra(cursor, "CWB3/001", "CWBIII")
+    _preparar(monkeypatch, [(rmspii, _xlsx([_linha()])), (cwb3, _xlsx([_linha()]))])
+
+    processamento_datahub.processar_todos(cursor)
+    segunda = processamento_datahub.processar_todos(cursor)
+
+    assert segunda["pulados"] == 2
+    assert segunda["processados"] == []
+
+
+def test_renomear_no_sharepoint_nao_cria_entidade_nova(cursor, monkeypatch):
+    """item_id sobrevive a rename/move -- o registro e ATUALIZADO, nao
+    duplicado, e o nome novo aparece no painel."""
+    antes = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(antes, _xlsx([_linha()]))])
+    processamento_datahub.processar_todos(cursor)
+
+    depois = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    depois["nome"] = "ENTRADA_MERCADORIAS_016_2607.xlsx"
+    depois["caminho"] = "RMSPII/ENTRADA/2026/ENTRADA_MERCADORIAS_016_2607.xlsx"
+    depois["modificado_em"] = "2026-08-01T00:00:00Z"
+    _preparar(monkeypatch, [(depois, _xlsx([_linha()]))])
+    processamento_datahub.processar_todos(cursor)
+
+    cursor.execute("SELECT item_id, caminho FROM processamentos_datahub")
+    assert cursor.fetchall() == [("item-016", depois["caminho"])]
+
+
+def test_origem_sem_depara_nao_baixa_o_arquivo(cursor, monkeypatch):
+    """A RJ tem layout proprio (18 colunas): baixar so pra falhar na leitura
+    trocaria uma pendencia clara por um erro. O de-para e resolvido antes."""
+    baixados = []
+    rj = _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx", "item-rj", unidade="RJ")
+    _preparar(monkeypatch, [(rj, _xlsx([_linha()]))])
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item",
+        lambda item_id, limite_bytes: baixados.append(item_id) or b"",
+    )
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-rj")
+
+    assert relatorio["status"] == "pendencia_depara"
+    assert baixados == []
+
+
+def test_filial_com_hifen_da_rj_vira_pendencia_visivel(cursor, monkeypatch):
+    """Antes o padrao de nome exigia so digitos: os arquivos da RJ nao casavam
+    e sumiam do processamento sem virar nem pendencia -- "nao casou no regex"
+    virava "nao existe"."""
+    rj = _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx", "item-rj", unidade="RJ")
+    sanca = _arquivo("ENTRADA_MERCADORIAS_025_2601.xlsx", "item-sanca", unidade="SANCA")
+    _preparar(monkeypatch, [(rj, _xlsx([_linha()])), (sanca, _xlsx([_linha()]))])
+
+    relatorio = processamento_datahub.processar_todos(cursor)
+
+    assert relatorio["total_familia"] == 2
+    assert {p["status"] for p in relatorio["processados"]} == {"pendencia_depara"}
+    assert sorted(
+        p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
+    ) == ["RJ/004-003", "SANCA/025"]
+    cursor.execute("SELECT COUNT(*) FROM medidas")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_arquivo_na_raiz_sem_unidade_cai_como_pendencia_nao_qualificada(cursor, monkeypatch):
+    """Arquivo solto na raiz da pasta configurada nao tem unidade: o codigo
+    fica sem prefixo, nao casa com de-para nenhum e vira pendencia visivel --
+    melhor que atribuir uma unidade por palpite."""
+    solto = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-solto")
+    solto["caminho"] = "ENTRADA_MERCADORIAS_016_2607.xlsx"
+    _preparar(monkeypatch, [(solto, _xlsx([_linha()]))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-solto")
+
+    assert relatorio["status"] == "pendencia_depara"
+    assert relatorio["unidade"] is None
+    assert [
+        p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
+    ] == ["016"]
+
+
+def test_processamento_nao_apaga_celula_de_outra_unidade(cursor, monkeypatch):
+    """Criterio central do lote: com o de-para qualificado, cada unidade grava
+    no seu armazem e a remocao de orfas (metrica, armazem, competencia) nao
+    alcanca a outra. Antes, os dois caiam no armazem da RMSPII e cada
+    processamento apagava as celulas do outro."""
+    _depara_extra(cursor, "CWB3/001", "CWBIII")
+    rmspii = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-rmspii")
+    cwb3 = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-cwb3", unidade="CWB3")
+    _preparar(
+        monkeypatch,
+        [(rmspii, _xlsx([_linha(peso_bruto=100.0)])),
+         (cwb3, _xlsx([_linha(peso_bruto=70.0)]))],
+    )
+
+    processamento_datahub.processar_todos(cursor)
+
+    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [
+        ("CWBIII", 70.0), ("RMSPII", 100.0),
+    ]
+    # e a linhagem aponta pro armazem certo em cada recebida
+    cursor.execute(
+        """
+        SELECT a.sigla, mr.arquivo_origem, e.arquivo_path
+        FROM medidas_recebidas mr
+        JOIN armazens a ON a.id = mr.armazem_id
+        JOIN execucoes e ON e.id = mr.execucao_id
+        JOIN metricas mt ON mt.id = mr.metrica_id
+        WHERE mt.nome = 'peso_bruto_movimentado'
+        ORDER BY a.sigla
+        """
+    )
+    assert cursor.fetchall() == [
+        ("CWBIII", cwb3["nome"], cwb3["caminho"]),
+        ("RMSPII", rmspii["nome"], rmspii["caminho"]),
+    ]
+
+
+def test_colisao_de_origem_aborta_antes_de_gravar(cursor, monkeypatch):
+    """Dois arquivos na MESMA origem e competencia (ex.: uma copia numa
+    subpasta da propria unidade). A rodada para antes de baixar qualquer
+    coisa -- processar os dois faria um apagar as celulas do outro."""
+    original = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-a")
+    copia = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-b")
+    copia["caminho"] = "RMSPII/ENTRADA/ENTRADA MERCADORIAS/backup/" + copia["nome"]
+    _preparar(monkeypatch, [(original, _xlsx([_linha()])), (copia, _xlsx([_linha()]))])
+
+    with pytest.raises(processamento_datahub.ProcessamentoDatahubError, match="colisao de origem"):
+        processamento_datahub.processar_todos(cursor)
+
+    cursor.execute("SELECT COUNT(*) FROM medidas")
+    assert cursor.fetchone()[0] == 0
+    cursor.execute("SELECT COUNT(*) FROM processamentos_datahub")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_colisao_de_armazem_aborta_a_rodada(cursor, monkeypatch):
+    """Origens distintas apontando pro MESMO armazem (de-para mal configurado)
+    passam pela pre-checagem, entao a guarda de tempo de execucao pega. Quem
+    reverte o que ja foi gravado e a transacao do endpoint -- por isso a
+    excecao sobe em vez de virar erro de arquivo."""
+    _depara_extra(cursor, "CWB3/001", "RMSPII")  # errado de proposito
+    rmspii = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-rmspii")
+    cwb3 = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-cwb3", unidade="CWB3")
+    _preparar(monkeypatch, [(rmspii, _xlsx([_linha()])), (cwb3, _xlsx([_linha()]))])
+
+    with pytest.raises(processamento_datahub.ProcessamentoDatahubError, match="colisao de armazem"):
+        processamento_datahub.processar_todos(cursor)

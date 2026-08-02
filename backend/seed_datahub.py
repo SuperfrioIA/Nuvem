@@ -1,14 +1,20 @@
 """Seed da ingestao do DataHub (Bloco C / V1.3) -- conector, de-para de filial
 e metricas da familia integrada.
 
-- Conector `sharepoint_datahub`: os codigos de filial dos exports (001, 015,
-  016...) sao um universo proprio da controladoria do catering, DIFERENTE dos
-  apelidos ERP/WMS do upload manual (la, "001001" e VGS) -- por isso o de-para
-  vive sob um conector separado, nunca misturado ao do upload.
-- De-para: so as tres filiais confirmadas pela Maria em 30/jul/2026, importado
+- Conector `sharepoint_datahub`: os codigos de origem dos exports sao um
+  universo proprio da controladoria do catering, DIFERENTE dos apelidos ERP/WMS
+  do upload manual (la, "001001" e VGS) -- por isso o de-para vive sob um
+  conector separado, nunca misturado ao do upload.
+- `armazem_na_fonte` aqui e o codigo **qualificado pela unidade**
+  (`RMSPII/001`), nao o codigo de filial nu: a fonte tem quatro unidades desde
+  31/jul/2026 e o `001` existe em RMSPII e em CWB3, apontando pra armazens
+  diferentes (migration 0008). O campo e texto livre desde o 0001, entao a
+  qualificacao nao pediu coluna nova.
+- De-para: so as tres origens confirmadas pela Maria em 30/jul/2026, importado
   de backend/services/filiais_datahub.py (fonte unica dos dois caminhos --
-  exibicao e ingestao). Filial 002 fica de fora de proposito: aparece como
-  pendencia de de-para quando um arquivo dela for processado.
+  exibicao e ingestao). `RMSPII/002` fica de fora de proposito, e CWB3/SANCA/RJ
+  tambem: aparecem como pendencia de de-para quando um arquivo delas for
+  processado.
 - Metricas: mesmos nomes dos conceitos canonicos do V1.1 (seed_semantico) --
   o catalogo governado exige metrica pre-cadastrada (resolver_metrica_governada,
   R3). `clientes_atendidos` NAO vira metrica persistida: contagem distinta nao
@@ -48,7 +54,7 @@ def aplicar(cur) -> int:
     cur.execute("SELECT id FROM conectores WHERE tipo = %s", (TIPO_CONECTOR,))
     conector_id = cur.fetchone()[0]
 
-    for codigo, sigla in filiais_datahub.SIGLA_POR_CODIGO.items():
+    for codigo_qualificado, sigla in filiais_datahub.SIGLA_POR_CODIGO.items():
         cur.execute("SELECT id FROM armazens WHERE sigla = %s", (sigla,))
         row = cur.fetchone()
         if row is None:
@@ -61,7 +67,7 @@ def aplicar(cur) -> int:
             VALUES (%s, %s, %s)
             ON CONFLICT (conector_id, armazem_na_fonte) DO NOTHING
             """,
-            (conector_id, codigo, row[0]),
+            (conector_id, codigo_qualificado, row[0]),
         )
 
     for nome, unidade in METRICAS:

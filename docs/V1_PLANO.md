@@ -65,6 +65,7 @@ semântico).
 | **B** | V1.1 Catálogo semântico + V1.2 Compatibilidade de medidas | **feito** (31/jul/2026) |
 | **C** | V1.3 Persistência e série histórica | **feito** (31/jul/2026) |
 | **D** | V1.4 Laboratório: seleção e perfil | **feito** (02/ago/2026) |
+| **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
 | E | V1.5 Laboratório: chat + V1.6 Insight aprovado | a fazer — não autorizado |
 | F | V1.7 Cockpit executivo | a fazer — não autorizado |
 | G | V1.8 Produção e entrega | a fazer — não autorizado |
@@ -321,8 +322,10 @@ no caminho vivo):
   **⚠ SUPERADO EM 31/jul/2026 — a premissa caiu**: a fonte foi reestruturada em
   quatro unidades e há 7 colisões reais, entre armazéns **diferentes** sob o
   mesmo código de filial (caso pior que o previsto aqui: a linhagem em
-  `medidas_recebidas` fica com o armazém errado, de forma permanente). Ver a
-  seção "ABERTO — a fonte foi reestruturada" no fim deste documento.
+  `medidas_recebidas` ficaria com o armazém errado, de forma permanente).
+  **CORRIGIDO em 02/ago/2026** pelo lote de identidade (seção abaixo): a chave
+  passou a ser o `item_id` e o de-para a ser qualificado pela unidade. Nunca
+  chegou a acontecer em produção.
 - O grão único por métrica é invariante **de código**, não de schema: um
   modelo de upload manual futuro que gravasse uma das 3 métricas do DataHub no
   grão filial causaria dupla contagem na série — nenhum modelo atual referencia
@@ -479,12 +482,26 @@ variante de família por nome, amostra crua declarada no artefato, teto do
 `limite`, mensagem de coluna vazia, teste da estrutura real da RJ, esta seção do
 relatório). 8 ressalvas de robustez ficaram registradas acima.
 
-## ABERTO — a fonte foi reestruturada e derrubou uma premissa do Bloco C (31/jul/2026)
+## Lote de correção — identidade e linhagem do DataHub (feito, 02/ago/2026)
 
-**Status: não corrigido. Nenhuma linha de código, migration ou doc alterada.**
-Registrado aqui para ser tratado em outra sessão. Levantamento completo (com o
-rastreio do cliente SAPORE que originou a investigação):
+Autorizado pela Maria em 02/ago/2026, depois de um plano em texto e duas
+decisões dela: **a filial 002 fica pendente** (segue exibindo só o código) e o
+**item 6 entra completo** (a correção da sigla nas telas, escopo acrescentado ao
+que ela tinha listado). A análise que originou o lote, com o registro do que foi
+aceito e do que foi cortado, está em
+`docs/decisoes_datahub_identidade_linhagem.md`; o levantamento da fonte (com o
+rastreio do cliente SAPORE que originou a investigação) em
 `docs/VERIFICACAO_DATAHUB_31JUL2026.html`.
+
+### Por que não houve reparo de histórico
+
+A análise previa invalidar linhas contaminadas de `medidas_recebidas`, abrir um
+incidente de dados e reconstruir projeções. **Nada disso foi necessário**: a VM
+está em `0004_catalogo_metricas`, as migrations do Bloco C nunca subiram e
+"Processar arquivos" nunca rodou em produção — a contaminação era risco a
+prevenir, não dano ocorrido. Confirmar com `alembic current` na VM antes do
+próximo deploy; se algum dia o cenário mudar, a proveniência é rastreável linha
+a linha (cada recebida aponta para uma execução que grava o caminho completo).
 
 ### O que mudou na fonte
 
@@ -507,7 +524,11 @@ Família nova, não catalogada: **`ENTRADA_MERCADORIAS (UA)`** (35 arquivos,
 31,6 MB, em RMSPII/CWB3/RJ/SANCA; cabeçalho na linha 1, com `Cliente` e
 `Cliente CNPJ`).
 
-### O defeito
+### O defeito (diagnóstico de 31/jul/2026 — corrigido em 02/ago)
+
+> O texto abaixo descreve o comportamento **anterior** à correção, preservado
+> porque é o que explica as escolhas do lote. O estado atual está em "O que o
+> lote entregou", no fim desta seção.
 
 A limitação já estava registrada acima, na lista de "Limitações registradas" do
 Bloco C, **como hipótese** — com a premissa "um arquivo por filial ×
@@ -552,49 +573,87 @@ para algo depois de "RMSPII", inverte o resultado visível.
   Corrigir só o filtro de nome sem tratar isso troca um problema por outro: o
   leitor recusaria o arquivo (erro claro, comportamento correto).
 
-### Ação imediata, antes de qualquer código
+### O que o lote entregou
 
-A pendência de deploy do Bloco C — "processar o histórico na VM" — está em
-aberto. **Rodar "Processar arquivos" na VM como está suja a linhagem na
-primeira execução**, porque a varredura pega a árvore inteira. Restringir o
-processamento ao galho `RMSPII` antes do deploy.
+- **Migration `0008_identidade_datahub`**: `processamentos_datahub` troca
+  `UNIQUE(arquivo)` por `UNIQUE(item_id)` (a coluna já existia como `NOT NULL`
+  desde o 0006 — nenhum backfill) e ganha `caminho` e `unidade`, nullable. Mais
+  o `UPDATE` que qualifica o de-para do DataHub (`001` → `RMSPII/001`)
+  preservando o `armazem_id` de cada linha — não é delete+reseed, então um
+  ajuste manual sobrevive. Em produção é no-op (o conector nasce com os seeds
+  do Bloco C, que não subiram). Pendências de código nu são apagadas em vez de
+  prefixadas: não dá pra afirmar a unidade de uma pendência antiga.
+- **Identidade por `item_id`**: `_ja_processado` e o registro do processamento
+  passam a chavear por ele; `arquivo`, `caminho` e `unidade` viram atributos
+  mutáveis. Renomear ou mover no SharePoint atualiza o registro em vez de criar
+  outro, e o flip-flop do "pula inalterados" acabou.
+- **De-para qualificado pela unidade** (`RMSPII/001`), sem coluna nova —
+  `armazem_na_fonte` é texto livre desde o 0001. A unidade sai do primeiro
+  segmento do caminho do inventário (`inventario_datahub.unidade_do_caminho`,
+  fonte única: quem monta o caminho é quem o interpreta). CWB3, SANCA e RJ
+  passam a aparecer como **pendência qualificada** no admin.
+- **De-para resolvido antes do download**: origem sem de-para não gasta uma
+  chamada ao Graph pra falhar depois na leitura. É o que faz a RJ parar numa
+  pendência clara em vez de num erro de "coluna não encontrada".
+- **Padrão de nome aceita filial com hífen** (`004-003`): os 42 arquivos da RJ
+  deixaram de sumir em silêncio. O leitor da variante de 18 colunas **não** faz
+  parte do lote — sem de-para, nenhum arquivo dela é baixado.
+- **Guarda dupla de colisão** em `processar_todos`: pré-checagem por (origem,
+  competência) antes de baixar qualquer coisa (vê inclusive os arquivos que a
+  rodada vai pular) e checagem por (armazém, competência) durante a rodada (pega
+  de-paras distintos apontando pro mesmo armazém). Colisão **aborta e reverte a
+  rodada inteira**, ao contrário de erro de arquivo, que só marca aquele arquivo.
+  Com isso, o escopo de `_remover_celulas_orfas` ficou correto sem redesenho.
+- **Correção do caminho vivo** (escopo acrescentado ao plano, aprovado pela
+  Maria): as bolinhas do `/nuvem` rotulavam os 7 arquivos `001` da CWB3 como
+  "001 · RMSPII" — `filiais_datahub.sigla()` passou a receber `(unidade,
+  código)`. O filtro de filial da tela também passou a ser por origem, senão
+  juntaria arquivos de armazéns diferentes na mesma opção. E
+  `item_mais_recente()` (o arquivo do card executivo) ficou restrito às unidades
+  com de-para confirmado — sem isso, o regex novo deixaria um arquivo da RJ
+  virar "o mais recente" e quebrar a tela.
+- **`docs/FONTES_DATAHUB.md` atualizado**: as quatro unidades, o inventário novo,
+  a família `ENTRADA_MERCADORIAS (UA)` e as duas correções conferidas no dado (o
+  `ESTOQUE_POR_LOTE` **tem** `Cliente` e `CNPJ Cliente` na linha 5; a competência
+  corrente é republicada).
 
-### Decisão de fundo (para o lote de correção)
+**Decisões do lote:**
 
-Qual passa a ser a identidade de um arquivo do DataHub, hoje o nome:
+1. **Filial 002 fica pendente** (Maria, 02/ago/2026) — exibida só pelo código.
+   Semear exigiria a sigla do armazém, que continua sem decisão.
+2. **Sem tabela nova de arquivo** — `item_id` já era coluna e a separação
+   arquivo × execução já existe (`execucoes` guarda as rodadas). `hash_conteudo`
+   e `ativo` resolvem problemas que não são o defeito de hoje.
+3. **Sem invalidação/compensação de linhagem** — não há histórico a reparar
+   (ver acima).
+4. **Família fora da partição lógica** — só uma família emite estas métricas, e
+   a `(UA)` não casa no padrão de nome. Registrado no código que uma segunda
+   família emitindo as mesmas métricas exige a dimensão do produtor.
 
-1. **Caminho completo** — menor mudança, resolve a colisão, mas quebra se a
-   fonte for reorganizada de novo (acabou de acontecer).
-2. **`item_id` do Graph** — estável a movimentação e renomeação, mas ilegível
-   no painel do admin e some se o arquivo for recriado.
-3. **Unidade + filial + competência como colunas** — mais trabalho (migration
-   com backfill), mas é o único que torna a unidade um conceito de primeira
-   classe, o que os de-paras novos (`025`, `004-*`, `005-*`) vão exigir de
-   qualquer jeito.
+**Fora do lote (declarado):** leitor da variante RJ de 18 colunas, hash de
+conteúdo, allowlist/dry-run/snapshot, e o de-para real de CWB3/SANCA/RJ —
+decisão humana, não código.
 
-Envolve migration em `processamentos_datahub` e revisão de
-`_remover_celulas_orfas` e do de-para de filial (hoje o código de filial é
-único por conector; passaria a ser único por unidade × conector).
-
-### Também pendente de atualização documental
-
-`docs/FONTES_DATAHUB.md` está defasado desde 31/jul: inventário, as quatro
-unidades, a família `ENTRADA_MERCADORIAS (UA)` e duas correções conferidas no
-dado — o `ESTOQUE_POR_LOTE` **tem** `Cliente` e `CNPJ Cliente` na linha 5 (o
-doc lista 21 das 41 colunas e corta justamente essas), e a competência corrente
-é republicada (o `ENTRADA_MERCADORIAS_016_2607` passou de 8.411 para 9.111
-linhas entre 30 e 31/jul).
+**Suíte**: **327 passed** (311 do Bloco D + 16 novos: 2 do ciclo da migration
+0008, 9 do processamento — homônimos com registros distintos, pula-inalterado
+com homônimo presente, renomeação sem entidade nova, pendência sem download, RJ
+com hífen, arquivo sem unidade, isolamento de células entre unidades e as duas
+colisões —, 3 da identificação por unidade no leitor e 2 nas bolinhas; o teste de
+filtro da série passou a exigir o código qualificado). Nenhum teste removido ou
+enfraquecido. Os fixtures que montavam caminho sem unidade foram atualizados para
+a árvore real (`RMSPII/...`) — inclusive o do router, que criava o arquivo solto
+na raiz e por isso deixou de resolver de-para (o comportamento novo estava certo,
+o fixture é que não representava mais a fonte).
 
 ## Próximo bloco autorizado
 
 **Nenhum.** O Bloco E (V1.5 chat do Laboratório + V1.6 insight aprovado) só
 começa com autorização explícita da Maria.
 
-**Recomendação de ordem:** antes do Bloco E, tratar o **lote de correção da
-seção "ABERTO"** (identidade do arquivo do DataHub, de-para por unidade, filial
-com hífen da RJ, `FONTES_DATAHUB` defasado). O Bloco D foi executado sem
-resolvê-lo: o Laboratório se protege da estrutura divergente (guarda descrita na
-seção do Bloco D) e mostra a unidade no caminho, mas a linhagem do Bloco C
-continua exposta e **"Processar arquivos" na VM segue perigoso sem recortar para
-o galho `RMSPII`**. Além disso, o Bloco E manda o perfil pra uma IA — quanto mais
-correta a identidade do dado antes disso, melhor.
+**Condição registrada para o Bloco E:** o bloqueio herdado da reestruturação era
+sobre consumir a **série persistida**, não sobre o bloco inteiro — o Laboratório
+lê o arquivo direto e não passa por `medidas`. Com o lote de correção fechado, a
+série deixou de ser risco de linhagem. Fica valendo um requisito de conteúdo: o
+contexto enviado à IA precisa carregar **unidade junto da filial**, nunca só
+"filial 001". Segue valendo também o requisito herdado do Bloco D: **mascarar a
+amostra antes de enviar ao provedor de IA**.

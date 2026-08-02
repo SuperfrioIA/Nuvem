@@ -68,6 +68,22 @@ def arquivo_por_item_id(item_id: str) -> dict | None:
     return None
 
 
+def unidade_do_caminho(caminho) -> str | None:
+    """Unidade (galho de primeiro nivel) de um caminho do inventario.
+
+    Desde a reestruturacao de 31/jul/2026 a raiz da pasta configurada tem
+    quatro unidades (RMSPII/RJ/CWB3/SANCA) e o caminho aqui e sempre relativo
+    a ela -- `RMSPII/ENTRADA/ENTRADA MERCADORIAS/x.xlsx`. Quem monta o caminho
+    e este modulo, entao quem o interpreta tambem: fonte unica.
+
+    Arquivo solto na raiz (caminho sem barra) nao tem unidade -> None. Quem
+    chama trata isso como origem nao qualificada, que cai em pendencia.
+    """
+    if not caminho or "/" not in caminho:
+        return None
+    return caminho.split("/", 1)[0]
+
+
 def restaurar(sincronizado_em, resumo) -> None:
     """Reidrata o cache com o estado persistido (chamado no startup do app).
     Nunca sobrescreve uma sincronizacao ja feita neste processo."""

@@ -40,9 +40,17 @@ qualidade, limitações, amostra) com **soma só onde o catálogo autoriza** e
 guarda que descarta o catálogo quando a estrutura do arquivo diverge, migration
 0007 (`laboratorio_sessoes`). Decisões da Maria no D: qualquer arquivo é
 selecionável; tela separada; amostra sem mascaramento (mascarar vira requisito
-do Bloco E). **Nenhum bloco seguinte autorizado** — Bloco E (chat + insight
-aprovado) aguarda OK; antes dele, recomendado tratar
-[[reestruturacao-datahub-4-unidades]]. O texto abaixo é o histórico até a virada.
+do Bloco E). **Lote de correção — identidade e linhagem do DataHub, feito em
+02/ago/2026**: migration 0008 (`processamentos_datahub` chaveada por `item_id`,
+mais `caminho` e `unidade`; de-para qualificado `RMSPII/001` sem coluna nova),
+de-para resolvido antes do download, padrão de nome aceitando filial com hífen
+(a RJ deixou de sumir), guarda dupla de colisão que aborta e reverte a rodada, e
+a correção do caminho vivo (a sigla das telas passou a sair da origem
+qualificada — os arquivos `001` da CWB3 apareciam como RMSPII). Não houve reparo
+de linhagem porque nada chegou a ser processado em produção; detalhes e o que
+foi cortado da análise original em [[reestruturacao-datahub-4-unidades]].
+**Nenhum bloco seguinte autorizado** — Bloco E (chat + insight aprovado) aguarda
+OK. O texto abaixo é o histórico até a virada.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

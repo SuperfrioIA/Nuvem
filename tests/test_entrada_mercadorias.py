@@ -46,7 +46,7 @@ def _xlsx(linhas, cabecalho=_CABECALHO, aba="SLIN"):
 def _arquivo_inventario(nome=_NOME_ARQUIVO, id_=_ITEM_ID):
     return {
         "nome": nome,
-        "caminho": f"ENTRADA/ENTRADA MERCADORIAS/{nome}",
+        "caminho": f"RMSPII/ENTRADA/ENTRADA MERCADORIAS/{nome}",
         "tamanho": 1000,
         "modificado_em": "2026-07-13T00:00:00Z",
         "id": id_,
@@ -131,6 +131,46 @@ def test_sem_sincronizacao_falha():
 
 def test_item_mais_recente_acha_arquivo_da_familia():
     assert entrada_mercadorias.item_mais_recente() == _ITEM_ID
+
+
+def test_item_mais_recente_ignora_unidade_sem_depara():
+    """Recorte do lote de correcao: sem ele, o arquivo mais recente da familia
+    pode ser de CWB3 (mesmo codigo `001` da RMSPII, armazem outro) ou da RJ (18
+    colunas, quebra a leitura) -- e a tela executiva exibiria numero de outra
+    unidade, ou nao carregaria."""
+    rmspii = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2601.xlsx", id_="item-rmspii")
+    rmspii["modificado_em"] = "2026-01-01T00:00:00Z"
+    cwb3 = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2607.xlsx", id_="item-cwb3")
+    cwb3["caminho"] = "CWB3/ENTRADA/ENTRADA_MERCADORIAS_001_2607.xlsx"
+    cwb3["modificado_em"] = "2026-07-31T00:00:00Z"  # mais novo de proposito
+    inventario_datahub._cache["resumo"]["arquivos"] = [rmspii, cwb3]
+
+    assert entrada_mercadorias.item_mais_recente() == "item-rmspii"
+
+
+def test_item_mais_recente_sem_nenhuma_unidade_conhecida_falha_claro():
+    rj = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_004-003_2601.xlsx", id_="item-rj")
+    rj["caminho"] = "RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2601.xlsx"
+    inventario_datahub._cache["resumo"]["arquivos"] = [rj]
+
+    with pytest.raises(
+        entrada_mercadorias.EntradaMercadoriasError, match="de-para confirmado"
+    ):
+        entrada_mercadorias.item_mais_recente()
+
+
+def test_dados_da_familia_aceita_filial_com_hifen():
+    """A RJ nomeia a filial com hifen. Antes o padrao exigia so digitos, entao
+    os 42 arquivos dela nao eram nem classificados -- sumiam em silencio."""
+    assert entrada_mercadorias.dados_da_familia(
+        "ENTRADA_MERCADORIAS_004-003_2601.xlsx"
+    ) == ("004-003", "2026-01")
+    assert entrada_mercadorias.dados_da_familia(
+        "ENTRADA_MERCADORIAS_016_2607.xlsx"
+    ) == ("016", "2026-07")
+    assert entrada_mercadorias.dados_da_familia(
+        "ENTRADA_MERCADORIAS_-_2607.xlsx"
+    ) is None
 
 
 def test_item_mais_recente_ignora_outras_familias():

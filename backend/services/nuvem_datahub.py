@@ -15,7 +15,9 @@ sumir silenciosamente da contagem total.
 
 import re
 
-from . import filiais_datahub
+# inventario_datahub entra so pelo helper puro que interpreta o caminho (quem
+# monta o caminho e ele) -- este modulo continua sem tocar cache nem Graph
+from . import filiais_datahub, inventario_datahub
 
 # linha_cabecalho: linha (1-based) onde o cabecalho REALMENTE comeca em cada
 # familia -- conferido arquivo por arquivo em docs/FONTES_DATAHUB.md (obstaculo
@@ -45,11 +47,12 @@ _FAMILIA_OUTROS = {
 _ORDEM_AREAS = ("ENTRADA", "SAIDA", "ENTREGAS", "ESTOQUE", "OUTROS")
 
 # Melhor esforco: filial + competencia no fim do nome (ex. "_016_2607.xlsx").
+# O codigo aceita hifen porque a unidade RJ nomeia assim (`004-003`).
 # Familias por cliente/temperatura (ESTOQUE_POR_LOTE segregado,
 # PALLETS_EXCEDENTES) e o formato diario AAMMDD do ESTOQUE_POR_LOTE nao batem
 # nesse padrao -- ficam None, exibido como "-" na tela (decisao de 30/jul/2026,
 # ponto 4 do P5.5: nao quebrar quando o nome nao seguir o padrao esperado).
-_PADRAO_FILIAL_COMPETENCIA = re.compile(r"_(\d+)_(\d{2})(\d{2})\.[^.]+$")
+_PADRAO_FILIAL_COMPETENCIA = re.compile(r"_(\d+(?:-\d+)*)_(\d{2})(\d{2})\.[^.]+$")
 
 
 def _identificar_familia(nome: str) -> dict:
@@ -101,6 +104,11 @@ def montar_bolinhas(resumo: dict) -> list[dict]:
             },
         )
         filial, competencia = _extrair_filial_competencia(arquivo["nome"])
+        # a unidade (galho de primeiro nivel do caminho) faz parte da
+        # identificacao: o codigo `001` existe em RMSPII e em CWB3, entao
+        # resolver a sigla so pelo codigo rotularia arquivo de Curitiba como
+        # RMSPII na tela
+        unidade = inventario_datahub.unidade_do_caminho(arquivo.get("caminho"))
         bolinha["total_arquivos"] += 1
         bolinha["tamanho_total_mb"] += (arquivo.get("tamanho") or 0) / (1024 * 1024)
         bolinha["arquivos"].append(
@@ -110,10 +118,11 @@ def montar_bolinhas(resumo: dict) -> list[dict]:
                 "web_url": arquivo.get("web_url"),
                 "tamanho": arquivo.get("tamanho"),
                 "modificado_em": arquivo.get("modificado_em"),
+                "unidade": unidade,
                 "filial": filial,
-                # rotulo de exibicao (V1.0) -- None quando o de-para da filial
-                # nao foi confirmado; a tela mostra so o codigo nesse caso
-                "filial_sigla": filiais_datahub.sigla(filial),
+                # rotulo de exibicao (V1.0) -- None quando o de-para daquela
+                # origem nao foi confirmado; a tela mostra so o codigo
+                "filial_sigla": filiais_datahub.sigla(unidade, filial),
                 "competencia": competencia,
             }
         )

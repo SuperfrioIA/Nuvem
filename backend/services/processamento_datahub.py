@@ -16,10 +16,25 @@ Regras que sustentam a prevencao de dupla contagem:
   execucao nova (auditoria acumula) e atualiza as celulas.
 - Celula orfa: se um reprocessamento deixa de emitir uma celula que existia
   (ex.: cliente foi cadastrado e as linhas dele sairam do balde NULL), a
-  celula antiga e REMOVIDA -- as celulas de (metrica, filial, competencia)
+  celula antiga e REMOVIDA -- as celulas de (metrica, armazem, competencia)
   espelham exatamente o ultimo processamento do arquivo, que e o unico dono
-  daquele recorte (um arquivo por filial x competencia, garantido pelo padrao
-  de nome).
+  daquele recorte.
+
+A identidade do arquivo e o `item_id` do Graph, nunca o nome (migration 0008).
+A fonte tem quatro unidades desde 31/jul/2026 e as quatro publicam com a mesma
+convencao: `ENTRADA_MERCADORIAS_001_2601.xlsx` existe em RMSPII e em CWB3, em
+armazens diferentes. Tres consequencias sustentadas aqui:
+
+- o de-para e consultado pelo codigo de origem QUALIFICADO pela unidade
+  (`RMSPII/001`), nunca pelo codigo de filial nu;
+- o de-para e resolvido ANTES do download: origem sem de-para vira pendencia
+  visivel sem baixar nada (a RJ, por exemplo, tem layout proprio de 18 colunas
+  -- baixar so pra falhar na leitura trocaria uma pendencia clara por um erro);
+- "um arquivo por armazem x competencia" deixou de ser premissa e virou
+  invariante VERIFICADA: `processar_todos` aborta a rodada inteira se dois
+  arquivos apontarem para o mesmo recorte, antes e depois de gravar. Sem isso,
+  um apagaria as celulas do outro como orfas e a linhagem em
+  `medidas_recebidas` (append-only) ficaria com o armazem errado pra sempre.
 
 Cliente e resolvido pela raiz do CNPJ (8 digitos) contra clientes.nk_erp
 (NK_CLIENTE do DW). SEM auto-cadastro (decisao da Maria, 31/jul/2026):
@@ -38,7 +53,12 @@ from datetime import date
 
 from .. import ingestao
 from ..seed_datahub import TIPO_CONECTOR
-from . import entrada_mercadorias, graph_datahub, inventario_datahub
+from . import (
+    entrada_mercadorias,
+    filiais_datahub,
+    graph_datahub,
+    inventario_datahub,
+)
 
 _FONTE_CHAVE = "datahub_entrada_mercadorias"
 
@@ -164,7 +184,14 @@ def _remover_celulas_orfas(
 ) -> int:
     """Apaga celulas canonicas das metricas do DataHub que o processamento
     atual nao emitiu (ver docstring do modulo). Compara cliente_id em Python
-    porque NULL nao entra em `= ANY(...)`."""
+    porque NULL nao entra em `= ANY(...)`.
+
+    O escopo (metrica, armazem, competencia) so e seguro porque o armazem ja
+    distingue as unidades (de-para qualificado) e porque a rodada aborta se
+    dois arquivos disputarem o mesmo recorte -- juntas, as duas coisas garantem
+    um produtor unico. Uma segunda familia emitindo estas mesmas metricas
+    quebraria isso: ai o escopo precisa ganhar a dimensao do produtor antes.
+    """
     cur.execute(
         """
         SELECT id, cliente_id FROM medidas
@@ -179,16 +206,54 @@ def _remover_celulas_orfas(
     return len(orfas)
 
 
-def _registrar_processamento(cur, resultado: dict, item_id: str, status: str,
-                             detalhe=None, execucao_id=None, medidas_gravadas=None) -> None:
+def _origem(arquivo_inventario: dict) -> dict:
+    """Identificacao de origem, so com o que o inventario ja sabe -- sem baixar
+    o arquivo: nome, caminho, unidade (galho de primeiro nivel), filial e
+    competencia (do nome) e o codigo de origem qualificado que o de-para
+    consulta (`RMSPII/001`)."""
+    nome = arquivo_inventario.get("nome") or ""
+    dados = entrada_mercadorias.dados_da_familia(nome)
+    if dados is None:
+        raise ProcessamentoDatahubError(
+            f"nome fora do padrao da familia ENTRADA_MERCADORIAS: {nome}"
+        )
+    filial, competencia = dados
+    caminho = arquivo_inventario.get("caminho")
+    unidade = inventario_datahub.unidade_do_caminho(caminho)
+    return {
+        "item_id": arquivo_inventario.get("id"),
+        "arquivo": nome,
+        "caminho": caminho,
+        "unidade": unidade,
+        "filial": filial,
+        "competencia": competencia,
+        "modificado_em": arquivo_inventario.get("modificado_em"),
+        "codigo_origem": filiais_datahub.codigo_qualificado(unidade, filial),
+    }
+
+
+def _registrar_processamento(cur, origem: dict, status: str, detalhe=None,
+                             execucao_id=None, linhas_validas=None,
+                             medidas_gravadas=None) -> None:
+    """Estado corrente do arquivo, chaveado pelo `item_id` (migration 0008).
+
+    `arquivo`, `caminho` e `unidade` sao atributos MUTAVEIS: renomear ou mover
+    o arquivo no SharePoint atualiza este registro em vez de criar outro,
+    porque o item_id sobrevive as duas operacoes.
+    """
     cur.execute(
         """
         INSERT INTO processamentos_datahub
-            (arquivo, item_id, filial, competencia, modificado_em, execucao_id,
-             status, detalhe, linhas_validas, medidas_gravadas)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (arquivo) DO UPDATE SET
-            item_id = EXCLUDED.item_id,
+            (arquivo, item_id, caminho, unidade, filial, competencia,
+             modificado_em, execucao_id, status, detalhe, linhas_validas,
+             medidas_gravadas)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON CONFLICT (item_id) DO UPDATE SET
+            arquivo = EXCLUDED.arquivo,
+            caminho = EXCLUDED.caminho,
+            unidade = EXCLUDED.unidade,
+            filial = EXCLUDED.filial,
+            competencia = EXCLUDED.competencia,
             modificado_em = EXCLUDED.modificado_em,
             execucao_id = EXCLUDED.execucao_id,
             status = EXCLUDED.status,
@@ -197,36 +262,49 @@ def _registrar_processamento(cur, resultado: dict, item_id: str, status: str,
             medidas_gravadas = EXCLUDED.medidas_gravadas,
             processado_em = now()
         """,
-        (resultado["arquivo"], item_id, resultado["filial"],
-         _competencia_date(resultado["competencia"]), resultado.get("modificado_em"),
-         execucao_id, status, detalhe, resultado.get("linhas_validas"), medidas_gravadas),
+        (origem["arquivo"], origem["item_id"], origem["caminho"], origem["unidade"],
+         origem["filial"], _competencia_date(origem["competencia"]),
+         origem["modificado_em"], execucao_id, status, detalhe, linhas_validas,
+         medidas_gravadas),
     )
 
 
 def processar_arquivo(cur, item_id: str) -> dict:
-    """Processa UM arquivo ja sincronizado: le (validacao do P3 intacta),
-    agrega por cliente e persiste. Devolve o relatorio do arquivo."""
+    """Processa UM arquivo ja sincronizado: resolve a origem, le (validacao do
+    P3 intacta), agrega por cliente e persiste. Devolve o relatorio do arquivo."""
     unidades = _unidades_dos_conceitos(cur)
     metrica_ids = _metrica_ids(cur)
     conector_id = _conector_id(cur)
     fonte_id = _fonte_id(cur)
 
+    origem = _origem(entrada_mercadorias.arquivo_do_inventario(item_id))
+    competencia = _competencia_date(origem["competencia"])
+
+    # de-para ANTES do download: origem sem de-para nao gasta um download pra
+    # falhar depois na leitura (ver docstring do modulo)
+    armazem_id = ingestao.resolver_armazem(cur, conector_id, origem["codigo_origem"])
+    if armazem_id is None:
+        ingestao.registrar_pendencia(cur, conector_id, origem["codigo_origem"])
+        detalhe = (
+            f"origem {origem['codigo_origem']} sem de-para no conector "
+            "sharepoint_datahub"
+        )
+        _registrar_processamento(cur, origem, "pendencia_depara", detalhe)
+        return {
+            "arquivo": origem["arquivo"],
+            "status": "pendencia_depara",
+            "unidade": origem["unidade"],
+            "filial": origem["filial"],
+            "detalhe": detalhe,
+        }
+
     resultado = entrada_mercadorias.ler(item_id)
     linhas = resultado.pop("linhas")
-    filial = resultado["filial"]
-    competencia = _competencia_date(resultado["competencia"])
-
-    armazem_id = ingestao.resolver_armazem(cur, conector_id, filial)
-    if armazem_id is None:
-        ingestao.registrar_pendencia(cur, conector_id, filial)
-        detalhe = f"filial {filial} sem de-para no conector sharepoint_datahub"
-        _registrar_processamento(cur, resultado, item_id, "pendencia_depara", detalhe)
-        return {"arquivo": resultado["arquivo"], "status": "pendencia_depara", "detalhe": detalhe}
 
     agregados = _agregar_por_cliente(cur, conector_id, linhas)
 
     execucao_id = ingestao.iniciar_execucao(
-        cur, conector_id, None, None, "datahub", resultado.get("caminho")
+        cur, conector_id, None, None, "datahub", origem["caminho"]
     )
 
     gravadas = 0
@@ -253,14 +331,17 @@ def processar_arquivo(cur, item_id: str) -> dict:
         linhas_lidas=resultado["linhas_lidas"], linhas_gravadas=gravadas,
     )
     _registrar_processamento(
-        cur, resultado, item_id, "ok",
-        execucao_id=execucao_id, medidas_gravadas=gravadas,
+        cur, origem, "ok", execucao_id=execucao_id,
+        linhas_validas=resultado["linhas_validas"], medidas_gravadas=gravadas,
     )
     return {
-        "arquivo": resultado["arquivo"],
+        "arquivo": origem["arquivo"],
         "status": "ok",
-        "filial": filial,
-        "competencia": resultado["competencia"],
+        "unidade": origem["unidade"],
+        "filial": origem["filial"],
+        "competencia": origem["competencia"],
+        # id interno: alimenta a guarda de colisao de processar_todos
+        "armazem_id": armazem_id,
         "clientes": sum(1 for c in agregados if c is not None),
         "sem_cliente": 1 if None in agregados else 0,
         "medidas_gravadas": gravadas,
@@ -268,20 +349,56 @@ def processar_arquivo(cur, item_id: str) -> dict:
     }
 
 
-def _ja_processado(cur, arquivo: str, modificado_em) -> bool:
+def _ja_processado(cur, item_id: str, modificado_em) -> bool:
+    """Arquivo ja processado com sucesso e inalterado desde entao.
+
+    Chaveado por item_id (migration 0008): com a chave antiga -- o nome --
+    dois homonimos de unidades diferentes disputavam o mesmo registro e
+    NENHUM dos dois era reconhecido como inalterado, entao os dois
+    reprocessavam a cada rodada.
+    """
     cur.execute(
-        "SELECT modificado_em, status FROM processamentos_datahub WHERE arquivo = %s",
-        (arquivo,),
+        "SELECT modificado_em, status FROM processamentos_datahub WHERE item_id = %s",
+        (item_id,),
     )
     row = cur.fetchone()
     return row is not None and row[1] == "ok" and row[0] == modificado_em
+
+
+def _abortar_se_origens_colidem(candidatos: list[dict]) -> None:
+    """Aborta ANTES de baixar qualquer coisa se dois arquivos do inventario
+    apontarem para a mesma (origem qualificada, competencia).
+
+    Complementa a guarda de tempo de execucao: esta ve todos os candidatos,
+    inclusive os que a rodada vai pular por estarem inalterados; a outra ve os
+    armazens de fato resolvidos, inclusive de-paras distintos apontando para o
+    mesmo armazem.
+    """
+    vistos: dict[tuple, str] = {}
+    for arquivo in candidatos:
+        origem = _origem(arquivo)
+        chave = (origem["codigo_origem"], origem["competencia"])
+        anterior = vistos.get(chave)
+        if anterior is not None:
+            raise ProcessamentoDatahubError(
+                f"colisao de origem: '{origem['caminho']}' e '{anterior}' apontam "
+                f"para {origem['codigo_origem']} na competencia "
+                f"{origem['competencia']} -- rodada abortada sem gravar nada"
+            )
+        vistos[chave] = origem["caminho"]
 
 
 def processar_todos(cur, forcar: bool = False) -> dict:
     """Processa a familia inteira do inventario atual: arquivo novo ou alterado
     (modificado_em diferente) e processado; inalterado e pulado (a menos de
     forcar=True). Erro num arquivo nao derruba o lote -- vira status 'erro' no
-    relatorio e no controle."""
+    relatorio e no controle.
+
+    Colisao, ao contrario de erro, DERRUBA a rodada: dois arquivos no mesmo
+    recorte fariam um apagar as celulas do outro como orfas e a linhagem ficar
+    com o armazem errado de forma permanente. Como o endpoint roda tudo numa
+    transacao, abortar reverte a rodada inteira -- nada e gravado pela metade.
+    """
     resumo = inventario_datahub.status().get("resumo")
     if not resumo:
         raise ProcessamentoDatahubError(
@@ -292,31 +409,38 @@ def processar_todos(cur, forcar: bool = False) -> dict:
         a for a in resumo.get("arquivos", [])
         if entrada_mercadorias.dados_da_familia(a.get("nome", "")) is not None
     ]
+    _abortar_se_origens_colidem(candidatos)
 
     processados, pulados, erros = [], 0, []
+    emitidos: dict[tuple, str] = {}
     for arquivo in candidatos:
-        if not forcar and _ja_processado(cur, arquivo["nome"], arquivo.get("modificado_em")):
+        if not forcar and _ja_processado(cur, arquivo["id"], arquivo.get("modificado_em")):
             pulados += 1
             continue
         try:
-            processados.append(processar_arquivo(cur, arquivo["id"]))
+            relatorio = processar_arquivo(cur, arquivo["id"])
         except (
             entrada_mercadorias.EntradaMercadoriasError,
             graph_datahub.GraphError,
             ProcessamentoDatahubError,
         ) as exc:
-            # nome ja casou com o padrao da familia (filtro dos candidatos)
-            filial, competencia = entrada_mercadorias.dados_da_familia(arquivo["nome"])
             erros.append({"arquivo": arquivo["nome"], "erro": str(exc)})
-            _registrar_processamento(
-                cur,
-                {
-                    "arquivo": arquivo["nome"], "filial": filial,
-                    "competencia": competencia,
-                    "modificado_em": arquivo.get("modificado_em"),
-                },
-                arquivo["id"], "erro", detalhe=str(exc),
+            # nome ja casou com o padrao da familia (filtro dos candidatos)
+            _registrar_processamento(cur, _origem(arquivo), "erro", detalhe=str(exc))
+            continue
+
+        processados.append(relatorio)
+        if relatorio["status"] != "ok":
+            continue
+        chave = (relatorio["armazem_id"], relatorio["competencia"])
+        anterior = emitidos.get(chave)
+        if anterior is not None:
+            raise ProcessamentoDatahubError(
+                f"colisao de armazem: '{relatorio['arquivo']}' e '{anterior}' gravaram "
+                f"no mesmo armazem na competencia {relatorio['competencia']} -- rodada "
+                "abortada e revertida; conferir o de-para do conector sharepoint_datahub"
             )
+        emitidos[chave] = relatorio["arquivo"]
 
     return {
         "total_familia": len(candidatos),
@@ -327,33 +451,45 @@ def processar_todos(cur, forcar: bool = False) -> dict:
 
 
 def listar_processamentos(cur) -> list[dict]:
-    """Estado corrente por arquivo, pro painel do admin."""
+    """Estado corrente por arquivo, pro painel do admin.
+
+    A unidade e o caminho vem junto porque o nome do arquivo deixou de ser
+    unico na fonte: sem eles, dois homonimos de unidades diferentes ficam
+    indistinguiveis na tela.
+    """
     cur.execute(
         """
-        SELECT arquivo, filial, competencia, status, detalhe, linhas_validas,
-               medidas_gravadas, processado_em
+        SELECT arquivo, unidade, caminho, filial, competencia, status, detalhe,
+               linhas_validas, medidas_gravadas, processado_em
         FROM processamentos_datahub
-        ORDER BY competencia DESC, filial, arquivo
+        ORDER BY competencia DESC, unidade NULLS FIRST, filial, arquivo
         """
     )
     return [
         {
             "arquivo": r[0],
-            "filial": r[1],
-            "competencia": r[2].isoformat() if r[2] else None,
-            "status": r[3],
-            "detalhe": r[4],
-            "linhas_validas": r[5],
-            "medidas_gravadas": r[6],
-            "processado_em": r[7].isoformat() if r[7] else None,
+            "unidade": r[1],
+            "caminho": r[2],
+            "filial": r[3],
+            "competencia": r[4].isoformat() if r[4] else None,
+            "status": r[5],
+            "detalhe": r[6],
+            "linhas_validas": r[7],
+            "medidas_gravadas": r[8],
+            "processado_em": r[9].isoformat() if r[9] else None,
         }
         for r in cur.fetchall()
     ]
 
 
 def listar_pendencias_filial(cur) -> list[dict]:
-    """Pendencias de de-para de filial do conector do DataHub (ex.: a 002),
-    pro painel do admin -- mesma tabela usada pelo upload manual."""
+    """Pendencias de de-para do conector do DataHub, pro painel do admin --
+    mesma tabela usada pelo upload manual.
+
+    O que aparece aqui e o codigo de origem QUALIFICADO (`RMSPII/002`,
+    `CWB3/001`, `SANCA/025`, `RJ/004-003`), nao o codigo de filial nu: e ele
+    que precisa de decisao humana pra virar de-para.
+    """
     cur.execute(
         """
         SELECT dp.armazem_na_fonte, dp.primeira_vez_em, dp.ultima_vez_em
@@ -366,7 +502,7 @@ def listar_pendencias_filial(cur) -> list[dict]:
     )
     return [
         {
-            "filial_na_fonte": r[0],
+            "origem_na_fonte": r[0],
             "primeira_vez_em": r[1].isoformat() if r[1] else None,
             "ultima_vez_em": r[2].isoformat() if r[2] else None,
         }

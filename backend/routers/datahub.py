@@ -108,8 +108,12 @@ def kpis(request: Request):
     linhas = resultado.pop("linhas")
     fonte = f"{resultado['arquivo']} (filial {resultado['filial']}, competência {resultado['competencia']})"
     # sigla de exibicao (V1.0) -- entra nos metadados antes do resumo pra o
-    # texto executivo poder nomear a filial (ex.: "016 (RMSPIV)")
-    resultado["filial_sigla"] = filiais_datahub.sigla(resultado["filial"])
+    # texto executivo poder nomear a filial (ex.: "016 (RMSPIV)"). Resolvida
+    # pela origem qualificada (unidade + codigo): o codigo sozinho nao
+    # identifica armazem desde a reestruturacao da fonte.
+    resultado["filial_sigla"] = filiais_datahub.sigla(
+        resultado["unidade"], resultado["filial"]
+    )
     # catalogo de unidades (V1.2) -- alimenta o motor de compatibilidade que
     # separa os volumes por embalagem em vez de consolidar unidades mistas
     with get_conn() as conn:
@@ -121,6 +125,7 @@ def kpis(request: Request):
     return {
         "arquivo": resultado["arquivo"],
         "caminho": resultado["caminho"],
+        "unidade": resultado["unidade"],
         "filial": resultado["filial"],
         "filial_sigla": resultado["filial_sigla"],
         "competencia": resultado["competencia"],

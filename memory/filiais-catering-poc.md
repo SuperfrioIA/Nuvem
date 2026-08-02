@@ -1,6 +1,6 @@
 ---
 name: filiais-catering-poc
-description: De-para das filiais 001/015/016 do DataHub (CNPJ, código Protheus, sigla oficial RMSPII/III/IV) — confirmado pela Maria em 30/jul/2026, ativo corrigido no seed
+description: De-para das filiais 001/015/016 do DataHub (CNPJ, código Protheus, sigla oficial RMSPII/III/IV) — confirmado pela Maria em 30/jul/2026; desde 02/ago/2026 a chave é qualificada pela unidade (RMSPII/001)
 metadata:
   type: reference
 ---
@@ -36,8 +36,18 @@ rebuildar a imagem lá não corrige a linha já seedada, precisa do `UPDATE` man
 também (mesmo comando: `UPDATE armazens SET ativo = false WHERE sigla = 'RMSPIII';
 UPDATE armazens SET ativo = true WHERE sigla = 'RMSPIV';`).
 
+**Mudança de chave (02/ago/2026, migration `0008_identidade_datahub`):** o código de
+filial sozinho **deixou de identificar armazém**. Depois da reestruturação da fonte
+([[reestruturacao-datahub-4-unidades]]) o `001` existe em RMSPII **e** em CWB3, em
+armazéns diferentes. A chave do de-para (`depara_armazem.armazem_na_fonte` sob o
+conector `sharepoint_datahub`) passou a ser o **código de origem qualificado pela
+unidade**: `RMSPII/001`, `RMSPII/015`, `RMSPII/016`. O campo já era texto livre, então
+não houve coluna nova — mudou a semântica e o dado. Só essas três estão semeadas;
+`RMSPII/002`, `CWB3/*`, `SANCA/025` e `RJ/004-*` aparecem como pendência visível.
+
 **Pendente**: filial `002` (usada por `DADOS_GERAIS` e `OCORRENCIAS_ENTREGAS`) não
-foi coberta nesta confirmação — de-para dela continua em aberto.
+foi coberta nesta confirmação — de-para dela continua em aberto. Decisão da Maria em
+02/ago/2026: **fica pendente por enquanto**, exibindo só o código `002`.
 
 **Why:** o de-para de filial estava bloqueando qualquer exibição amigável (nome de
 armazém em vez de código numérico) e tinha uma inconsistência não resolvida sobre se
@@ -50,7 +60,9 @@ está construído em `backend/services/filiais_datahub.py` (fonte única
 `016 · RMSPIV` nas telas e `016 (RMSPIV)` no resumo). Desde o V1.3 (31/jul/2026)
 o MESMO mapa é semeado em `depara_armazem` sob o conector `sharepoint_datahub`
 (`backend/seed_datahub.py`) e é o de-para real da ingestão da série histórica.
-Filial `002` segue sem de-para — quando um arquivo dela for processado, vira
-pendência visível no admin (painel DataHub, "Série histórica"); pra destravar,
-basta a Maria confirmar a sigla e criar o de-para. Ver também
-[[chaves-nf-entrada-datahub]].
+**Desde 02/ago/2026 as chaves desse mapa são qualificadas** — `sigla()` recebe
+`(unidade, código)`, nunca só o código, e a unidade sai do primeiro segmento do
+caminho do inventário (`inventario_datahub.unidade_do_caminho`). Origem sem de-para
+vira pendência visível no admin (painel DataHub, "Série histórica") e **não é nem
+baixada**; pra destravar, basta a Maria confirmar a sigla e criar o de-para. Ver
+também [[chaves-nf-entrada-datahub]].

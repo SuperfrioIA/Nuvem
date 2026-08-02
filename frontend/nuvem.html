@@ -856,20 +856,31 @@ function desenharTabelaArquivos(bolinha) {
   document.getElementById("dataFonte").textContent =
     `Área ${bolinha.area} · ${rotulo} · ${bolinha.tamanho_total_mb} MB`;
 
+  // o filtro é por ORIGEM (unidade/filial), não pelo código de filial: o
+  // mesmo `001` existe em RMSPII e em CWB3, e filtrar pelo código nu juntaria
+  // arquivos de armazéns diferentes na mesma opção
   const selFilial = document.getElementById("filtroFilial");
-  const siglaPorFilial = {};
-  bolinha.arquivos.forEach(a => { if (a.filial && a.filial_sigla) siglaPorFilial[a.filial] = a.filial_sigla; });
-  const filiais = Array.from(new Set(bolinha.arquivos.map(a => a.filial).filter(Boolean))).sort();
+  const siglaPorOrigem = {};
+  bolinha.arquivos.forEach(a => {
+    const origem = origemDoArquivo(a);
+    if (origem && a.filial_sigla) siglaPorOrigem[origem] = a.filial_sigla;
+  });
+  const origens = Array.from(new Set(bolinha.arquivos.map(origemDoArquivo).filter(Boolean))).sort();
   selFilial.innerHTML = `<option value="">Todas as filiais</option>` +
-    filiais.map(f => `<option value="${escaparHtml(f)}">${escaparHtml(rotuloFilial(f, siglaPorFilial[f]))}</option>`).join("");
+    origens.map(o => `<option value="${escaparHtml(o)}">${escaparHtml(rotuloFilial(o, siglaPorOrigem[o]))}</option>`).join("");
   selFilial.onchange = () => { _filtroFilial = selFilial.value; desenharLinhasArquivos(bolinha); };
 
   desenharLinhasArquivos(bolinha);
 }
 
+function origemDoArquivo(a) {
+  if (!a.filial) return null;
+  return a.unidade ? `${a.unidade}/${a.filial}` : a.filial;
+}
+
 function desenharLinhasArquivos(bolinha) {
   const todos = bolinha.arquivos;
-  const linhas = _filtroFilial ? todos.filter(a => a.filial === _filtroFilial) : todos;
+  const linhas = _filtroFilial ? todos.filter(a => origemDoArquivo(a) === _filtroFilial) : todos;
 
   const tabela = document.getElementById("dataTable");
   tabela.innerHTML = `

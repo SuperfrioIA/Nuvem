@@ -71,12 +71,18 @@ def test_serie_mensal_anual_e_acumulado_por_filial(cursor):
     assert resultado["acumulado"] == 400.0
 
 
-def test_filial_aceita_codigo_do_datahub(cursor):
+def test_filial_aceita_codigo_qualificado_do_datahub(cursor):
+    """O codigo aceito e o QUALIFICADO pela unidade (migration 0008): o codigo
+    nu deixou de identificar um armazem -- `016` sozinho nao diz de que unidade
+    da fonte veio."""
     _semear(cursor)
     por_sigla = serie_datahub.serie(cursor, "peso_bruto_movimentado", filial="RMSPIV")
-    por_codigo = serie_datahub.serie(cursor, "peso_bruto_movimentado", filial="016")
+    por_codigo = serie_datahub.serie(cursor, "peso_bruto_movimentado", filial="RMSPII/016")
     assert por_codigo["mensal"] == por_sigla["mensal"]
     assert por_codigo["filtros"]["filial"] == "RMSPIV"
+
+    with pytest.raises(serie_datahub.SerieDatahubError, match="qualificado pela unidade"):
+        serie_datahub.serie(cursor, "peso_bruto_movimentado", filial="016")
 
 
 def test_intervalo_de_ate(cursor):

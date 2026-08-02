@@ -29,11 +29,20 @@ import re
 
 import openpyxl
 
-from . import graph_datahub, inventario_datahub
+from . import filiais_datahub, graph_datahub, inventario_datahub
 
 _ABA_ESPERADA = "SLIN"
 
-_PADRAO_NOME = re.compile(r"^ENTRADA_MERCADORIAS_(\d+)_(\d{2})(\d{2})\.xlsx$", re.IGNORECASE)
+# O codigo de filial aceita hifen (`004-003`, `005-001`): e como a unidade RJ
+# nomeia os exports dela. Antes o padrao exigia so digitos, entao os 42
+# arquivos da RJ nao casavam e sumiam do processamento SEM virar pendencia --
+# "nao casou no regex" virava "nao existe". Casando, eles chegam ate a
+# resolucao de de-para e param la, visiveis no painel (a RJ nao tem de-para
+# confirmado). O leitor da variante de 18 colunas da RJ NAO faz parte deste
+# lote: sem de-para, nenhum arquivo dela e baixado.
+_PADRAO_NOME = re.compile(
+    r"^ENTRADA_MERCADORIAS_(\d+(?:-\d+)*)_(\d{2})(\d{2})\.xlsx$", re.IGNORECASE
+)
 
 # As 20 colunas do export real (docs/FONTES_DATAHUB.md) -- todas obrigatorias
 # no cabecalho (decisao de 29/jul/2026: validar todas, nao so as dos KPIs do
@@ -65,7 +74,7 @@ def _limite_bytes() -> int:
     return limite_mb * 1024 * 1024
 
 
-def _arquivo_do_inventario(item_id: str) -> dict:
+def arquivo_do_inventario(item_id: str) -> dict:
     """So aceita item_id que apareceu na ultima sincronizacao do P2 -- o cache
     vira lista de permissao (fonte unica: inventario_datahub.arquivo_por_item_id).
     Sem sincronizacao ainda, ou id desconhecido, falha com mensagem clara em vez
@@ -152,21 +161,35 @@ def _paranum_br(valor):
 
 
 def item_mais_recente() -> str:
-    """item_id do arquivo ENTRADA_MERCADORIAS mais recente no inventario.
+    """item_id do arquivo ENTRADA_MERCADORIAS mais recente no inventario,
+    RESTRITO as unidades com de-para confirmado (hoje so a RMSPII).
 
     Decisao de 29/jul/2026: a tela de KPIs (Lote P4) nao deixa escolher entre
-    os arquivos da familia (tem ate 20, filial x competencia) -- sempre mostra
-    o mais recente sincronizado, mais simples pro POC.
+    os arquivos da familia -- sempre mostra o mais recente sincronizado, mais
+    simples pro POC.
+
+    O recorte por unidade veio depois, com a reestruturacao da fonte: sem ele o
+    "mais recente da familia" pode ser um arquivo de CWB3 ou da RJ, e a tela
+    executiva passaria a exibir numero de outra unidade sob o rotulo da RMSPII
+    (a CWB3 usa o mesmo codigo `001`), ou quebraria na leitura (a RJ tem 18
+    colunas). O recorte cai quando essas unidades tiverem de-para e leitor
+    homologados -- e ele que mantem a tela exatamente como ela ja se comporta.
     """
     resumo = inventario_datahub.status().get("resumo")
     if not resumo:
         raise EntradaMercadoriasError(
             "nenhuma sincronizacao do DataHub ainda -- clique em 'Sincronizar agora' primeiro"
         )
-    candidatos = [a for a in resumo.get("arquivos", []) if _PADRAO_NOME.match(a.get("nome", ""))]
+    unidades = filiais_datahub.unidades_conhecidas()
+    candidatos = [
+        a for a in resumo.get("arquivos", [])
+        if _PADRAO_NOME.match(a.get("nome", ""))
+        and inventario_datahub.unidade_do_caminho(a.get("caminho")) in unidades
+    ]
     if not candidatos:
         raise EntradaMercadoriasError(
-            "nenhum arquivo ENTRADA_MERCADORIAS encontrado na ultima sincronizacao"
+            "nenhum arquivo ENTRADA_MERCADORIAS de unidade com de-para confirmado "
+            f"({', '.join(sorted(unidades))}) encontrado na ultima sincronizacao"
         )
     mais_recente = max(candidatos, key=lambda a: a.get("modificado_em") or "")
     return mais_recente["id"]
@@ -178,7 +201,7 @@ def ler(item_id: str) -> dict:
     Todas as linhas validas ficam em memoria (o Lote P4 vai precisar delas
     pra somar os KPIs) -- quem expoe isso via HTTP decide quanto devolver.
     """
-    arquivo = _arquivo_do_inventario(item_id)
+    arquivo = arquivo_do_inventario(item_id)
     nome = arquivo["nome"]
     filial, competencia = _validar_nome(nome)
 
@@ -236,6 +259,9 @@ def ler(item_id: str) -> dict:
         "caminho": arquivo.get("caminho"),
         "modificado_em": arquivo.get("modificado_em"),
         "tamanho": arquivo.get("tamanho"),
+        # unidade da fonte (galho de primeiro nivel): sozinho o codigo de
+        # filial nao identifica armazem -- `001` existe em RMSPII e em CWB3
+        "unidade": inventario_datahub.unidade_do_caminho(arquivo.get("caminho")),
         "filial": filial,
         "competencia": competencia,
         "linhas_lidas": lidas,

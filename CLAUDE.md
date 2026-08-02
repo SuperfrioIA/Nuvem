@@ -22,9 +22,11 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 ## Regras para IA
 
 - Fase atual: **construção da V1 em blocos** (A, B e C feitos em 31/jul/2026;
-  D em 02/ago/2026; E–G aguardam autorização). Não construir código sem pedido
-  explícito da Maria. Há um **defeito aberto** herdado da reestruturação da
-  fonte (V1_PLANO, seção "ABERTO") — ler antes de mexer em ingestão do DataHub.
+  D e o lote de correção de identidade do DataHub em 02/ago/2026; E–G aguardam
+  autorização). Não construir código sem pedido explícito da Maria. Antes de
+  mexer em ingestão do DataHub, ler a seção "Lote de correção" do V1_PLANO: a
+  identidade do arquivo é o `item_id` e a origem é `unidade/filial`
+  (`RMSPII/001`), nunca o nome nem o código de filial sozinho.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
   explícito. "Beleza" vago não é OK.
 - Commits **sem** co-autor Anthropic (nada de `Co-Authored-By`).

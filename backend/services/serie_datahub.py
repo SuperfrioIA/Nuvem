@@ -16,9 +16,11 @@ Regras de consolidacao (a agregacao vem do catalogo de metricas, R3):
   identificado" (cliente_id NULL) fica FORA da contagem e a limitacao e
   declarada quando ele existir no recorte.
 
-Filial aceita a sigla oficial (armazens.sigla) ou o codigo do export
-(depara_armazem do conector sharepoint_datahub); cliente aceita o nk_erp
-(raiz do CNPJ, chave do cadastro).
+Filial aceita a sigla oficial (armazens.sigla) ou o codigo de origem
+QUALIFICADO do export (`RMSPII/001`, em depara_armazem sob o conector
+sharepoint_datahub); cliente aceita o nk_erp (raiz do CNPJ, chave do cadastro).
+O codigo nu (`001`) deixou de ser aceito na migration 0008 porque deixou de
+identificar um armazem -- ele existe em mais de uma unidade da fonte.
 """
 
 from datetime import date
@@ -60,7 +62,10 @@ def _resolver_filial(cur, filial: str) -> tuple[int, str]:
     )
     row = cur.fetchone()
     if row is None:
-        raise SerieDatahubError(f"filial desconhecida (sigla ou codigo do DataHub): {filial!r}")
+        raise SerieDatahubError(
+            "filial desconhecida (esperado a sigla oficial, ex. 'RMSPIV', ou o "
+            f"codigo de origem qualificado pela unidade, ex. 'RMSPII/016'): {filial!r}"
+        )
     return row[0], row[1]
 
 

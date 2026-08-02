@@ -119,6 +119,9 @@ def test_sincronizar_sem_configuracao_da_mensagem_clara(cliente, monkeypatch):
 
 _ARQUIVO_EM = {
     "nome": "ENTRADA_MERCADORIAS_001_2607.xlsx",
+    # o caminho carrega a UNIDADE (primeiro segmento): sem ela o `001` nao
+    # identifica armazem -- o mesmo codigo existe em RMSPII e em CWB3
+    "caminho": "RMSPII/ENTRADA/ENTRADA MERCADORIAS/ENTRADA_MERCADORIAS_001_2607.xlsx",
     "tamanho": 1000,
     "modificado_em": "2026-07-13T00:00:00Z",
     "id": "item-fake-em",
@@ -154,14 +157,29 @@ def _xlsx_entrada_mercadorias():
 
 
 def _sincronizar_com_arquivo_em(cliente, monkeypatch):
-    """Simula uma sincronizacao ja feita, com o arquivo padrao no inventario."""
+    """Simula uma sincronizacao ja feita, com o arquivo padrao no inventario.
+
+    A arvore e montada com as pastas reais, e nao com o arquivo solto na raiz:
+    desde a reestruturacao de 31/jul/2026 o galho de primeiro nivel e a
+    UNIDADE, e e dele que sai o de-para (`RMSPII/001`). Um arquivo sem unidade
+    no caminho nao resolve armazem -- corretamente.
+    """
     _configurar_graph_fake(monkeypatch)
     item = {
         "name": _ARQUIVO_EM["nome"], "file": {}, "size": _ARQUIVO_EM["tamanho"],
         "lastModifiedDateTime": _ARQUIVO_EM["modificado_em"], "id": _ARQUIVO_EM["id"],
         "webUrl": _ARQUIVO_EM["web_url"],
     }
-    monkeypatch.setattr(graph_datahub, "listar_itens", lambda item_id=None: [item] if item_id is None else [])
+    # o caminho resultante bate com _ARQUIVO_EM["caminho"]
+    pastas = _ARQUIVO_EM["caminho"].split("/")[:-1]
+
+    def listar_itens(item_id=None):
+        nivel = 0 if item_id is None else int(item_id.removeprefix("pasta-")) + 1
+        if nivel < len(pastas):
+            return [{"name": pastas[nivel], "folder": {}, "id": f"pasta-{nivel}"}]
+        return [item]
+
+    monkeypatch.setattr(graph_datahub, "listar_itens", listar_itens)
     resposta = cliente.post("/api/admin/datahub/sincronizar")
     assert resposta.status_code == 200
 
@@ -344,7 +362,8 @@ def test_processar_persiste_e_serie_devolve(cliente, monkeypatch):
 
     serie = cliente.get(
         "/api/admin/datahub/serie",
-        params={"metrica": "peso_bruto_movimentado", "filial": "001"},
+        # codigo de origem qualificado pela unidade (migration 0008)
+        params={"metrica": "peso_bruto_movimentado", "filial": "RMSPII/001"},
     ).json()
     assert serie["filtros"]["filial"] == "RMSPII"
     assert serie["mensal"] == [{"competencia": "2026-07", "valor": 1300.0}]

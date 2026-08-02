@@ -1,19 +1,15 @@
 # Fontes do SharePoint DataHub
 
-> **⚠ DEFASADO DESDE 31/jul/2026 — a fonte foi reestruturada.** A pasta passou a ter
-> **quatro unidades** na raiz (`RMSPII`, `CWB3`, `RJ`, `SANCA`) e cresceu para
-> **367 arquivos / 61 pastas / 955 MB**. Tudo o que este documento descreve abaixo
-> corresponde hoje apenas ao galho `RMSPII`. Há também uma família nova
-> (`ENTRADA_MERCADORIAS (UA)`) e duas correções conferidas no dado: o
-> `ESTOQUE_POR_LOTE` **tem** `Cliente` e `CNPJ Cliente` (a lista da seção 3 mostra 21
-> das 41 colunas e corta essas), e a `ENTRADA_MERCADORIAS` da RJ tem 18 colunas, sem
-> as duas de cliente. **Ler antes de agir sobre este documento:** seção "ABERTO — a
-> fonte foi reestruturada" em [V1_PLANO.md](V1_PLANO.md) e o levantamento completo em
-> `VERIFICACAO_DATAHUB_31JUL2026.html`. Atualizar este arquivo faz parte do lote de
-> correção, ainda não autorizado.
+> **A fonte foi reestruturada em 31/jul/2026.** A raiz passou a ter **quatro
+> unidades** (`RMSPII`, `CWB3`, `RJ`, `SANCA`) — as seções 3 a 6 deste documento
+> descrevem o galho `RMSPII`, que é o que o projeto já conhecia e o único com de-para
+> confirmado. A seção 2 abaixo traz o inventário novo. Levantamento completo (com o
+> rastreio do cliente SAPORE): `VERIFICACAO_DATAHUB_31JUL2026.html`; o que o código
+> fez a respeito: seção "Lote de correção" em [V1_PLANO.md](V1_PLANO.md).
 
 Levantamento de **29/jul/2026**, feito com o token do próprio app (`nuvem-ia`) via
 Microsoft Graph — não é print de tela nem export manual, é o que o sistema vê.
+Inventário revisto em **31/jul/2026** pelo mesmo caminho (seção 2).
 
 Este documento é o inventário da pasta. A decisão de arquitetura que ele provocou está
 em `memory/decisoes-fechadas.md` (entrada de 29/jul/2026).
@@ -76,8 +72,39 @@ da sessão (precisa Reload/relogar); `PnP.PowerShell` exige PowerShell 7+; o SDK
 
 ## 2. Inventário
 
-**228 arquivos, 711 MB.** Todas as abas se chamam `SLIN` — são exports do WMS SLIN,
-não do DW.
+### 2.1. Estrutura atual (31/jul/2026): quatro unidades
+
+**367 arquivos, 61 pastas, 955 MB.** Todas as abas se chamam `SLIN` — são exports do
+WMS SLIN, não do DW.
+
+| Unidade | Arquivos | MB | Filiais nos nomes | De-para |
+|---|---:|---:|---|---|
+| `RMSPII` | 272 | 751,0 | 001, 002, 015, 016 | confirmado para 001/015/016 |
+| `RJ` | 42 | 121,0 | 004-001, 004-003, 005-001 | **pendente** |
+| `CWB3` | 30 | 44,9 | 001 | **pendente** |
+| `SANCA` | 21 | 37,8 | 025 | **pendente** |
+
+**O código de filial não identifica armazém sozinho**: `001` existe em `RMSPII` e em
+`CWB3`, em armazéns diferentes. Desde a migration `0008_identidade_datahub` a chave
+de origem do de-para é qualificada pela unidade (`RMSPII/001`), e a identidade de um
+arquivo é o `item_id` do Graph, não o nome — que se repete entre unidades (são 7
+homônimos só na `ENTRADA_MERCADORIAS`).
+
+**Família nova, não catalogada:** `ENTRADA_MERCADORIAS (UA)` — 35 arquivos, 31,6 MB,
+presente nas quatro unidades, cabeçalho na linha 1, com `Cliente` e `Cliente CNPJ`.
+Não casa no padrão de nome da família integrada (tem espaço e parênteses), então não
+é processada; o classificador por prefixo do `/nuvem` e do Laboratório a lê como
+`ENTRADA_MERCADORIAS`, e é por isso que o perfil do Bloco D confere os rótulos de
+cabeçalho antes de aplicar o catálogo.
+
+**Variante de layout:** a `ENTRADA_MERCADORIAS` da `RJ` tem **18 colunas**, sem
+`Cliente` e `Cliente CNPJ` (RMSPII, CWB3 e SANCA têm as 20 idênticas). O leitor dessa
+variante não existe — enquanto a RJ não tiver de-para, os arquivos dela param na
+pendência sem serem baixados.
+
+### 2.2. Inventário de 29/jul/2026 (o galho `RMSPII` de hoje)
+
+**228 arquivos, 711 MB** na época. É o recorte que as seções 3 a 6 descrevem.
 
 | Área | Arquivos | MB |
 |---|---:|---:|
@@ -89,19 +116,25 @@ não do DW.
 ### Convenção de nomes
 
 ```
-NOME_{filial}_{AAMM}[_f{parte}].xlsx        mensal
+{unidade}/{AREA}/{PASTA}/NOME_{filial}_{AAMM}[_f{parte}].xlsx    mensal
 ESTOQUE_POR_LOTE_{filial}_{AAMMDD}.xlsx     foto diária
 ESTOQUE_POR_LOTE_{CLIENTE}_{TEMP}_{AAMMDD}.xlsx
 PALLETS_EXCEDENTES_{CLIENTE}_{TEMP}_{AAMM}.pdf
 ```
 
-- **filial**: `001`, `002`, `015`, `016` — códigos numéricos, **de-para pendente**
+- **unidade**: `RMSPII`, `CWB3`, `RJ`, `SANCA` — galho de primeiro nível, parte da
+  identidade da origem (não aparece no nome do arquivo, só no caminho)
+- **filial**: `001`, `002`, `015`, `016` na RMSPII; `025` na SANCA; `004-001`,
+  `004-003`, `005-001` na RJ (**com hífen** — o padrão de nome aceita)
 - **competência**: `2601`…`2607` (jan a jul/2026), série completa em todas as famílias
 - **parte** (`_f1`, `_f2`, `_f3`): o export estourou e foi partido. Uma competência =
   vários arquivos que precisam ser concatenados
 - **TEMP**: `CONGELADO`, `SECO`, `HORTIFRUTI`
 
 ### As 8 famílias
+
+> Contagens do galho `RMSPII` em 29/jul. Desde 31/jul há uma **nona** família nas
+> quatro unidades, `ENTRADA_MERCADORIAS (UA)` (35 arquivos), descrita na seção 2.1.
 
 | Família | Pasta | Arq | Filiais | Partes | Cabeçalho |
 |---|---|---:|---|---|---|
@@ -134,6 +167,12 @@ Descrição · Volume · EMB · Fração · EMB · Peso Líquido · Peso Bruto �
 Vlr. Unitário · Vlr. Total · Qtde UA · Código Estoque · Nome Estoque · Operação
 ```
 
+> Vale para RMSPII, CWB3 e SANCA. **Na `RJ` são 18 colunas** — as duas primeiras
+> (`Cliente` e `Cliente CNPJ`) não existem. Como o catálogo semântico casa campo por
+> **posição**, aplicar este mapeamento num arquivo da RJ daria conceito e unidade
+> trocados; por isso o leitor da variante não existe e a RJ para na pendência de
+> de-para, antes do download.
+
 **`GUIAS_ENTRADA`** — 27 colunas, cabeçalho na linha 2 (linha 1 = "Confirmação de Entrada")
 
 ```
@@ -164,6 +203,11 @@ Localização · PK Fixo · Tipo Endereço · Código · Descrição · EMB EST 
 Status · Bloqueado · UA · SEQ · Volume · EMB · Fração · EMB · Peso Líquido ·
 Peso Bruto · Peso Liq. Faixa · Fabricação · Validade · Vida Útil · … (41 no total)
 ```
+
+> **Correção de 31/jul/2026** (conferida no dado): esta família **tem** `Cliente` e
+> `CNPJ Cliente` — a lista acima mostra 21 das 41 colunas e cortava justamente as
+> duas. Ou seja, o grão cliente está disponível também no estoque, sem depender da
+> pasta segregada.
 
 **`CORTES_PRODUTOS`** — 23 colunas, cabeçalho na linha 5
 
@@ -274,6 +318,17 @@ com grão de UA.
    **ler só o `_f1` do `DADOS_GERAIS`** e tratar a família como meia competência.
    Pendência humana no item 4 da seção 6.
 
+9. **A competência corrente é republicada** (conferido em 31/jul/2026): o
+   `ENTRADA_MERCADORIAS_016_2607` passou de 8.411 para 9.111 linhas entre 30 e 31/jul.
+   O mês em curso não é um número fechado — o `modificado_em` muda e o processamento
+   reprocessa o arquivo, atualizando as células daquela competência. É o
+   comportamento desejado, mas significa que a série do mês corrente se move.
+
+10. **O mesmo nome de arquivo existe em unidades diferentes** — `ENTRADA_MERCADORIAS_001_26MM.xlsx`
+    está em `RMSPII` e em `CWB3` (7 homônimos). Nome não identifica arquivo, e código
+    de filial não identifica armazém: a identidade é o `item_id` do Graph e a origem é
+    `unidade/filial` (seção 2.1).
+
 Para validar valor de forma independente, cruzar a soma de `Vlr. Total` dos itens contra
 `Vlr. Total NF` das guias **concluídas**, por `GEM`. Na 016/2607 fecham em −1,76%
 (R$ 36.649.308,72 contra R$ 37.305.066,49) — a diferença residual é arredondamento e um
@@ -342,8 +397,17 @@ filtro — usar com essa ressalva escrita.
    (`GUIAS_ENTRADA_001` trazendo `Estoque = CONGELADO_RMSPII`): **`001` já é RMSPII**,
    não RMSP puro — as três filiais são CNPJs-filha do mesmo grupo e a controladoria as
    enxerga juntas como RMSPII, mas o projeto expõe cada uma separada. Segue pendente
-   só o de-para da filial `002` (usada por `DADOS_GERAIS`/`OCORRENCIAS_ENTREGAS`) —
-   não coberto na confirmação de 30/jul.
+   o de-para da filial `002` (usada por `DADOS_GERAIS`/`OCORRENCIAS_ENTREGAS`) — não
+   coberto na confirmação de 30/jul, e **mantido pendente por decisão da Maria em
+   02/ago/2026** (exibe só o código).
+
+   **1.1. De-para das unidades novas** (aberto em 02/ago/2026). A chave passou a ser
+   `unidade/filial`: só `RMSPII/001`, `RMSPII/015` e `RMSPII/016` estão semeadas. Falta
+   decidir para que armazém apontam `CWB3/001`, `SANCA/025`, `RJ/004-001`, `RJ/004-003`
+   e `RJ/005-001` — as três unidades novas aparecem como **pendência visível** no painel
+   do admin assim que um arquivo delas for inventariado. Enquanto não houver decisão,
+   nenhum arquivo delas é lido (nem baixado). No caso da RJ há um segundo passo: o
+   layout dela tem 18 colunas e precisa de um leitor de variante.
 2. **Quem publica e com que cadência.** Os arquivos de julho foram modificados em 13,
    17, 20, 22, 28 e 29/jul — parece republicação da competência corrente. Se for isso,
    o conector busca por padrão de nome e reprocessa a competência aberta, em vez de

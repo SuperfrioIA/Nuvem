@@ -7,7 +7,9 @@ from backend.services import nuvem_datahub
 def _arquivo(nome, tamanho=1000, modificado_em="2026-07-01T00:00:00Z", caminho=None, web_url=None):
     return {
         "nome": nome,
-        "caminho": caminho or f"PASTA/{nome}",
+        # o primeiro segmento e a UNIDADE da fonte (RMSPII/RJ/CWB3/SANCA) --
+        # e dele que sai a sigla de exibicao desde a reestruturacao
+        "caminho": caminho or f"RMSPII/PASTA/{nome}",
         "tamanho": tamanho,
         "modificado_em": modificado_em,
         "id": "id-" + nome,
@@ -66,6 +68,37 @@ def test_depara_de_exibicao_cobre_as_tres_filiais_confirmadas():
     arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
     siglas = {a["filial"]: a["filial_sigla"] for a in arquivos}
     assert siglas == {"001": "RMSPII", "015": "RMSPIII", "016": "RMSPIV"}
+
+
+def test_mesmo_codigo_em_outra_unidade_nao_herda_a_sigla_da_rmspii():
+    """O defeito no caminho vivo: os 7 arquivos `001` da CWB3 apareciam na tela
+    como "001 · RMSPII". A sigla vem da origem QUALIFICADA (unidade + codigo),
+    entao a CWB3 fica sem sigla ate ter de-para proprio."""
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx",
+                 caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_001_2601.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx",
+                 caminho="CWB3/ENTRADA/ENTRADA_MERCADORIAS_001_2601.xlsx"),
+    ]}
+    arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
+    assert {(a["unidade"], a["filial"], a["filial_sigla"]) for a in arquivos} == {
+        ("RMSPII", "001", "RMSPII"),
+        ("CWB3", "001", None),
+    }
+
+
+def test_filial_com_hifen_da_rj_e_extraida_do_nome():
+    """A unidade RJ nomeia com hifen (`004-003`): antes o padrao exigia so
+    digitos e a filial saia None na tela."""
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx",
+                 caminho="RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2601.xlsx"),
+    ]}
+    arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
+    assert arquivo["unidade"] == "RJ"
+    assert arquivo["filial"] == "004-003"
+    assert arquivo["filial_sigla"] is None
+    assert arquivo["competencia"] == "2026-01"
 
 
 def test_filial_sem_depara_confirmado_fica_sem_sigla():
