@@ -1,7 +1,8 @@
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import migracao
@@ -13,6 +14,8 @@ from .routers.datahub import router as datahub_router
 from .routers.laboratorio import router as laboratorio_router
 from .routers.linhagem import router as linhagem_router
 from .services import inventario_datahub
+
+logger = logging.getLogger("nuvem.app")
 
 
 @asynccontextmanager
@@ -36,6 +39,29 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Nuvem IA", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def excecao_nao_tratada(request: Request, exc: Exception) -> JSONResponse:
+    # Continuidade (Bloco G / G1): sem isto, qualquer excecao que escapasse de
+    # um router virava 500 cru do Starlette, com traceback no corpo da
+    # resposta. HTTPException/RequestValidationError tem handler proprio mais
+    # especifico (FastAPI resolve por MRO) e nao passam por aqui.
+    logger.exception("erro nao tratado em %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "erro interno"})
+
+
+@app.get("/health")
+def health():
+    # Sonda de infraestrutura (Docker healthcheck) -- sem login de proposito,
+    # nao expoe dado de negocio. Confere o banco porque e o pior cenario hoje:
+    # Postgres fora do ar nao aparecia em lugar nenhum.
+    try:
+        with get_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1")
+    except Exception:
+        return JSONResponse(status_code=503, content={"status": "banco indisponivel"})
+    return {"status": "ok"}
 
 
 app.include_router(admin_router, prefix="/api/admin")

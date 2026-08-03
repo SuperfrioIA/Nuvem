@@ -14,11 +14,20 @@ services:
       GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
       GRAPH_SITE_PATH: ${GRAPH_SITE_PATH:-}
       GRAPH_PASTA: ${GRAPH_PASTA:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      IA_MODELO: ${IA_MODELO:-claude-sonnet-5}
+      IA_EFFORT: ${IA_EFFORT:-medium}
     volumes:
       - ${UPLOADS_HOST_PATH:-./data/uploads}:/app/data/uploads
     depends_on:
       nuvem-db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 8s
+      retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   nuvem-db:

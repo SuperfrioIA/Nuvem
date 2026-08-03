@@ -1,4 +1,5 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–F feitos (cockpit executivo em F), G aguarda OK
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–F feitos, Bloco G/G1 (produção e continuidade) feito em 03/ago/2026, G2/G3 aguardam OK
+- [Rotação do secret do Graph](memory/graph-secret-rotacao.md) — criado 15/jul/2026, expira 15/jul/2027; processo de rotação registrado no Bloco G/G1
 - [Integração do cockpit com o Hub SuperFrio](memory/cockpit-hub-integracao.md) — link direto (sem iframe), filtros na URL, duas telas = dois cards no Hub; SSO pendente dos dois lados
 - **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, DataHub como fonte permanente (29/jul), decisões fixadas da V1 e do Bloco A (31/jul)

@@ -15,10 +15,21 @@ from . import (
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+# Continuidade (Bloco G / G1): sem isto, banco inacessível ou query presa
+# travava a aplicação inteira (um psycopg2.connect por request, sem pool nem
+# timeout nenhum). Pool de conexões fica fora do G1 -- worker único e volume
+# de ferramenta interna não justificam a complexidade agora.
+CONNECT_TIMEOUT_SEGUNDOS = 5
+STATEMENT_TIMEOUT_MS = 30_000
+
 
 @contextmanager
 def get_conn():
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        connect_timeout=CONNECT_TIMEOUT_SEGUNDOS,
+        options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+    )
     try:
         yield conn
         conn.commit()

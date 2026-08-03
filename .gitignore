@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .env
 data/
+backups/
 *.db
 .DS_Store
 Thumbs.db

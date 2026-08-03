@@ -68,7 +68,7 @@ semântico).
 | **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
 | **E** | V1.5 Laboratório: chat + V1.6 Insight aprovado | **feito** (03/ago/2026) |
 | **F** | V1.7 Cockpit executivo | **feito** (03/ago/2026) |
-| G | V1.8 Produção e entrega | a fazer — não autorizado |
+| **G** | V1.8 Produção e entrega | **em andamento** — G1 feito (03/ago/2026); G2/G3 aguardam autorização |
 
 ## Estado do deploy (03/ago/2026)
 
@@ -94,6 +94,14 @@ valor (`docs/ENTREGA_POC.md`, seção 3); pendências humanas das fontes
 novas** (`CWB3/001`, `SANCA/025`, `RJ/004-*`, `RJ/005-*`) e a filial `002`, que a
 Maria manteve pendente em 02/ago; cadastrar os clientes que aparecerem como
 pendência no painel.
+
+**Bloco F deployado e validado na VM em 03/ago/2026**: `git pull` +
+`up -d --build` (sem migration pendente — o Bloco F não criou nenhuma), `/cockpit`
+e `/linhagem` respondendo 200, login 200, `GET /api/admin/cockpit/qualidade`
+devolvendo dado real do recorte sem filtro (42 arquivos: 21 `ok`/21
+`pendencia_depara`) — as pendências de filial (`CWB3/001`, `RJ/004-003`,
+`SANCA/025`) e de cliente (`LC ADMINISTRACAO DE RESTAURANTES`, CNPJ raiz
+`60691250`) batem com as já conhecidas acima, nenhuma pendência nova surgiu.
 
 ## Bloco A — V1.0 Transição para produto (feito, 31/jul/2026)
 
@@ -912,7 +920,96 @@ tratados antes do commit:
 3. **Cosmético, corrigido** — a repartição dos 32 testes novos por arquivo
    nesta seção estava errada (já corrigida no texto acima).
 
+## Bloco G — V1.8 Produção e entrega (em andamento)
+
+Autorizado pela Maria em 03/ago/2026 ("pode iniciar a execução do g1"), depois
+de um mapeamento dos 14 itens da §14 do direcionamento contra o repositório
+real. O bloco é o mais largo da V1 — ficou dividido em três checkpoints
+(G1/G2/G3), cada um com suíte verde, commit isolado e autorização da Maria
+antes do próximo, mesma regra dos Blocos A–F. Cinco decisões dela na abertura:
+**manter senha única** (sem tabela de usuário); **sem HTTPS por enquanto**;
+**destino externo do backup fica pra depois** (mecanismo local + teste de
+restauração entram já); **fechar as páginas HTML sem login** (G2); e o
+**secret do Graph foi criado em 15/jul/2026** (registrar data e processo).
+
+### G1 — Produção destravada e continuidade (feito, 03/ago/2026)
+
+Atacou o que deixava a V1 instável em produção hoje, não o que faltava de
+acesso/auditoria (isso é G2) ou de testes E2E/documentação (G3):
+
+- **IA chegando ao container**: `ANTHROPIC_API_KEY`/`IA_MODELO`/`IA_EFFORT`
+  não estavam no `docker-compose.yml` nem no `.env.example` — o chat do
+  Laboratório (Bloco E) estava fechado no código mas não funcionava em
+  produção nenhuma, mesmo com a chave no `.env` da VM, porque o compose mapeia
+  variável por variável (não usa `env_file:`). Acrescentadas as três, com
+  default de modelo/esforço.
+- **Backup local, testado**: `scripts/backup.sh` (`pg_dump` via `docker
+  compose exec` + `tar` dos uploads retidos, comprimidos e carimbados,
+  retenção configurável) e `scripts/restore.sh` (zera o schema `public` e
+  restaura, com confirmação explícita — destrutivo por natureza). Testado de
+  verdade: dump tirado, schema inteiro derrubado (`DROP SCHEMA ... CASCADE`)
+  pra simular perda total, restaurado, contagem de linhas conferida contra o
+  estado anterior (`armazens`: 36 → 36). **Cópia pra fora da VM é pendência
+  declarada** (decisão da Maria: pensar depois, combinar com a TI) — o dump
+  fica só no disco da VM por ora.
+- **Continuidade técnica**: `GET /health` (sem login — sonda de
+  infraestrutura, confere o banco com `SELECT 1`, 503 se não responde) +
+  healthcheck no `docker-compose.yml` pro `nuvem-app` (antes só o Postgres
+  tinha); handler global de exceção (`backend/main.py`) — qualquer exceção
+  crua que escapasse de um router virava 500 do Starlette com traceback no
+  corpo, agora vira `500 {"detail": "erro interno"}` tratado, sem mudar o
+  comportamento dos 70 `HTTPException` já espalhados no código (FastAPI
+  resolve por MRO — handler mais específico continua ganhando);
+  `connect_timeout=5`/`statement_timeout=30s` em `backend/database.py` — hoje
+  não havia nenhum dos dois, um Postgres inacessível ou uma query presa
+  travava a aplicação inteira. **Pool de conexões fica fora do G1**: worker
+  único e volume de ferramenta interna não justificam a complexidade agora;
+  os timeouts resolvem o risco de continuidade sem mudar arquitetura.
+- **Rollback de verdade**: o plano cogitava git tag + push a partir da VM —
+  não dá, a deploy key da VM é só leitura (`docs/DEPLOY.md`, Passo 2).
+  Reescrito por SHA local: antes de cada deploy, registrar o commit rodando
+  (`git rev-parse HEAD` num log local) e tirar um dump com `scripts/backup.sh`;
+  deploy ruim = `git checkout <SHA-anterior>` + (se o schema mudou)
+  `scripts/restore.sh` do dump pré-deploy.
+- **Secret do Graph — data e processo**: criado em 15/jul/2026, expira em
+  15/jul/2027, processo de rotação documentado em `docs/DEPLOY.md` e em
+  `memory/graph-secret-rotacao.md`.
+
+**Decisões do lote:**
+
+1. Backup mecanismo + teste de restauração entram agora; destino externo
+   (fora da VM) fica pendência declarada — decisão explícita da Maria, não
+   esquecimento.
+2. Sem pool de conexões — timeouts resolvem o risco de continuidade sem
+   mudar a arquitetura de acesso ao banco; reavaliar se o volume crescer.
+3. `/health` sem login — é sonda de infraestrutura (Docker healthcheck), não
+   expõe dado de negócio; mesma lógica de `/docs`/`/openapi.json`, que
+   continuam abertos (fechar é G2).
+4. Rollback por SHA local em vez de tag/push — a deploy key da VM não tem
+   permissão de escrita no GitHub, por desenho (Passo 2 do runbook).
+
+**Fora do G1 (declarado, fica pro G2/G3):** gate por `Depends`/páginas HTML
+fechadas, rate limit de login, tabela de auditoria com ator, logging
+estruturado com request id, teste E2E até cockpit/linhagem, checklist
+automatizado (`scripts/verificar_v1.py`), atualização de
+README/`V1_CRITERIOS_ACEITE.md`/`V1_ARQUITETURA.md`.
+
+**Suíte**: **420 passed** (414 do Bloco F + 6 novos: `/health` ok e com banco
+indisponível, `/health` sem exigir login, handler global não vazando detalhe
+da exceção crua, `HTTPException` existente sem mudar de comportamento,
+`statement_timeout` aplicado na conexão — nenhum teste anterior removido ou
+enfraquecido). `connect_timeout` não entrou em teste automatizado (exigiria
+simular host inacessível de forma confiável) — limitação aceita, mesmo padrão
+já usado em blocos anteriores pra timeouts difíceis de simular.
+
+**Verificação manual** (não entra em pytest — são scripts de shell e
+configuração de compose, não código Python testável em unidade):
+`docker compose up -d --build` local com `nuvem-app` chegando a `healthy`;
+`curl /health` → 200; backup → drop total do schema → restore → contagem de
+linhas batendo com o estado anterior.
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco G (V1.8 produção e entrega) só começa com autorização
-explícita da Maria.
+**Nenhum além do G1**, que já está feito. G2 (acesso, auditoria e logs) e G3
+(testes de integração, checklist automatizado e documentação de fechamento)
+só começam com autorização explícita da Maria.

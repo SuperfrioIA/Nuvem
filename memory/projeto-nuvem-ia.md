@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco E integrou Anthropic Claude no chat do Laboratório, Bloco F entregou o cockpit executivo (03/ago/2026)
+description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco F entregou o cockpit executivo, Bloco G/G1 (produção e continuidade) feito em 03/ago/2026, G2/G3 aguardam OK
 metadata:
   type: project
 ---
@@ -71,8 +71,19 @@ crua da planilha, que não é persistida). Sem migration nova (lê tabelas que
 já existiam desde o Bloco C). Decisão de portabilidade fechada com o time do
 Hub SuperFrio antes do lote: link direto (sem iframe — sem auth
 compartilhada), filtros na URL, duas telas = dois cards separados no Hub
-(detalhes em [[cockpit-hub-integracao]]). **Nenhum bloco seguinte
-autorizado** — Bloco G (produção e entrega) aguarda OK.
+(detalhes em [[cockpit-hub-integracao]]). **Bloco G (V1.8 produção e entrega)
+autorizado em 03/ago/2026, dividido em três checkpoints (G1/G2/G3) — G1
+(produção destravada e continuidade) feito no mesmo dia**: variáveis da IA
+(`ANTHROPIC_API_KEY`/`IA_MODELO`/`IA_EFFORT`) chegando ao container (faltavam
+no `docker-compose.yml`/`.env.example` — o chat do Bloco E não funcionava em
+produção), backup local testado (`scripts/backup.sh`/`scripts/restore.sh` —
+destino externo fica pendência declarada), `GET /health` + handler global de
+exceção (Postgres caindo hoje virava 500 cru) + `connect_timeout`/
+`statement_timeout` no Postgres, e rollback reescrito por SHA local (a deploy
+key da VM é só leitura, git tag/push não funcionaria). Decisões da Maria na
+abertura do G: manter senha única, sem HTTPS por ora, secret do Graph criado
+em 15/jul/2026 (expira 15/jul/2027 — [[graph-secret-rotacao]]). G2 (acesso/
+auditoria/logs) e G3 (testes E2E/documentação/entrega) aguardam OK.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

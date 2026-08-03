@@ -165,6 +165,22 @@ a única cópia se perder, alguém com direito no app registration precisa gerar
 Guarde uma cópia em gerenciador de senhas. Ele **expira em 12 meses**; essa é a única
 manutenção periódica do vínculo.
 
+**Validade e rotação** (registrado no Bloco G / G1, 03/ago/2026): o secret atual foi
+criado em **15/jul/2026**, expira em **15/jul/2027**. Pra rotacionar antes disso vencer:
+
+1. Entra ID → App registrations → `nuvem-ia` → Certificates & secrets → **New client
+   secret**;
+2. copiar o **Value** assim que ele aparecer (nunca o Secret ID — é o mesmo erro do
+   passo acima);
+3. na VM: `nano .env` (nunca heredoc/echo, pra não sobrar no `bash_history`) e trocar
+   só a linha `GRAPH_CLIENT_SECRET=`;
+4. `docker compose up -d` (**nunca** `restart` — mesma armadilha do passo 4.1: `restart`
+   reaproveita o ambiente antigo e a troca não pega);
+5. confirmar no painel do DataHub (Sincronizar agora) e só então apagar o secret
+   antigo no Azure.
+
+Ver também `memory/graph-secret-rotacao.md`.
+
 ```bash
 cd /home/ubuntu/nuvemIA
 nano .env          # acrescenta as 5 linhas no fim
@@ -185,6 +201,30 @@ docker compose exec nuvem-app env | grep '^GRAPH_' | cut -d= -f1
 ```
 
 Depois: `/admin` → painel DataHub → **Sincronizar agora**.
+
+---
+
+## Passo 4.2 — Variável da IA (chat do Laboratório)
+
+*Acrescentado no Bloco G / G1 (03/ago/2026): até aqui o `docker-compose.yml` não
+passava `ANTHROPIC_API_KEY`/`IA_MODELO`/`IA_EFFORT` pro container — o chat do
+Laboratório (Bloco E / V1.5) ficava sempre no ramo de erro em produção, mesmo com a
+chave no `.env`, porque o compose não usa `env_file:` (mapeia variável por variável).*
+
+```bash
+cd /home/ubuntu/nuvemIA
+nano .env          # acrescenta ANTHROPIC_API_KEY=... no fim
+chmod 600 .env
+docker compose up -d --build
+```
+
+`IA_MODELO` (default `claude-sonnet-5`) e `IA_EFFORT` (default `medium`) são
+opcionais — só entram no `.env` se quiser trocar o padrão, sem precisar mexer em
+código. Conferir sem imprimir a chave:
+
+```bash
+docker compose exec nuvem-app env | grep -E '^(ANTHROPIC_API_KEY|IA_MODELO|IA_EFFORT)' | cut -d= -f1
+```
 
 ### Se falhar, a mensagem diz a camada
 
@@ -214,8 +254,11 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Esperado em `ps`: `nuvem-db` como `healthy` e `nuvem-app` como `running`/`up`.
-Me manda a saída do `ps`.
+Esperado em `ps`: `nuvem-db` e `nuvem-app` como `healthy` (desde o Bloco G / G1, o
+`nuvem-app` também tem healthcheck — `GET /health`, que confere o banco). Nos
+primeiros ~15s depois de subir é normal aparecer `health: starting`; espere um
+pouco e rode `docker compose ps` de novo antes de desconfiar. Me manda a saída do
+`ps`.
 
 ---
 
@@ -306,11 +349,71 @@ alterado no banco. Casos:
 
 ### Rollback
 
-- Migrations futuras terão `downgrade` quando viável:
-  `docker compose exec nuvem-app alembic downgrade -1`.
-- O `downgrade` da **baseline** apaga todas as tabelas — só faz sentido em dev.
-  Na VM, o caminho de volta é sempre **restaurar o pg_dump** (Lote 4), nunca ele.
-- Conferir a versão aplicada: `docker compose exec nuvem-app alembic current`.
+*Reescrito no Bloco G / G1 (03/ago/2026): a VM usa uma deploy key **só de leitura**
+(Passo 2) — não dá pra `git tag && git push` de lá. O rollback de código é por SHA
+registrado localmente, e agora existe de fato um pg_dump pra restaurar (seção
+"Backup e restauração" abaixo); antes do G1 esse passo dependia de um dump que não
+existia.*
+
+**Antes de cada deploy** (`git pull && docker compose up -d --build`), registrar o
+SHA que está rodando e tirar um dump de segurança:
+
+```bash
+cd /home/ubuntu/nuvemIA
+echo "$(date -Iseconds) $(git rev-parse HEAD)" >> deploy-historico.log
+./scripts/backup.sh
+git pull && docker compose up -d --build
+```
+
+**Se o deploy sair ruim:**
+
+1. Código: `git checkout <SHA-anterior-do-deploy-historico.log> && docker compose up
+   -d --build`; voltar pra `main` só depois de confirmar que estabilizou.
+2. Banco, se alguma migration nova mexeu em schema: `./scripts/restore.sh
+   backups/nuvem_<carimbo-do-dump-pre-deploy>.sql.gz` (destrutivo — confirmação
+   pedida na hora). Sem mudança de schema, o `checkout` sozinho resolve.
+3. Alternativa pontual, quando existir `downgrade` na migration em questão:
+   `docker compose exec nuvem-app alembic downgrade -1`. O `downgrade` da
+   **baseline** apaga todas as tabelas — só faz sentido em dev.
+4. Conferir a versão aplicada: `docker compose exec nuvem-app alembic current`.
+
+### Backup e restauração
+
+*Criado no Bloco G / G1 (03/ago/2026). Mecanismo local, testado (backup → restauração
+→ contagem de linhas conferida). **Cópia pra fora da VM é pendência declarada** —
+decisão da Maria: pensar no destino externo depois, combinar com a TI; até lá, o
+dump fica só no disco da VM, sujeito ao mesmo risco de perda que o resto do
+`/home/ubuntu/nuvemIA` (ex.: disco corrompido leva app e backup junto).*
+
+`scripts/backup.sh`: `pg_dump` do Postgres (via `docker compose exec`) + `tar` da
+pasta de uploads retidos, ambos comprimidos e carimbados com data/hora em
+`backups/` (fora do git — `.gitignore`); apaga backups com mais de
+`RETENCAO_DIAS` (padrão 14, variável de ambiente do próprio script).
+
+`scripts/restore.sh <arquivo.sql.gz>`: **destrutivo** — zera o schema `public`
+(mesmo padrão da suíte de testes: `DROP SCHEMA ... CASCADE` + `CREATE SCHEMA`) e
+restaura o dump informado. Pede confirmação explícita (digitar `restaurar`) antes
+de rodar.
+
+**Rodar diariamente na VM** (crontab do usuário que roda o compose):
+
+```bash
+crontab -e
+# adicionar a linha:
+0 3 * * * cd /home/ubuntu/nuvemIA && mkdir -p backups && ./scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+Restaurar (ex.: depois de um deploy ruim, ou pra testar em outro ambiente):
+
+```bash
+cd /home/ubuntu/nuvemIA
+ls backups/                       # escolher o dump certo pelo carimbo
+./scripts/restore.sh backups/nuvem_AAAAMMDD_HHMMSS.sql.gz
+```
+
+Os xlsx retidos do upload manual ficam no `.tar.gz` irmão do mesmo carimbo
+(`backups/uploads_AAAAMMDD_HHMMSS.tar.gz`); restaurar é descomprimir por cima de
+`UPLOADS_HOST_PATH` manualmente (não é automático — são arquivos, não banco).
 
 ### Testes (desenvolvimento, WSL)
 
@@ -336,6 +439,8 @@ docker compose restart nuvem-app      # reiniciar só o app
 docker compose down                   # derruba os containers (o volume do banco fica)
 docker compose down -v                # derruba E apaga o banco — CUIDADO, perde dados
 git pull && docker compose up -d --build   # atualizar após novo commit
+curl localhost:8002/health            # sonda rapida (Bloco G / G1): 200 = banco ok
+./scripts/backup.sh                   # dump avulso, fora do horario do cron
 ```
 
 O volume `nuvem_db_data` guarda o banco entre `up`/`down`. `down -v` apaga tudo — só
