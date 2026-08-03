@@ -11,9 +11,27 @@ no cadastro oficial — corrigido pra 001008. Cinco filiais têm sigla operacion
 diferente da sigla do cadastro oficial, mesma empresa (CNPJ e código batendo): CVDI/CVD,
 MAQ/MAQII, SSA/SSAI, RMSP/RMSPI, POA/POAI — a sigla operacional fica como `sigla` do
 armazém (é como o projeto já fala delas), a do cadastro vira apelido extra. RPIII, MRS
-e CWBI não aparecem no cadastro de filiais ativas: MRS está sem volumetria desde
-02/2023 (marcada inativa); RPIII e CWBI nunca tiveram volumetria (parecem
-pré-operacionais, mantidas ativas).
+e CWBI não aparecem no cadastro de filiais ativas (MRS está sem volumetria desde
+02/2023, marcada inativa).
+
+Conferência de 03/ago/2026 (Maria, contra o cadastro oficial), corrigindo o que ficou
+impreciso no Lote 7:
+
+- **CWBI é pré-operacional de verdade** e passou a `ativo=False`: não está no cadastro
+  de ativas, não tem CNPJ e não tem volumetria (`fato.csv`). O único vestígio dela é o
+  cadastro de capacidade do DW (`camaras_por_filial.csv`: filial 74, uma câmara de
+  congelado). O apelido `001995` foi REMOVIDO — não é código Protheus válido. Ele vinha
+  de uma linha pela metade da tabela de de-para do DW (`filiais.csv`, registro 2940 de
+  20/11/2020: `ERP PROTHEUS FILIAL = 001995` com `WMS JDA WH ID` em branco, cluster
+  "New Stores"), e o pareamento com CWBI foi inferência do Lote 7, não dado da fonte.
+- **RPIII não é pré-operacional** — é filial real desativada: código `001006`, CNPJ
+  02.060.862/0006-40, Ribeirão Preto/SP, situação cadastral INATIVO. O DW tem o de-para
+  completo dela (`001006 ↔ RPIII`, segmento SEMENTES) e a exclui do KPI de ocupação.
+  Passou a `ativo=False` e ganhou o CNPJ como apelido (autorizado pela Maria em
+  03/ago/2026). Consequência declarada: ela sai de toda tela que filtra por armazém
+  ativo — é o que "inativa" significa, e o histórico dela continua consultável.
+- **CWBIV faltava no cadastro**: `001034`, CNPJ 02.060.862/0034-01, São José dos
+  Pinhais/PR, ATIVA no cadastro oficial com situação operacional "SEM OPERAÇÃO".
 
 ICE (Chile) fica fora por ora — não existe de-para ERP×WMS pra elas.
 
@@ -38,8 +56,10 @@ ARMAZENS = [
      "apelidos": ["RPI", "001003", "02060862000305"]},
     {"sigla": "RPII", "nome": "Ribeirão Preto/SP", "ativo": True,
      "apelidos": ["RPII", "SFS1", "001005", "02060862000569"]},
-    {"sigla": "RPIII", "nome": "RPIII", "ativo": True,
-     "apelidos": ["RPIII", "001006"]},
+    # filial real DESATIVADA (nao pre-operacional, como o Lote 7 supos) --
+    # conferida no cadastro oficial em 03/ago/2026
+    {"sigla": "RPIII", "nome": "Ribeirão Preto/SP", "ativo": False,
+     "apelidos": ["RPIII", "001006", "02060862000640"]},
     {"sigla": "JAC", "nome": "Jacareí/SP", "ativo": True,
      "apelidos": ["JAC", "001008", "02060862000801"]},
     {"sigla": "ARP", "nome": "Arapongas/PR", "ativo": True,
@@ -76,6 +96,9 @@ ARMAZENS = [
      "apelidos": ["BEL", "001026", "02060862002693"]},
     {"sigla": "CWBIII", "nome": "São José dos Pinhais/PR", "ativo": True,
      "apelidos": ["CWBIII", "001029", "02060862002936"]},
+    # conferida em 03/ago/2026: estava no cadastro oficial de ativas e faltava aqui
+    {"sigla": "CWBIV", "nome": "São José dos Pinhais/PR", "ativo": True,
+     "apelidos": ["CWBIV", "001034", "02060862003401"]},
     {"sigla": "RMSPII", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPII", "008001", "06975242000187", "45"]},
     {"sigla": "RMSPIII", "nome": "Barueri/SP", "ativo": False,
@@ -92,8 +115,10 @@ ARMAZENS = [
      "apelidos": ["GYN", "010003", "01456021000340"]},
     {"sigla": "UDI", "nome": "Uberlândia/MG", "ativo": True,
      "apelidos": ["UDI", "010004", "01456021000421"]},
-    {"sigla": "CWBI", "nome": "CWBI", "ativo": True,
-     "apelidos": ["CWBI", "001995"]},
+    # pre-operacional: sem CNPJ, sem volumetria e sem codigo Protheus valido
+    # (o `001995` saiu em 03/ago/2026 -- ver docstring)
+    {"sigla": "CWBI", "nome": "CWBI", "ativo": False,
+     "apelidos": ["CWBI"]},
     # Lote 8 (22/jul/2026): "30"/"45"/"46" acima são o FK_FILIAL numérico do DW usado
     # por ocupacaoComercial.csv e ocupacaoManual.csv (STG_OCUPACAO_COM_V03/
     # STG_OCUPACAO_MANUAL_V03) -- essas duas fontes não usam a sigla WMS como o fato e

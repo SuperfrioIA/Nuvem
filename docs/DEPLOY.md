@@ -232,7 +232,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8002/admin
 curl -s -c /tmp/nuvem.cookie -X POST http://localhost:8002/api/admin/login \
   -F "senha=SUA_ADMIN_PASSWORD" -o /dev/null -w "%{http_code}\n"
 
-# 4) armazéns ativos (espera 32 — 34 semeados, MRS e RMSPIV inativas não aparecem)
+# 4) armazéns ativos (espera 31 — 35 semeados; MRS, RMSPIII, CWBI e RPIII inativas)
 curl -s -b /tmp/nuvem.cookie http://localhost:8002/api/admin/armazens \
   | grep -o '"sigla"' | wc -l
 ```
@@ -241,7 +241,13 @@ Critério de sucesso desta subida:
 - logs sem `connection refused`/erro de Postgres;
 - `/admin` = **200**;
 - login = **200**;
-- armazéns ativos = **32** (atualizado no Lote 7.1 — RMSPV entrou, RMSPIV é só cadastro).
+- armazéns ativos = **31** (35 semeados; inativas: MRS, RMSPIII, CWBI e RPIII). A conta
+  passou por duas revisões: no Lote 7.1 a RMSPV entrou; em 03/ago/2026 a CWBIV entrou e
+  CWBI e RPIII saíram dos ativos (`memory/filiais-catering-poc.md`). **A contagem não
+  detecta o `ativo` trocado entre RMSPIII e RMSPIV** — dá o mesmo número nos dois casos;
+  pra isso, consultar as duas siglas:
+  `SELECT sigla, ativo FROM armazens WHERE sigla IN ('RMSPIII','RMSPIV');`
+  (esperado `f` e `t`).
 
 Me manda as 4 saídas. Se as 4 baterem, o app está **rodando e validado na VM**.
 

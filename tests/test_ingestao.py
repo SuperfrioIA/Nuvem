@@ -185,9 +185,42 @@ def test_seeds_idempotentes(banco_migrado):
         for tabela in antes
     }
     assert antes == depois
-    # sanidade do seed: 34 armazens (32 ativos + MRS e RMSPIII inativas)
-    assert antes["armazens"] == 34
-    assert consultar("SELECT count(*) FROM armazens WHERE ativo")[0][0] == 32
+    # sanidade do seed: 35 armazens, 31 ativos -- inativas sao MRS, RMSPIII,
+    # CWBI e RPIII (as duas ultimas pela conferencia de 03/ago/2026, junto da
+    # entrada da CWBIV, que levou o total de 34 pra 35)
+    assert antes["armazens"] == 35
+    assert consultar("SELECT count(*) FROM armazens WHERE ativo")[0][0] == 31
+
+
+def _apelidos(sigla: str) -> list[tuple]:
+    return consultar(
+        """
+        SELECT d.armazem_na_fonte
+        FROM depara_armazem d JOIN armazens a ON a.id = d.armazem_id
+        WHERE a.sigla = %s
+        ORDER BY 1
+        """,
+        (sigla,),
+    )
+
+
+def test_cadastro_filiais_conferido_em_03ago2026(banco_migrado):
+    """Os tres achados da conferencia contra o cadastro oficial: CWBI
+    pre-operacional (inativa, sem o `001995` -- que nao e codigo Protheus
+    valido), RPIII filial real DESATIVADA (inativa, com CNPJ) e CWBIV
+    cadastrada."""
+    assert consultar("SELECT ativo FROM armazens WHERE sigla = 'CWBI'") == [(False,)]
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '001995'"
+    ) == [(0,)]
+
+    assert consultar("SELECT ativo, nome FROM armazens WHERE sigla = 'RPIII'") == [
+        (False, "Ribeirão Preto/SP")
+    ]
+    assert _apelidos("RPIII") == [("001006",), ("02060862000640",), ("RPIII",)]
+
+    assert consultar("SELECT ativo FROM armazens WHERE sigla = 'CWBIV'") == [(True,)]
+    assert _apelidos("CWBIV") == [("001034",), ("02060862003401",), ("CWBIV",)]
 
 
 def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):

@@ -49,6 +49,33 @@ não houve coluna nova — mudou a semântica e o dado. Só essas três estão s
 foi coberta nesta confirmação — de-para dela continua em aberto. Decisão da Maria em
 02/ago/2026: **fica pendente por enquanto**, exibindo só o código `002`.
 
+## Conferência do cadastro de Curitiba/Ribeirão (03/ago/2026)
+
+A Maria conferiu contra o cadastro oficial e três coisas do Lote 7 estavam erradas:
+
+| Filial | Achado | O que foi feito |
+|---|---|---|
+| `CWBI` | pré-operacional de verdade: sem CNPJ, sem volumetria, fora do cadastro de ativas. Só existe no cadastro de **capacidade** do DW (filial 74, uma câmara de congelado) | `ativo=False`; apelido `001995` removido |
+| `001995` | **não é código Protheus válido.** Vem de uma linha pela metade da tabela de de-para do DW (`filiais.csv`, registro 2940 de 20/11/2020: `ERP PROTHEUS FILIAL=001995` com `WMS JDA WH ID` em branco, cluster "New Stores"). O pareamento com `CWBI` foi inferência do Lote 7, não dado da fonte | removido do seed e do banco |
+| `CWBIV` | faltava no cadastro do projeto: `001034`, CNPJ 02.060.862/0034-01, São José dos Pinhais/PR, ATIVA (situação operacional "SEM OPERAÇÃO") | cadastrada, ativa |
+| `RPIII` | **não é pré-operacional** como o Lote 7 supôs: filial real **desativada** — `001006`, CNPJ 02.060.862/0006-40, Ribeirão Preto/SP, situação cadastral INATIVO. O DW tem o de-para completo dela (`001006 ↔ RPIII`, segmento SEMENTES) e a exclui do KPI de ocupação | `ativo=False`, CNPJ como apelido, `nome` corrigido (era o placeholder "RPIII") |
+
+Como o seed é insert-only (`ON CONFLICT DO NOTHING`, pra não sobrescrever ajuste manual
+do admin), corrigir o seed não alcança banco que já tem as linhas — por isso a
+**migration `0009_cadastro_filiais`** faz o `UPDATE`/`DELETE`/`INSERT`. Foi a lição do
+`ativo` das filiais RMSPIII/RMSPIV, que ficou como passo manual pendente na VM de 30/jul
+a 03/ago: migration não esquece. A `CWBIV` é exceção proposital — sigla nova, então o
+próprio seed a insere no startup; duplicar isso na migration criaria duas fontes de
+verdade pro mesmo cadastro.
+
+Total passou de 34 para **35 armazéns**, e os ativos de 32 para **31** (inativas: MRS,
+RMSPIII, CWBI e RPIII). Reflete em `docs/DEPLOY.md` (passo 6) e no teste de sanidade do
+seed em `tests/test_ingestao.py`.
+
+Consequência declarada de marcar CWBI e RPIII inativas: elas saem de toda tela que
+filtra por armazém ativo — é o que "inativa" significa. O histórico delas continua no
+banco e consultável.
+
 **Why:** o de-para de filial estava bloqueando qualquer exibição amigável (nome de
 armazém em vez de código numérico) e tinha uma inconsistência não resolvida sobre se
 `001` era `RMSP` ou `RMSPII`. O `ativo` errado também distorcia qualquer tela que

@@ -461,6 +461,89 @@ def test_migracao_0008_chave_do_processamento_vira_item_id(banco_vazio):
     assert constraint == [("UNIQUE (item_id)",)]
 
 
+def test_migracao_0009_corrige_cadastro_de_banco_existente(banco_vazio):
+    """A 0009 e migration de DADO, e existe justamente pra alcancar banco que ja
+    tem as linhas: o seed e insert-only, entao corrigir o seed nao mexeria neles.
+    Simula o estado antigo (CWBI ativa com o apelido `001995`; RPIII ativa, com
+    nome placeholder e sem CNPJ) e prova que o upgrade corrige os dois -- e que
+    o downgrade os devolve."""
+    from alembic import command
+
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0008_identidade_datahub")
+
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('upload_manual', 'Upload manual');
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('CWBI', 'CWBI', true);
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('RPIII', 'RPIII', true);
+        """
+    )
+    conector_id = consultar("SELECT id FROM conectores")[0][0]
+    armazem_id = consultar("SELECT id FROM armazens WHERE sigla = 'CWBI'")[0][0]
+    _executar(
+        "INSERT INTO depara_armazem (conector_id, armazem_na_fonte, armazem_id) "
+        f"VALUES ({conector_id}, '001995', {armazem_id})"
+    )
+
+    command.upgrade(migracao._config(), "head")
+
+    assert consultar(
+        "SELECT ativo FROM armazens WHERE sigla IN ('CWBI','RPIII') ORDER BY sigla"
+    ) == [(False,), (False,)]
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '001995'"
+    ) == [(0,)]
+    # RPIII ganhou o CNPJ como apelido e perdeu o nome placeholder
+    assert consultar("SELECT nome FROM armazens WHERE sigla = 'RPIII'") == [
+        ("Ribeirão Preto/SP",)
+    ]
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '02060862000640'"
+    ) == [(1,)]
+
+    command.downgrade(migracao._config(), "0008_identidade_datahub")
+
+    assert consultar(
+        "SELECT ativo FROM armazens WHERE sigla IN ('CWBI','RPIII') ORDER BY sigla"
+    ) == [(True,), (True,)]
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '001995'"
+    ) == [(1,)]
+    assert consultar("SELECT nome FROM armazens WHERE sigla = 'RPIII'") == [("RPIII",)]
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '02060862000640'"
+    ) == [(0,)]
+
+
+def test_migracao_0009_nao_toca_depara_de_outro_armazem(banco_vazio):
+    """Escopo estreito: um de-para de `001995` apontando pra OUTRO armazem seria
+    cadastro de alguem, nao o residuo do Lote 7 -- a migration nao apaga."""
+    from alembic import command
+
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0008_identidade_datahub")
+
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('upload_manual', 'Upload manual');
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('Outro', 'OUT', true);
+        """
+    )
+    conector_id = consultar("SELECT id FROM conectores")[0][0]
+    armazem_id = consultar("SELECT id FROM armazens WHERE sigla = 'OUT'")[0][0]
+    _executar(
+        "INSERT INTO depara_armazem (conector_id, armazem_na_fonte, armazem_id) "
+        f"VALUES ({conector_id}, '001995', {armazem_id})"
+    )
+
+    command.upgrade(migracao._config(), "head")
+
+    assert consultar(
+        "SELECT count(*) FROM depara_armazem WHERE armazem_na_fonte = '001995'"
+    ) == [(1,)]
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""
