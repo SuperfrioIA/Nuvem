@@ -1,4 +1,5 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–E feitos (chat + aprovação de insight com Anthropic Claude no E), F–G aguardam OK
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–F feitos (cockpit executivo em F), G aguarda OK
+- [Integração do cockpit com o Hub SuperFrio](memory/cockpit-hub-integracao.md) — link direto (sem iframe), filtros na URL, duas telas = dois cards no Hub; SSO pendente dos dois lados
 - **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, DataHub como fonte permanente (29/jul), decisões fixadas da V1 e do Bloco A (31/jul)
 - Escopo e status por lote da POC (histórico, P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — POC encerrada em 30/jul/2026
@@ -12,5 +13,5 @@
 - [Concentração da SAPORE na filial 016](memory/concentracao-sapore-016.md) — ~81% do valor/peso/volume, KPI já conferido em 30/jul; devolução entra no card de valor
 - [Junções entre famílias do DataHub](memory/juncoes-familias-datahub.md) — `GSM`=`Número` na saída (100%), `Pedido`+`NF` nas entregas (100%); `DADOS_GERAIS` `_f1`/`_f2` são cópias — ler só o `_f1`
 - [Filiais do catering na POC](memory/filiais-catering-poc.md) — 001/015/016 = RMSPII/III/IV oficiais; `ativo` corrigido no seed local (015 inativa, 016 ativa) — falta aplicar na VM; filial 002 ainda pendente
-- Gráfico de vários meses / ano todo: a trava caiu no Bloco C (V1.3, 31/jul/2026) — série do DataHub persistida em `medidas` (grão competência×filial×cliente) e consultável em `GET /datahub/serie`; falta só a tela (cockpit, V1.7); 7 competências publicadas (jan–jul/2026)
+- Gráfico de vários meses / ano todo: a trava caiu no Bloco C (V1.3, 31/jul/2026) — série do DataHub persistida em `medidas` (grão competência×filial×cliente) e consultável em `GET /datahub/serie`; a tela chegou no Bloco F (V1.7, `/cockpit`, 03/ago/2026)
 - [PPTX da marca SuperFrio](memory/pptx-marca-superfrio.md) — LAYOUT_WIDE, extensão negativa quebra o arquivo, asset do logo precisa de recorte, conferir por export COM

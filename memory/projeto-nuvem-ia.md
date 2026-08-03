@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco E (03/ago/2026) integrou Anthropic Claude no chat do Laboratório
+description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco E integrou Anthropic Claude no chat do Laboratório, Bloco F entregou o cockpit executivo (03/ago/2026)
 metadata:
   type: project
 ---
@@ -61,8 +61,18 @@ Verificação independente achou e corrigiu 1 vazamento crítico (nome do
 filtro de cliente ecoado sem máscara), 2 altos (erro da IA na aprovação
 virando 500; colisão de código de filial entre unidades no contexto) e 1
 médio (resposta truncada tratada como sucesso) antes do commit — detalhes em
-`docs/V1_PLANO.md`. **Nenhum bloco seguinte autorizado** — Bloco F (cockpit
-executivo) aguarda OK.
+`docs/V1_PLANO.md`. **Bloco F (V1.7 cockpit executivo) feito em 03/ago/2026**:
+duas telas novas — `/cockpit` (visão de diretoria: filtros globais de
+período/filial/cliente na URL, cards, série histórica e variação mensal com
+Apache ECharts, comparação/ranking de filiais e clientes com participação,
+qualidade agregada) e `/linhagem` (grão mínimo real do sistema: célula →
+recebida → execução → arquivo de origem no SharePoint — não desce à linha
+crua da planilha, que não é persistida). Sem migration nova (lê tabelas que
+já existiam desde o Bloco C). Decisão de portabilidade fechada com o time do
+Hub SuperFrio antes do lote: link direto (sem iframe — sem auth
+compartilhada), filtros na URL, duas telas = dois cards separados no Hub
+(detalhes em [[cockpit-hub-integracao]]). **Nenhum bloco seguinte
+autorizado** — Bloco G (produção e entrega) aguarda OK.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

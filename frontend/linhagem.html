@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuvem IA — Linhagem</title>
+<link rel="icon" href="/frontend/logo-superfrio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --brand-azul-institucional: #071A3A;
+  --brand-azul-corporativo:   #0A2A5E;
+  --brand-azul-principal:     #1E6FD9;
+  --brand-azul-conexao:       #3FA9F5;
+  --brand-amarelo:            #FFC400;
+  --brand-cinza-claro:        #C7D2E3;
+  --font-primary: 'Montserrat', sans-serif;
+  --radius-sm: 6px; --radius-md: 12px; --radius-lg: 20px; --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
+  --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+  --card: #FFFFFF; --card-2: #F0F4FA; --card-3: #F7F9FC;
+  --texto: #071A3A; --muted: #5A6B85;
+  --line: rgba(30, 111, 217, 0.16); --line-strong: rgba(30, 111, 217, 0.30);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #FBFCFE; color: var(--texto); font-family: var(--font-primary); -webkit-font-smoothing: antialiased; }
+.oculto { display: none !important; }
+
+#login { max-width: 320px; margin: 100px auto; background: var(--card); padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
+#login img { height: 34px; margin-bottom: 18px; }
+#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--brand-azul-institucional); }
+#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; }
+#login button { width: 100%; padding: 10px; background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); font-weight: 700; cursor: pointer; font-family: var(--font-primary); }
+#loginErro { color: #b3261e; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+.section { padding: 32px 0 64px; width: min(1000px, calc(100% - 40px)); margin-inline: auto; }
+.appHeader { display: flex; justify-content: flex-end; padding: 16px min(90px, calc((100% - 1000px)/2 + 20px)) 0; }
+.appHeader button { background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional); border-radius: var(--radius-pill); padding: 7px 16px; cursor: pointer; font-family: var(--font-primary); font-weight: 600; font-size: 13px; }
+
+.brandBar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brandLogo { height: 40px; width: auto; display: block; }
+.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--brand-cinza-claro), transparent); }
+.eyebrow { display: inline-block; color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08); border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px; font-size: 0.82rem; font-weight: 700; }
+h1.titulo { font-size: clamp(1.5rem, 3vw, 2.1rem); color: var(--brand-azul-institucional); letter-spacing: -0.02em; line-height: 1.15; margin: 14px 0 10px; font-weight: 700; }
+p.intro { max-width: 680px; color: var(--muted); font-size: 0.95rem; line-height: 1.5; margin: 0; }
+
+.msg { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 14px; }
+.msg-erro { background: #fbe1df; color: #b3261e; }
+.msg-info { background: var(--card-3); color: var(--muted); }
+
+.filtros { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 22px 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg); padding: 16px 20px; box-shadow: var(--shadow-sm); }
+.filtroCampo { display: flex; flex-direction: column; gap: 5px; }
+.filtroCampo label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--brand-azul-principal); }
+.filtroCampo input, .filtroCampo select { font-family: var(--font-primary); font-size: 0.86rem; font-weight: 600; color: var(--brand-azul-institucional); background: var(--card-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 7px 10px; }
+.btnBuscar { background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); padding: 9px 20px; cursor: pointer; font-family: var(--font-primary); font-weight: 700; font-size: 0.84rem; }
+
+.subLabel { color: var(--muted); font-size: 12px; margin: 22px 0 6px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.tblWrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-md); }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+.tbl th { background: var(--brand-azul-institucional); color: #fff; font-weight: 700; text-align: left; padding: 9px 12px; white-space: nowrap; font-size: 0.74rem; }
+.tbl td { padding: 8px 12px; border-top: 1px solid rgba(199,210,227,.5); color: var(--texto); }
+.tbl tbody tr:nth-child(even) { background: var(--card-3); }
+.tbl td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tblEmpty { text-align: center; color: var(--muted); padding: 18px 12px !important; font-style: italic; }
+.btnOrigem { background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-principal); border-radius: var(--radius-pill); padding: 5px 12px; cursor: pointer; font-family: var(--font-primary); font-weight: 600; font-size: 0.76rem; }
+.badge { display: inline-block; padding: 3px 9px; border-radius: var(--radius-pill); font-size: 0.7rem; font-weight: 700; }
+.badge.sim { background: rgba(30,111,217,0.12); color: var(--brand-azul-principal); }
+.badge.nao { background: rgba(179,38,30,0.10); color: #b3261e; }
+
+.origemCard { margin-top: 18px; border-radius: var(--radius-lg); border: 1px solid var(--line); background: var(--card); box-shadow: var(--shadow-sm); padding: 20px 24px; }
+.origemCard h3 { margin: 0 0 12px; font-size: 1rem; color: var(--brand-azul-institucional); }
+.origemGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+.origemBloco { background: var(--card-2); border-radius: var(--radius-md); padding: 12px 14px; font-size: 0.82rem; }
+.origemBloco strong { display: block; color: var(--brand-azul-institucional); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+.origemBloco a { color: var(--brand-azul-principal); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<div id="login">
+  <img src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+  <h2>Linhagem</h2>
+  <input type="password" id="senhaInput" placeholder="Senha" aria-label="Senha">
+  <button id="btnEntrar">Entrar</button>
+  <div id="loginErro"></div>
+</div>
+
+<div id="app" class="oculto">
+  <div class="appHeader"><button id="btnSair">Sair</button></div>
+
+  <main class="section" aria-labelledby="linhagem-titulo">
+    <div class="brandBar">
+      <img class="brandLogo" src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+      <hr class="brandRule" aria-hidden="true">
+    </div>
+    <span class="eyebrow">Grão mínimo · auditoria</span>
+    <h1 class="titulo" id="linhagem-titulo">Linhagem</h1>
+    <p class="intro">De onde vem cada célula: qual arquivo, qual execução de processamento e quando. Grão mínimo do que o sistema persiste — não desce à linha crua da planilha, que não é guardada individualmente.</p>
+
+    <div id="linhagemMsg"></div>
+
+    <form class="filtros" id="formFiltros">
+      <div class="filtroCampo">
+        <label for="fMetrica">Métrica</label>
+        <select id="fMetrica">
+          <option value="peso_bruto_movimentado">Peso bruto movimentado</option>
+          <option value="valor_mercadoria_movimentada">Valor da mercadoria movimentada</option>
+          <option value="registros_movimentacao">Registros de movimentação</option>
+        </select>
+      </div>
+      <div class="filtroCampo">
+        <label for="fCompetencia">Competência</label>
+        <input type="month" id="fCompetencia" required>
+      </div>
+      <div class="filtroCampo">
+        <label for="fFilial">Filial</label>
+        <select id="fFilial"><option value="">Todas</option></select>
+      </div>
+      <div class="filtroCampo">
+        <label for="fCliente">Cliente</label>
+        <select id="fCliente"><option value="">Todos</option></select>
+      </div>
+      <button type="submit" class="btnBuscar">Buscar células</button>
+    </form>
+
+    <p class="subLabel">Células encontradas</p>
+    <div class="tblWrap">
+      <table class="tbl" id="tabelaCelulas">
+        <thead><tr><th>Filial</th><th>Cliente</th><th class="num">Valor</th><th>Origem</th><th></th></tr></thead>
+        <tbody><tr><td colspan="5" class="tblEmpty">Escolha os filtros e clique em "Buscar células".</td></tr></tbody>
+      </table>
+    </div>
+
+    <div id="origemCard"></div>
+  </main>
+</div>
+
+<script src="/frontend/comum.js"></script>
+<script>
+iniciarLoginPadrao(carregarLinhagem);
+
+let _metricaAtual = null;
+let _celulasCache = [];
+
+function lerFiltrosDaUrl() {
+  const p = new URLSearchParams(location.search);
+  return {
+    metrica: p.get("metrica") || "peso_bruto_movimentado",
+    competencia: p.get("competencia") || "",
+    filial: p.get("filial") || "",
+    cliente: p.get("cliente") || "",
+  };
+}
+
+async function carregarLinhagem() {
+  const msgDiv = document.getElementById("linhagemMsg");
+  msgDiv.innerHTML = "";
+  try {
+    const [filiais, clientes] = await Promise.all([api("/armazens"), api("/clientes")]);
+    preencherSelect("fFilial", filiais.map(a => ({ value: a.sigla, texto: a.nome })), "Todas");
+    preencherSelect("fCliente", clientes.map(c => ({ value: c.nk_erp, texto: c.nome })), "Todos");
+
+    const iniciais = lerFiltrosDaUrl();
+    document.getElementById("fMetrica").value = iniciais.metrica;
+    document.getElementById("fCompetencia").value = iniciais.competencia;
+    document.getElementById("fFilial").value = iniciais.filial;
+    document.getElementById("fCliente").value = iniciais.cliente;
+
+    document.getElementById("formFiltros").addEventListener("submit", ev => {
+      ev.preventDefault();
+      buscarCelulas();
+    });
+
+    if (iniciais.competencia) await buscarCelulas();
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function preencherSelect(id, opcoes, rotuloTodos) {
+  const sel = document.getElementById(id);
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">${escaparHtml(rotuloTodos)}</option>` +
+    opcoes.map(o => `<option value="${escaparHtml(o.value)}">${escaparHtml(o.texto)}</option>`).join("");
+  sel.value = atual;
+}
+
+function filtrosAtuais() {
+  return {
+    metrica: document.getElementById("fMetrica").value,
+    competencia: document.getElementById("fCompetencia").value,
+    filial: document.getElementById("fFilial").value,
+    cliente: document.getElementById("fCliente").value,
+  };
+}
+
+function aplicarFiltrosNaUrl(f) {
+  const p = new URLSearchParams();
+  Object.entries(f).forEach(([k, v]) => { if (v) p.set(k, v); });
+  const query = p.toString();
+  history.replaceState(null, "", query ? `?${query}` : location.pathname);
+}
+
+async function buscarCelulas() {
+  const msgDiv = document.getElementById("linhagemMsg");
+  msgDiv.innerHTML = "";
+  document.getElementById("origemCard").innerHTML = "";
+  const f = filtrosAtuais();
+  if (!f.competencia) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">Escolha uma competência.</div>`;
+    return;
+  }
+  aplicarFiltrosNaUrl(f);
+  _metricaAtual = f.metrica;
+
+  const p = new URLSearchParams({ metrica: f.metrica, competencia: f.competencia });
+  if (f.filial) p.set("filial", f.filial);
+  if (f.cliente) p.set("cliente", f.cliente);
+
+  try {
+    const resultado = await api(`/linhagem/celulas?${p.toString()}`);
+    _celulasCache = resultado.celulas || [];
+    renderizarCelulas(resultado);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+    _celulasCache = [];
+    renderizarCelulas({ celulas: [] });
+  }
+}
+
+function renderizarCelulas(resultado) {
+  const linhas = resultado.celulas || [];
+  const tbody = document.querySelector("#tabelaCelulas tbody");
+  tbody.innerHTML = linhas.map((c, i) => `
+    <tr>
+      <td>${escaparHtml(c.filial)}</td>
+      <td>${escaparHtml(c.cliente)}</td>
+      <td class="num">${escaparHtml(formatarNumeroKpi(c.valor, ""))}</td>
+      <td><span class="badge ${c.tem_origem_rastreavel ? "sim" : "nao"}">${c.tem_origem_rastreavel ? "rastreável" : "sem origem"}</span></td>
+      <td>${c.tem_origem_rastreavel ? `<button type="button" class="btnOrigem" data-idx="${i}">Ver origem</button>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="5" class="tblEmpty">Nenhuma célula encontrada para este filtro.</td></tr>`;
+
+  tbody.querySelectorAll(".btnOrigem").forEach(btn =>
+    btn.addEventListener("click", () => verOrigem(linhas[Number(btn.dataset.idx)].medida_id)));
+}
+
+async function verOrigem(medidaId) {
+  const card = document.getElementById("origemCard");
+  card.innerHTML = `<div class="msg">Carregando origem...</div>`;
+  try {
+    const origem = await api(`/linhagem/celulas/${medidaId}`);
+    renderizarOrigem(origem);
+  } catch (e) {
+    card.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function formatarData(iso) {
+  return iso ? new Date(iso).toLocaleString("pt-BR") : "—";
+}
+
+function renderizarOrigem(origem) {
+  const card = document.getElementById("origemCard");
+  if (!origem.rastreavel) {
+    card.innerHTML = `<div class="origemCard"><div class="msg msg-info">${escaparHtml(origem.limitacao)}</div></div>`;
+    return;
+  }
+  const r = origem.recebida, e = origem.execucao, a = origem.arquivo;
+  const linkSeguro = a && typeof a.web_url === "string" && /^https?:\/\//i.test(a.web_url);
+  card.innerHTML = `
+    <div class="origemCard">
+      <h3>Cadeia de origem</h3>
+      <div class="origemGrid">
+        <div class="origemBloco">
+          <strong>Arquivo</strong>
+          ${a ? (linkSeguro
+            ? `<a href="${escaparHtml(a.web_url)}" target="_blank" rel="noopener">${escaparHtml(r.arquivo)}</a>`
+            : escaparHtml(r.arquivo)) : escaparHtml(r.arquivo)}
+          ${a && a.filial_sigla ? `<div>Filial: ${escaparHtml(a.filial_sigla)}</div>` : ""}
+          <div>Caminho: ${escaparHtml((a && a.caminho) || e.caminho || "—")}</div>
+        </div>
+        <div class="origemBloco">
+          <strong>Valor recebido</strong>
+          ${escaparHtml(formatarNumeroKpi(r.valor, r.unidade))}
+          <div>Gravado em ${escaparHtml(formatarData(r.criado_em))}</div>
+        </div>
+        <div class="origemBloco">
+          <strong>Execução de processamento</strong>
+          Status: ${escaparHtml(e.status)}
+          <div>Iniciada em ${escaparHtml(formatarData(e.iniciado_em))}</div>
+          <div>Finalizada em ${escaparHtml(formatarData(e.finalizado_em))}</div>
+        </div>
+      </div>
+    </div>`;
+}
+</script>
+</body>
+</html>

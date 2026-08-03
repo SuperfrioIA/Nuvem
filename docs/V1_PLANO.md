@@ -67,7 +67,7 @@ semântico).
 | **D** | V1.4 Laboratório: seleção e perfil | **feito** (02/ago/2026) |
 | **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
 | **E** | V1.5 Laboratório: chat + V1.6 Insight aprovado | **feito** (03/ago/2026) |
-| F | V1.7 Cockpit executivo | a fazer — não autorizado |
+| **F** | V1.7 Cockpit executivo | **feito** (03/ago/2026) |
 | G | V1.8 Produção e entrega | a fazer — não autorizado |
 
 ## Estado do deploy (03/ago/2026)
@@ -791,7 +791,128 @@ endpoints e 14 da aprovação/descarte/endpoints; nenhum teste anterior removido
 ou enfraquecido). Testes sempre mockados — nenhuma chamada de rede real à
 Anthropic na suíte.
 
+## Bloco F — V1.7 Cockpit executivo (feito, 03/ago/2026)
+
+Autorizado pela Maria em 03/ago/2026 ("pode seguir então"), depois de um
+escopo discutido em texto com quatro decisões dela: **cliente pode ser
+exposto** nas comparações/ranking ("Sem cliente identificado" como categoria
+própria, nunca escondido); **linhagem completa em tela separada**, pensando
+em duas telas — uma de diretoria (cockpit) e outra até o grão mínimo
+(linhagem); **espaço reservado pra KPIs do Laboratório**, sem nenhum ativo
+ainda (nenhum insight foi aprovado); e **biblioteca de gráficos Apache
+ECharts**, por ser madura (sem risco de beta) e mais flexível que uma lib
+básica — inclusive com leitura futura de que sua configuração declarativa
+(JSON) combina bem com o fato de o projeto já ter uma camada de IA (sem
+mudar a regra de que a IA nunca publica direto no cockpit).
+
+**Decisão de portabilidade pro Hub SuperFrio** (fechada em conversa com o time
+do Hub antes do lote): o Hub vai **linkar direto** as duas telas (não
+embutir via iframe — o Hub não tem autenticação compartilhada com o
+nuvem-ia, e o sandbox de iframe dele pressupõe apps no mesmo repositório);
+os filtros globais viram **query string** (`?de=&ate=&filial=&cliente=`),
+permitindo o Hub linkar direto pra uma visão filtrada; as duas telas
+(executiva e linhagem) ficam em **rotas top-level independentes** (`/cockpit`
+e `/linhagem`, não uma sub-rota da outra) porque o modelo de permissão do Hub
+só concede acesso por app inteiro — cada tela vira um card/app separado, com
+possibilidade de role distinta quando o Hub tratar isso. O modo `embed` foi
+desenhado e descartado do escopo imediato (fica pronto pro dia em que houver
+autenticação compartilhada). Autenticação/SSO entre Hub e nuvem-ia fica
+pendência declarada dos dois lados — não é bloqueante pra link direto.
+
+**O que o lote entregou:**
+
+- **Sem migration nova**: o cockpit lê só tabelas que já existiam (`medidas`,
+  `medidas_recebidas`, `execucoes`, `processamentos_datahub`, `armazens`,
+  `clientes`, `metricas`) — a série que os alimenta já estava pronta desde o
+  Bloco C.
+- **`backend/services/cockpit.py`**: `resumo()` (cards de peso/valor
+  acumulados, clientes atendidos, participação do maior cliente — reaproveita
+  `serie_datahub.serie()` por métrica, não recalcula nada), `comparar_filiais()`
+  e `comparar_clientes()` (ranking com participação % sobre o total do
+  recorte; cliente sem cadastro entra como "Sem cliente identificado") e
+  `qualidade()` (agregação de `processamentos_datahub` por status no recorte
+  de competência/filial, mais as pendências de de-para já existentes).
+- **`serie_datahub.py` ganhou funções públicas** (`resolver_filial`,
+  `resolver_cliente`, `metrica_info`, `exigir_metrica_aditiva`, antes
+  privadas): o cockpit reaproveita a mesma resolução de filial/cliente/métrica
+  do V1.3 em vez de duplicá-la — nenhuma mudança de comportamento, só
+  visibilidade.
+- **`backend/services/linhagem.py`**: grão mínimo real do que o sistema
+  persiste — célula (`medidas`) → a recebida que a originou
+  (`medidas_recebidas`, via `medida_recebida_id`) → a execução que processou
+  o arquivo (`execucoes`) → o arquivo de origem no SharePoint (cruzando o
+  caminho da execução com `processamentos_datahub`, que guarda o `item_id`, e
+  com o inventário em cache, que guarda o `web_url`).
+- **Endpoints novos**, todos atrás de login: `GET /api/admin/cockpit/resumo`,
+  `/comparacao/filiais`, `/comparacao/clientes`, `/qualidade`; `GET
+  /api/admin/linhagem/celulas` e `/celulas/{id}`. A série histórica e o
+  acumulado **não** ganharam endpoint novo — o cockpit consome direto `GET
+  /api/admin/datahub/serie` (Bloco C).
+- **Duas telas novas**: `/cockpit` (filtros globais de período/filial/cliente
+  na URL; cards; série histórica e variação mensal com ECharts; comparação de
+  filiais e de clientes com ranking e participação; qualidade e origem
+  separada da área principal; espaço vazio de KPIs do Laboratório) e
+  `/linhagem` (filtro por métrica/competência/filial/cliente; lista de
+  células; cadeia de origem por célula, com link pro arquivo no SharePoint
+  quando o `web_url` existir).
+
+**Decisões do lote:**
+
+1. **"Quantidade de operações" fora dos cards** (secão 11.4 do
+   direcionamento pede essa métrica "quando semanticamente válida") — a única
+   candidata, `registros_movimentacao`, é documentada no próprio catálogo
+   (`seed_metricas.py`) como "indicador de volume de dados, não de negócio";
+   promovê-la a KPI executivo contradiria essa declaração. O card volta
+   quando existir uma métrica de negócio aprovada pra operações.
+2. **Participação do maior cliente calculada sobre valor** (não peso): o
+   direcionamento não diz qual métrica -- valor é a leitura mais direta de
+   participação de negócio; peso já tem card próprio.
+3. **Grão mínimo da linhagem é arquivo × cliente × competência, não a linha
+   crua da planilha**: o processamento (V1.3) agrega por cliente e descarta
+   as linhas individuais depois de agregar — elas nunca são persistidas.
+   Descer a NF/item de linha exigiria persistir as linhas cruas, fora do
+   escopo deste lote.
+4. **`qualidade()` filtra por filial voltando pelo de-para** (`depara_armazem`):
+   `processamentos_datahub` guarda unidade/filial crus, de antes da resolução
+   — o filtro por armazem precisa da mesma fonte que a ingestão usa, não um
+   atalho novo.
+
+**Fora do lote (declarado):** autenticação/SSO entre Hub e nuvem-ia; modo
+`embed`; cache/persistência de ranking (calculado ao vivo — volume atual não
+justifica); semântica de famílias do DataHub além de `ENTRADA_MERCADORIAS`;
+qualquer KPI de insight aprovado no Laboratório (nenhum foi aprovado ainda).
+
+**Suíte**: **414 passed** (382 do Bloco E + 32 novos: 12 de `test_cockpit.py`
+— resumo, comparação de filiais/clientes, qualidade —, 6 de `test_linhagem.py`
+— cadeia completa, célula legada, erros —, e 14 dos endpoints novos
+(`test_cockpit_router.py` + `test_linhagem_router.py`); nenhum teste anterior
+removido ou enfraquecido).
+
+**Verificação independente** (agente separado, antes do commit): achou 1
+defeito real confirmado por execução (peso bruto aparecia em kg, não em
+toneladas, nos gráficos de série e ranking — só o card do resumo convertia;
+reabria a pendência D4 do relatório do Bloco A) e 2 achados menores. Todos
+tratados antes do commit:
+
+1. **Alto, corrigido** — peso em kg nos gráficos de série/ranking em vez de
+   toneladas (a métrica default do seletor), e nenhum "detalhamento completo"
+   em toneladas na tela (item 5 dos critérios de aceite deste bloco). Corrigido
+   com `formatarValorPorUnidade()` (converte quando a unidade da métrica é
+   `kg`) nos formatadores de eixo/tooltip de `renderizarSerie`/`renderizarRanking`,
+   mais a linha "Peso bruto (detalhado)" no bloco de qualidade (mesmo padrão
+   já usado no `/nuvem`).
+2. **Baixo, registrado como limitação** — os filtros de filial e cliente
+   (cockpit e linhagem) aceitam só um valor por vez ou "todos"; a seção 5.7 do
+   direcionamento lista "uma, várias ou todas as filiais"/cliente como decisão
+   fixada. Herdado da interface de `serie_datahub` desde o Bloco C, não é
+   regressão deste bloco — os rankings já mostram todos os itens lado a lado,
+   o que mitiga parcialmente. Resolver exigiria filtro multi-select na tela e
+   `= ANY(%s)` no lugar de `= %s` nas consultas — trabalho de um lote próprio,
+   não correção pontual.
+3. **Cosmético, corrigido** — a repartição dos 32 testes novos por arquivo
+   nesta seção estava errada (já corrigida no texto acima).
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco F (V1.7 cockpit executivo) só começa com autorização
+**Nenhum.** O Bloco G (V1.8 produção e entrega) só começa com autorização
 explícita da Maria.

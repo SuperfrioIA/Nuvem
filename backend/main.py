@@ -8,8 +8,10 @@ from . import migracao
 from .database import get_conn, init_db
 from .routers.admin import router as admin_router
 from .routers.catalogo import router as catalogo_router
+from .routers.cockpit import router as cockpit_router
 from .routers.datahub import router as datahub_router
 from .routers.laboratorio import router as laboratorio_router
+from .routers.linhagem import router as linhagem_router
 from .services import inventario_datahub
 
 
@@ -40,6 +42,8 @@ app.include_router(admin_router, prefix="/api/admin")
 app.include_router(datahub_router, prefix="/api/admin")
 app.include_router(catalogo_router, prefix="/api/admin")
 app.include_router(laboratorio_router, prefix="/api/admin")
+app.include_router(cockpit_router, prefix="/api/admin")
+app.include_router(linhagem_router, prefix="/api/admin")
 
 app.mount("/frontend", StaticFiles(directory="frontend"), name="frontend")
 
@@ -59,6 +63,23 @@ def laboratorio_page():
     # Laboratorio de Insights (V1.4): exploracao controlada, separada do
     # cockpit por decisao fixa do direcionamento (secao 5.6)
     return FileResponse("frontend/laboratorio.html")
+
+
+@app.get("/cockpit")
+def cockpit_page():
+    # Cockpit executivo (Bloco F / V1.7): visao de diretoria -- filtros
+    # globais, cards, series, comparacoes. Tela separada da linhagem (grao
+    # minimo) pra caber em dois cards distintos no Hub SuperFrio, cada um
+    # com sua propria role.
+    return FileResponse("frontend/cockpit.html")
+
+
+@app.get("/linhagem")
+def linhagem_page():
+    # Drill-down do cockpit (Bloco F / V1.7): celula -> execucao -> arquivo
+    # de origem. Fora do cockpit executivo de proposito (secao 5.5 do
+    # direcionamento: laboratorio/auditoria != visao de diretoria).
+    return FileResponse("frontend/linhagem.html")
 
 
 @app.get("/")

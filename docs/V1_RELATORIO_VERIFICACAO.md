@@ -254,6 +254,63 @@ graves antes de reportar — não se limitou a leitura estática.
 | E5 | Checagem de `MAX_MENSAGENS_POR_SESSAO` sem lock: duas requisições concorrentes na mesma sessão podem, em tese, passar do teto, porque a chamada à IA (até 60s) acontece dentro da mesma janela da checagem | baixo | **aceito, registrado** no `V1_PLANO.md` — consistente com o resto do Laboratório (nenhum outro limite usa lock); é teto de custo/uso, não controle de segurança |
 | E6 | Redundância: `obter_configuracao_ia()` é lido tanto em `laboratorio_chat.perguntar` quanto dentro de `ia_client._client()` na primeira chamada do processo | estilo | **aceito** — nenhum efeito funcional, ambas as leituras são de env var idempotente |
 
+---
+
+## Bloco F — V1.7 Cockpit executivo (03/ago/2026)
+
+**Método do verificador**: agente separado (segundo contexto, sem memória da
+implementação). Leu `git status`/`git diff` e os 10 arquivos novos + os 4
+alterados por completo; conferiu contra `docs/V1_NUVEM_IA_DIRECIONAMENTO.md`
+(seção 11 e 5.7), `docs/V1_CRITERIOS_ACEITE.md` e `docs/V1_PLANO.md`; rodou a
+suíte completa contra o Postgres real (wsl/docker) e isolou os 4 arquivos de
+teste do lote; conferiu as migrations 0001–0010 (nenhuma nova, como
+declarado) e as migrations 0003/0006 pra confirmar a alegação sobre o grão
+mínimo da linhagem; grepou por sobra de referência às funções privadas
+renomeadas em `serie_datahub.py` (zero); e escreveu (depois descartou) um
+script que roda as funções reais de `frontend/comum.js` pra confirmar o
+achado mais grave antes de reportá-lo como certeza, em vez de reportar
+suspeita como fato.
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Filtros globais de período/filial/cliente obedecidos por cards, gráficos, tabelas e resumos | atendido, com ressalva | `resumo`/`comparar_filiais`/`comparar_clientes`/`qualidade` e a tela aplicam de/ate/filial/cliente de forma consistente; só aceitam um valor por filtro ou "todos" — a seção 5.7 do direcionamento pede "uma, várias ou todas" (achado F2, baixo, registrado abaixo) |
+| 2 | Visões obrigatórias (consolidado, série, comparação filiais/clientes, ranking, participação, acumulado, variação, qualidade/cobertura, drill-down, origem/linhagem) | atendido | todas presentes; linhagem em tela separada por decisão explícita da Maria |
+| 3 | KPIs iniciais só com métricas confiáveis | atendido | "quantidade de operações" fora dos cards é leitura correta do catálogo — `registros_movimentacao` é descrita em `seed_metricas.py` como "indicador de volume de dados, não de negócio"; "participação do maior cliente" sobre `valor_mercadoria_movimentada` é escolha razoável e documentada (direcionamento não fixa a métrica) |
+| 4 | Nenhum "volume total" com unidades incompatíveis | atendido | cockpit não introduz card de "volume"; usa só as métricas do catálogo |
+| 5 | Peso em toneladas (card abreviado + detalhamento completo); percentuais nunca somados diretamente | **corrigido** | achado F1 (abaixo): gráficos de série/ranking mostravam peso em kg cru, e não havia detalhamento completo em toneladas na tela — corrigido antes do commit. Percentuais: confirmado que nunca são somados (sempre `valor_linha/total*100`) |
+| 6 | Qualidade e origem separadas da área principal | atendido | bloco `#cockpitQualidade` fora dos cards/gráficos principais, mesmos campos do `/nuvem` agregados por recorte |
+| 7 | Sem migration nova | atendido | `alembic/versions` intacto (0001–0010); cockpit/linhagem leem só tabelas existentes desde o Bloco C |
+| 8 | Segurança — SQL injection | atendido | todo `cur.execute` com f-string em `cockpit.py`/`linhagem.py` interpola só cláusulas fixas montadas pelo código; todo valor variável vai via `%s`/lista de params, mesmo padrão de `serie_datahub.py` |
+| 9 | Segurança — XSS no frontend | atendido | todo texto vindo da API passa por `escaparHtml`; `web_url` validado com `/^https?:\/\//i` antes de virar `href`, idêntico ao padrão de `frontend/nuvem.html` |
+| 10 | Autenticação | atendido | os 6 endpoints novos chamam `exigir_login(request)` como primeira linha; testado (401 sem sessão) |
+| 11 | Refactor de `serie_datahub.py` (funções privadas → públicas) | atendido | renomeação pura + extração de `exigir_metrica_aditiva` com o mesmo corpo que estava inline; zero sobra de referência à assinatura antiga no repositório |
+| 12 | Cálculos — participação %, qualidade agregada, casos de borda | atendido | `percentual = valor/total*100 if total else 0.0` evita `ZeroDivisionError`; `GROUP BY cliente_id, c.nome` impede colapso de clientes homônimos; filial sem de-para mapeado gera `WHERE FALSE` (conjunto vazio) em vez de exceção |
+| 13 | Consistência arquitetural | atendido | `cockpit.py`/`linhagem.py` só recebem `cur`; erros próprios traduzidos pro router em 400/404; sem estado global novo |
+| 14 | Testes | atendido | **414 passed** confirmados pelo verificador (rodada completa) e 32 isolando os 4 arquivos novos; nenhum teste anterior alterado/removido |
+| 15 | Decisões da Maria implementadas | atendido | "Sem cliente identificado" exposto e nunca escondido; linhagem em rota top-level separada; nenhum KPI de insight (placeholder vazio); duas rotas independentes `/cockpit` e `/linhagem` |
+
+### Achados e o que foi feito
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| F1 | Peso bruto movimentado aparecia em **kg**, não em toneladas, no tooltip/eixo do gráfico de série histórica e nos rankings de filiais/clientes — só o card do resumo convertia. Peso bruto é a opção default do seletor de métrica, a primeira coisa vista ao abrir `/cockpit`. Confirmado por execução real das funções de `comum.js`. Reabria a pendência D4 do relatório do Bloco A ("conversão pra tonelada nessa tabela entra na revisão do V1.7") | **alto** | **corrigido** — `formatarValorPorUnidade()` novo em `cockpit.html`, converte quando `metrica.unidade === "kg"`, aplicado nos formatadores de eixo/tooltip de `renderizarSerie`/`renderizarRanking`; acrescentada a linha "Peso bruto (detalhado)" no bloco de qualidade (mesmo padrão do `/nuvem`) |
+| F2 | Filtros de filial e cliente (cockpit e linhagem) aceitam só um valor por vez ou "todos" — a seção 5.7 do direcionamento lista "uma, várias ou todas as filiais"/cliente como decisão fixada. Herdado da interface de `serie_datahub` desde o Bloco C, não é regressão deste bloco; nunca tinha sido registrado como limitação conhecida antes | baixo | **aceito, registrado** no `V1_PLANO.md` — os rankings já mostram todos os itens lado a lado, o que mitiga parcialmente; resolver exige filtro multi-select na tela + `= ANY(%s)` no backend, trabalho de lote próprio |
+| F3 | A repartição dos 32 testes novos por arquivo, na primeira versão do texto do `V1_PLANO.md`, não batia com a contagem real por arquivo (o total de 32 estava certo) | cosmético | **corrigido** — texto ajustado antes do commit |
+
+**Conclusão: Bloco F atendido após a correção do achado F1.** A arquitetura, a
+segurança (SQL parametrizado, XSS escapado, autenticação em todos os
+endpoints novos, refactor de `serie_datahub.py` comportamentalmente
+idêntico) e os cálculos de participação/qualidade estavam corretos desde a
+primeira versão, inclusive nos casos de borda testados (total=0, cliente
+homônimo com `cliente_id` diferente, filial sem de-para). O único defeito
+real (F1, alto) caiu antes do commit, com o mesmo padrão de correção já
+usado no `/nuvem`. F2 (baixo) ficou registrado como limitação conhecida; F3
+foi só correção de texto.
+
+**Suíte**: **414 passed** (382 do Bloco E + 32 novos), confirmada pelo
+verificador independente contra o Postgres real e novamente após a correção
+do achado F1. Nenhum teste anterior foi alterado, enfraquecido ou removido.
+
 **Conclusão: Bloco E atendido após as correções.** Os 4 achados reais (1
 crítico, 2 altos, 1 médio) caíram antes do commit, cada um com teste de
 regressão novo (inclusive um arquivo de teste inteiro, `tests/test_ia_client.py`,

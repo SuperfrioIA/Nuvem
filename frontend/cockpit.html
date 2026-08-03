@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nuvem IA — Cockpit executivo</title>
+<link rel="icon" href="/frontend/logo-superfrio.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<style>
+:root {
+  --brand-azul-institucional: #071A3A;
+  --brand-azul-corporativo:   #0A2A5E;
+  --brand-azul-principal:     #1E6FD9;
+  --brand-azul-conexao:       #3FA9F5;
+  --brand-amarelo:            #FFC400;
+  --brand-amarelo-suave:      #FFD84D;
+  --brand-branco:             #FFFFFF;
+  --brand-cinza-claro:        #C7D2E3;
+  --brand-azul-escuro:        #050F24;
+
+  --font-primary: 'Montserrat', sans-serif;
+
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
+  --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+
+  --card:   #FFFFFF;
+  --card-2: #F0F4FA;
+  --card-3: #F7F9FC;
+  --texto:  #071A3A;
+  --muted:  #5A6B85;
+  --line:        rgba(30, 111, 217, 0.16);
+  --line-strong: rgba(30, 111, 217, 0.30);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
+    #FBFCFE;
+  color: var(--texto);
+  font-family: var(--font-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+.oculto { display: none !important; }
+
+#login { max-width: 320px; margin: 100px auto; background: var(--card); padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
+#login img { height: 34px; margin-bottom: 18px; }
+#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--brand-azul-institucional); }
+#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; }
+#login button { width: 100%; padding: 10px; background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); font-weight: 700; cursor: pointer; font-family: var(--font-primary); }
+#loginErro { color: #b3261e; font-size: 13px; min-height: 18px; margin-top: 8px; }
+
+.section { padding: 32px 0 64px; width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
+
+.appHeader { display: flex; justify-content: flex-end; padding: 0 min(90px, calc((100% - 1180px)/2 + 20px)) 0; padding-top: 16px; }
+.appHeader button {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  border-radius: var(--radius-pill); padding: 7px 16px; cursor: pointer; font-family: var(--font-primary);
+  font-weight: 600; font-size: 13px;
+}
+
+.brandBar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+.brandLogo { height: 40px; width: auto; display: block; }
+.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--brand-cinza-claro), transparent); }
+
+.eyebrow {
+  display: inline-block; color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08);
+  border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px;
+  font-size: 0.82rem; font-weight: 700;
+}
+h1.titulo {
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem); color: var(--brand-azul-institucional); letter-spacing: -0.02em;
+  line-height: 1.1; margin: 14px 0 10px; font-weight: 700;
+}
+p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0; }
+
+.msg { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 14px; }
+.msg-erro { background: #fbe1df; color: #b3261e; }
+.msg-info { background: var(--card-3); color: var(--muted); font-size: 12px; margin-top: 8px; }
+
+/* Filtros globais -- secao 11.2 do direcionamento: todos os cards/graficos/
+ * tabelas obedecem a estes tres campos. Representados na URL (?de=&ate=&
+ * filial=&cliente=) pra permitir link direto de fora (Hub SuperFrio). */
+.filtros {
+  display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 22px 0;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 16px 20px; box-shadow: var(--shadow-sm);
+}
+.filtroCampo { display: flex; flex-direction: column; gap: 5px; }
+.filtroCampo label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--brand-azul-principal); }
+.filtroCampo input, .filtroCampo select {
+  font-family: var(--font-primary); font-size: 0.86rem; font-weight: 600; color: var(--brand-azul-institucional);
+  background: var(--card-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 7px 10px;
+}
+.filtroLimpar {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  border-radius: var(--radius-pill); padding: 8px 16px; cursor: pointer; font-family: var(--font-primary);
+  font-weight: 600; font-size: 0.8rem; margin-left: auto;
+}
+
+.kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
+.kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 190px; flex: 1; }
+.kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
+.kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
+.kpi-card.vazio { color: var(--muted); font-size: 13px; display: flex; align-items: center; }
+.participacao {
+  background: var(--card-2); border-radius: var(--radius-md); padding: 12px 16px; margin: 4px 0 18px; font-size: 13px;
+}
+.participacao strong { color: var(--brand-azul-institucional); }
+
+.subLabel { color: var(--muted); font-size: 12px; margin: 22px 0 4px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+
+.painelBloco {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm); padding: 18px 20px; margin-top: 10px;
+}
+.metricaFoco { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.metricaFoco label { font-size: 0.76rem; font-weight: 700; color: var(--muted); }
+.metricaFoco select {
+  font-family: var(--font-primary); font-size: 0.82rem; font-weight: 600; color: var(--brand-azul-institucional);
+  background: var(--card-3); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); padding: 5px 12px;
+}
+.chart { width: 100%; height: 320px; }
+.chart.chartCurto { height: 260px; }
+.chartsGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
+@media (max-width: 900px) { .chartsGrid { grid-template-columns: 1fr; } }
+
+.dados-tecnicos { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
+.dados-tecnicos div { margin-bottom: 4px; }
+.pendenciasLista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pendenciasLista li { background: var(--card-3); border-left: 3px dashed var(--brand-azul-conexao); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 12px; }
+
+.linhagemLink {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; font-size: 0.84rem; font-weight: 700;
+  color: var(--brand-azul-institucional); background: var(--card-2); border: 1px solid var(--line);
+  border-radius: var(--radius-pill); padding: 9px 16px; text-decoration: none;
+}
+.linhagemLink:hover { border-color: var(--line-strong); }
+
+@media (max-width: 640px) {
+  .section { padding: 22px 0 40px; width: min(1180px, calc(100% - 24px)); }
+  .kpis-cards { flex-direction: column; }
+  .kpi-card { width: 100%; }
+}
+</style>
+</head>
+<body>
+
+<div id="login">
+  <img src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+  <h2>Cockpit executivo</h2>
+  <input type="password" id="senhaInput" placeholder="Senha" aria-label="Senha">
+  <button id="btnEntrar">Entrar</button>
+  <div id="loginErro"></div>
+</div>
+
+<div id="app" class="oculto">
+  <div class="appHeader"><button id="btnSair">Sair</button></div>
+
+  <main class="section" aria-labelledby="cockpit-titulo">
+    <div class="brandBar">
+      <img class="brandLogo" src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
+      <hr class="brandRule" aria-hidden="true">
+    </div>
+    <span class="eyebrow">Visão oficial · DataHub persistido</span>
+    <h1 class="titulo" id="cockpit-titulo">Cockpit executivo</h1>
+    <p class="intro">Consolidado, série histórica, comparações e qualidade dos indicadores publicados. Os filtros abaixo valem para toda a tela.</p>
+
+    <div id="cockpitMsg"></div>
+
+    <form class="filtros" id="formFiltros">
+      <div class="filtroCampo">
+        <label for="filtroDe">Período · de</label>
+        <input type="month" id="filtroDe">
+      </div>
+      <div class="filtroCampo">
+        <label for="filtroAte">Período · até</label>
+        <input type="month" id="filtroAte">
+      </div>
+      <div class="filtroCampo">
+        <label for="filtroFilial">Filial</label>
+        <select id="filtroFilial"><option value="">Todas</option></select>
+      </div>
+      <div class="filtroCampo">
+        <label for="filtroCliente">Cliente</label>
+        <select id="filtroCliente"><option value="">Todos</option></select>
+      </div>
+      <button type="button" class="filtroLimpar" id="btnLimparFiltros">Limpar filtros</button>
+    </form>
+
+    <div class="kpis-cards" id="cockpitCards"></div>
+    <div id="cockpitParticipacao"></div>
+    <div id="cockpitLimitacoes"></div>
+
+    <div class="painelBloco">
+      <div class="metricaFoco">
+        <label for="metricaFoco">Métrica em foco</label>
+        <select id="metricaFoco">
+          <option value="peso_bruto_movimentado">Peso bruto movimentado</option>
+          <option value="valor_mercadoria_movimentada">Valor da mercadoria movimentada</option>
+        </select>
+      </div>
+      <p class="subLabel">Série histórica e acumulado</p>
+      <div class="chart" id="chartSerie"></div>
+      <p class="subLabel">Variação mensal</p>
+      <div class="chart chartCurto" id="chartVariacao"></div>
+    </div>
+
+    <div class="chartsGrid">
+      <div class="painelBloco">
+        <p class="subLabel">Comparação de filiais · participação no total</p>
+        <div class="chart chartCurto" id="chartFiliais"></div>
+      </div>
+      <div class="painelBloco">
+        <p class="subLabel">Comparação de clientes · top 10 + participação</p>
+        <div class="chart chartCurto" id="chartClientes"></div>
+      </div>
+    </div>
+
+    <p class="subLabel">Indicadores aprovados no Laboratório</p>
+    <div class="kpis-cards" id="cockpitLaboratorio"></div>
+
+    <p class="subLabel">Qualidade e origem dos dados</p>
+    <div class="dados-tecnicos" id="cockpitQualidade"></div>
+
+    <a class="linhagemLink" id="linkLinhagem" href="/linhagem" target="_blank" rel="noopener">Ver linhagem completa (grão mínimo) →</a>
+  </main>
+</div>
+
+<script src="/frontend/comum.js"></script>
+<script>
+iniciarLoginPadrao(carregarCockpit);
+
+const CORES = {
+  principal: "#1E6FD9", conexao: "#3FA9F5", amarelo: "#FFC400",
+  institucional: "#071A3A", muted: "#5A6B85", grid: "#C7D2E3",
+};
+const FONTE = "'Montserrat', sans-serif";
+
+let graficos = {};
+function grafico(id) {
+  if (!graficos[id]) graficos[id] = echarts.init(document.getElementById(id), null, { renderer: "svg" });
+  return graficos[id];
+}
+window.addEventListener("resize", () => Object.values(graficos).forEach(g => g.resize()));
+
+// kg vira toneladas (unidade executiva de peso, direcionamento V1 secao
+// 11.5); demais unidades usam o formato padrao do KPI. Sem isto, o peso bruto
+// -- a metrica default do seletor -- apareceria em kg cru nos graficos.
+function formatarValorPorUnidade(valor, unidade) {
+  if (unidade === "kg") return formatarPesoExecutivo(valor);
+  if (unidade === "R$") return `R$ ${formatarMilhoesExec(valor)} mi`;
+  return formatarNumeroKpi(valor, unidade === "registros" ? "" : unidade);
+}
+
+function baseOption(extra) {
+  return Object.assign({
+    textStyle: { fontFamily: FONTE, color: CORES.institucional },
+    grid: { left: 90, right: 24, top: 20, bottom: 30 },
+    tooltip: { trigger: "axis", textStyle: { fontFamily: FONTE } },
+  }, extra);
+}
+
+/* ---- filtros (lidos/gravados na URL, pra permitir link direto do Hub) ---- */
+function lerFiltrosDaUrl() {
+  const p = new URLSearchParams(location.search);
+  return { de: p.get("de") || "", ate: p.get("ate") || "", filial: p.get("filial") || "", cliente: p.get("cliente") || "" };
+}
+function filtrosAtuais() {
+  return {
+    de: document.getElementById("filtroDe").value,
+    ate: document.getElementById("filtroAte").value,
+    filial: document.getElementById("filtroFilial").value,
+    cliente: document.getElementById("filtroCliente").value,
+  };
+}
+function aplicarFiltrosNaUrl(f) {
+  const p = new URLSearchParams();
+  if (f.de) p.set("de", f.de);
+  if (f.ate) p.set("ate", f.ate);
+  if (f.filial) p.set("filial", f.filial);
+  if (f.cliente) p.set("cliente", f.cliente);
+  const query = p.toString();
+  history.replaceState(null, "", query ? `?${query}` : location.pathname);
+}
+function query(f, extra) {
+  const p = new URLSearchParams();
+  if (f.de) p.set("de", f.de);
+  if (f.ate) p.set("ate", f.ate);
+  if (f.filial) p.set("filial", f.filial);
+  if (f.cliente) p.set("cliente", f.cliente);
+  Object.entries(extra || {}).forEach(([k, v]) => { if (v) p.set(k, v); });
+  return p.toString();
+}
+
+async function carregarCockpit() {
+  const msgDiv = document.getElementById("cockpitMsg");
+  msgDiv.innerHTML = "";
+  try {
+    const [filiais, clientes] = await Promise.all([api("/armazens"), api("/clientes")]);
+    preencherSelect("filtroFilial", filiais.map(a => ({ value: a.sigla, texto: a.nome })), "Todas");
+    preencherSelect("filtroCliente", clientes.map(c => ({ value: c.nk_erp, texto: c.nome })), "Todos");
+
+    const iniciais = lerFiltrosDaUrl();
+    document.getElementById("filtroDe").value = iniciais.de;
+    document.getElementById("filtroAte").value = iniciais.ate;
+    document.getElementById("filtroFilial").value = iniciais.filial;
+    document.getElementById("filtroCliente").value = iniciais.cliente;
+
+    ["filtroDe", "filtroAte", "filtroFilial", "filtroCliente"].forEach(id =>
+      document.getElementById(id).addEventListener("change", atualizarTudo));
+    document.getElementById("metricaFoco").addEventListener("change", atualizarSecaoMetrica);
+    document.getElementById("btnLimparFiltros").addEventListener("click", () => {
+      ["filtroDe", "filtroAte", "filtroFilial", "filtroCliente"].forEach(id => document.getElementById(id).value = "");
+      atualizarTudo();
+    });
+
+    await atualizarTudo();
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function preencherSelect(id, opcoes, rotuloTodos) {
+  const sel = document.getElementById(id);
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">${escaparHtml(rotuloTodos)}</option>` +
+    opcoes.map(o => `<option value="${escaparHtml(o.value)}">${escaparHtml(o.texto)}</option>`).join("");
+  sel.value = atual;
+}
+
+async function atualizarTudo() {
+  const f = filtrosAtuais();
+  aplicarFiltrosNaUrl(f);
+  const msgDiv = document.getElementById("cockpitMsg");
+  msgDiv.innerHTML = "";
+  try {
+    const [resumo, qualidade] = await Promise.all([
+      api(`/cockpit/resumo?${query(f)}`),
+      api(`/cockpit/qualidade?${query(f)}`),
+    ]);
+    renderizarCards(resumo);
+    const pesoKpi = resumo.kpis.find(k => k.chave === "peso_bruto_movimentado");
+    renderizarQualidade(qualidade, pesoKpi ? pesoKpi.valor : null);
+    renderizarLinkLinhagem(f);
+    await atualizarSecaoMetrica();
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function renderizarLinkLinhagem(f) {
+  const metrica = document.getElementById("metricaFoco").value;
+  document.getElementById("linkLinhagem").href = `/linhagem?${query(f, { metrica })}`;
+}
+
+const KPI_FORMATO = {
+  peso_bruto_movimentado: v => formatarPesoExecutivo(v),
+  valor_mercadoria_movimentada: v => `R$ ${formatarMilhoesExec(v)} mi`,
+  clientes_atendidos: v => `${Math.round(v)} ${Math.round(v) === 1 ? "cliente" : "clientes"}`,
+};
+
+function renderizarCards(resumo) {
+  document.getElementById("cockpitCards").innerHTML = resumo.kpis.map(k => `
+    <div class="kpi-card">
+      <span class="kpi-valor">${escaparHtml((KPI_FORMATO[k.chave] || (v => formatarNumeroKpi(v, k.unidade)))(k.valor))}</span>
+      <span class="kpi-nome">${escaparHtml(k.nome_executivo)}</span>
+    </div>`).join("");
+
+  const p = resumo.participacao_maior_cliente;
+  document.getElementById("cockpitParticipacao").innerHTML = p
+    ? `<div class="participacao">Cliente com maior participação (${escaparHtml(p.metrica === "valor_mercadoria_movimentada" ? "valor" : p.metrica)}): <strong>${escaparHtml(p.cliente)}</strong> — ${escaparHtml(formatarNumeroKpi(p.percentual, "%"))} do total.</div>`
+    : "";
+
+  document.getElementById("cockpitLimitacoes").innerHTML = (resumo.limitacoes || []).map(l =>
+    `<div class="msg msg-info">${escaparHtml(l)}</div>`).join("");
+
+  document.getElementById("cockpitLaboratorio").innerHTML =
+    `<div class="kpi-card vazio">Nenhum indicador aprovado no Laboratório ainda.</div>`;
+}
+
+function renderizarQualidade(q, pesoBrutoKg) {
+  const status = q.por_status || {};
+  const linhas = Object.entries(status).map(([nome, s]) =>
+    `<div><strong>${escaparHtml(nome)}:</strong> ${s.arquivos} arquivo(s), ${s.linhas_validas} linha(s) válida(s), ${s.medidas_gravadas} medida(s) gravada(s)</div>`
+  ).join("") || "<div>Nenhum processamento no recorte.</div>";
+
+  const pendFilial = (q.pendencias_filial || []).map(p =>
+    `<li>Origem <strong>${escaparHtml(p.origem_na_fonte)}</strong> sem de-para de filial.</li>`).join("");
+  const pendCliente = (q.pendencias_cliente || []).map(p =>
+    `<li>Cliente <strong>${escaparHtml(p.nome_na_fonte || p.cliente_na_fonte)}</strong> sem cadastro (CNPJ raiz ${escaparHtml(p.cliente_na_fonte)}).</li>`).join("");
+
+  document.getElementById("cockpitQualidade").innerHTML = `
+    ${pesoBrutoKg != null ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoBrutoKg))}</div>` : ""}
+    <div><strong>Total de arquivos processados no recorte:</strong> ${q.total_arquivos}</div>
+    ${linhas}
+    ${pendFilial ? `<ul class="pendenciasLista">${pendFilial}</ul>` : ""}
+    ${pendCliente ? `<ul class="pendenciasLista">${pendCliente}</ul>` : ""}
+  `;
+}
+
+async function atualizarSecaoMetrica() {
+  const f = filtrosAtuais();
+  const metrica = document.getElementById("metricaFoco").value;
+  renderizarLinkLinhagem(f);
+  const msgDiv = document.getElementById("cockpitMsg");
+  try {
+    const [serie, filiais, clientes] = await Promise.all([
+      api(`/datahub/serie?metrica=${metrica}&${query(f)}`),
+      api(`/cockpit/comparacao/filiais?metrica=${metrica}&${query({ de: f.de, ate: f.ate, cliente: f.cliente })}`),
+      api(`/cockpit/comparacao/clientes?metrica=${metrica}&${query({ de: f.de, ate: f.ate, filial: f.filial })}`),
+    ]);
+    renderizarSerie(serie);
+    renderizarVariacao(serie);
+    renderizarRanking("chartFiliais", filiais, null);
+    renderizarRanking("chartClientes", clientes, 10);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function renderizarSerie(serie) {
+  const pontos = serie.mensal || [];
+  const unidade = serie.metrica.unidade;
+  grafico("chartSerie").setOption(baseOption({
+    xAxis: { type: "category", data: pontos.map(p => competenciaCurta(p.competencia)),
+      axisLine: { lineStyle: { color: CORES.grid } } },
+    yAxis: { type: "value", axisLabel: { formatter: v => formatarValorPorUnidade(v, unidade) }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
+    series: [{
+      type: "line", data: pontos.map(p => p.valor), smooth: true, symbolSize: 7,
+      lineStyle: { color: CORES.principal, width: 3 }, itemStyle: { color: CORES.principal },
+      areaStyle: { color: "rgba(30,111,217,0.10)" },
+    }],
+    tooltip: { trigger: "axis", valueFormatter: v => formatarValorPorUnidade(v, unidade) },
+  }), true);
+}
+
+function renderizarVariacao(serie) {
+  const pontos = serie.mensal || [];
+  const variacoes = pontos.slice(1).map((p, i) => {
+    const anterior = pontos[i].valor;
+    const percentual = anterior ? ((p.valor - anterior) / anterior) * 100 : null;
+    return { competencia: p.competencia, percentual };
+  });
+  grafico("chartVariacao").setOption(baseOption({
+    xAxis: { type: "category", data: variacoes.map(v => competenciaCurta(v.competencia)),
+      axisLine: { lineStyle: { color: CORES.grid } } },
+    yAxis: { type: "value", axisLabel: { formatter: "{value}%" }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
+    series: [{
+      type: "bar", data: variacoes.map(v => v.percentual == null ? 0 : Number(v.percentual.toFixed(1))),
+      itemStyle: { color: p => (p.value >= 0 ? CORES.principal : "#b3261e") },
+      barMaxWidth: 28,
+    }],
+    tooltip: { trigger: "axis", valueFormatter: v => `${v}%` },
+  }), true);
+}
+
+function renderizarRanking(elId, dados, limite) {
+  const ranking = (dados.ranking || []).slice(0, limite || dados.ranking.length);
+  const maiorPrimeiro = [...ranking].reverse(); // ECharts horizontal bar desenha de baixo pra cima
+  const unidade = dados.metrica.unidade;
+  grafico(elId).setOption(baseOption({
+    grid: { left: 130, right: 50, top: 10, bottom: 10 },
+    xAxis: { type: "value", axisLabel: { formatter: v => formatarValorPorUnidade(v, unidade) }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
+    yAxis: { type: "category", data: maiorPrimeiro.map(r => r.rotulo), axisLine: { lineStyle: { color: CORES.grid } } },
+    series: [{
+      type: "bar", data: maiorPrimeiro.map((r, i) => ({
+        value: r.valor,
+        itemStyle: { color: i === maiorPrimeiro.length - 1 ? CORES.amarelo : CORES.conexao },
+      })),
+      label: { show: true, position: "right", formatter: p => `${maiorPrimeiro[p.dataIndex].percentual.toFixed(1)}%`, color: CORES.institucional },
+      barMaxWidth: 22,
+    }],
+    tooltip: {
+      trigger: "item",
+      formatter: p => `${escaparHtml(maiorPrimeiro[p.dataIndex].rotulo)}<br>${formatarValorPorUnidade(maiorPrimeiro[p.dataIndex].valor, unidade)} (${maiorPrimeiro[p.dataIndex].percentual.toFixed(1)}%)`,
+    },
+  }), true);
+}
+</script>
+</body>
+</html>

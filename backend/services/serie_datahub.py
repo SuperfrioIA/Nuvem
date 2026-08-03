@@ -37,7 +37,7 @@ class SerieDatahubError(Exception):
     """Parametro invalido/nao suportado -- o endpoint traduz pra HTTP 400."""
 
 
-def _competencia(valor: str, campo: str) -> date:
+def parse_competencia(valor: str, campo: str) -> date:
     try:
         ano, mes = valor.split("-")
         return date(int(ano), int(mes), 1)
@@ -45,7 +45,10 @@ def _competencia(valor: str, campo: str) -> date:
         raise SerieDatahubError(f"{campo} invalida (esperado AAAA-MM): {valor!r}") from exc
 
 
-def _resolver_filial(cur, filial: str) -> tuple[int, str]:
+def resolver_filial(cur, filial: str) -> tuple[int, str]:
+    """(armazem_id, sigla), aceitando a sigla oficial ou o codigo de origem
+    qualificado pela unidade (`RMSPII/016`) -- reaproveitado pelo cockpit
+    (V1.7) pra nao duplicar a resolucao de filial em dois lugares."""
     cur.execute("SELECT id, sigla FROM armazens WHERE sigla = %s", (filial,))
     row = cur.fetchone()
     if row:
@@ -69,7 +72,9 @@ def _resolver_filial(cur, filial: str) -> tuple[int, str]:
     return row[0], row[1]
 
 
-def _resolver_cliente(cur, cliente: str) -> tuple[int, str]:
+def resolver_cliente(cur, cliente: str) -> tuple[int, str]:
+    """(cliente_id, nome) pelo nk_erp (raiz do CNPJ) -- reaproveitado pelo
+    cockpit (V1.7)."""
     cur.execute("SELECT id, nome FROM clientes WHERE nk_erp = %s", (cliente,))
     row = cur.fetchone()
     if row is None:
@@ -77,7 +82,8 @@ def _resolver_cliente(cur, cliente: str) -> tuple[int, str]:
     return row[0], row[1]
 
 
-def _metrica(cur, nome: str) -> dict:
+def metrica_info(cur, nome: str) -> dict:
+    """Metadados da metrica no catalogo -- reaproveitado pelo cockpit (V1.7)."""
     cur.execute(
         """
         SELECT id, nome, nome_executivo, unidade, agregacao_padrao
@@ -94,7 +100,19 @@ def _metrica(cur, nome: str) -> dict:
     }
 
 
-def _filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
+def exigir_metrica_aditiva(info: dict) -> None:
+    """Recusa metrica sem regra de consolidacao definida aqui (media/ultimo/
+    percentual) -- mesma regra de `serie()`, reaproveitada pelo cockpit."""
+    if info["agregacao_padrao"] != "soma":
+        raise SerieDatahubError(
+            f"metrica {info['nome']!r} tem agregacao "
+            f"{info['agregacao_padrao'] or 'indefinida'!r} -- esta consulta so "
+            "consolida metricas aditivas (soma); consolidar media/ultimo/percentual "
+            "exige regra especifica (direcionamento V1, secao 7)"
+        )
+
+
+def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
     condicoes = ["metrica_id = %s"]
     params = [metrica_id]
     if armazem_id is not None:
@@ -114,17 +132,17 @@ def _filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
 
 def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> dict:
     """Serie mensal + consolidacao anual + acumulado, do que esta persistido."""
-    de_data = _competencia(de, "competencia inicial (de)") if de else None
-    ate_data = _competencia(ate, "competencia final (ate)") if ate else None
+    de_data = parse_competencia(de, "competencia inicial (de)") if de else None
+    ate_data = parse_competencia(ate, "competencia final (ate)") if ate else None
     if de_data and ate_data and de_data > ate_data:
         raise SerieDatahubError("intervalo invalido: 'de' e maior que 'ate'")
 
     armazem_id = filial_sigla = None
     if filial:
-        armazem_id, filial_sigla = _resolver_filial(cur, filial)
+        armazem_id, filial_sigla = resolver_filial(cur, filial)
     cliente_id = cliente_nome = None
     if cliente:
-        cliente_id, cliente_nome = _resolver_cliente(cur, cliente)
+        cliente_id, cliente_nome = resolver_cliente(cur, cliente)
 
     filtros = {
         "de": de, "ate": ate,
@@ -139,16 +157,10 @@ def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> di
             )
         return _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros)
 
-    info = _metrica(cur, metrica)
-    if info["agregacao_padrao"] != "soma":
-        raise SerieDatahubError(
-            f"metrica {metrica!r} tem agregacao "
-            f"{info['agregacao_padrao'] or 'indefinida'!r} -- esta consulta so "
-            "consolida metricas aditivas (soma); consolidar media/ultimo/percentual "
-            "exige regra especifica (direcionamento V1, secao 7)"
-        )
+    info = metrica_info(cur, metrica)
+    exigir_metrica_aditiva(info)
 
-    where, params = _filtros_sql(info["id"], armazem_id, cliente_id, de_data, ate_data)
+    where, params = filtros_sql(info["id"], armazem_id, cliente_id, de_data, ate_data)
     cur.execute(
         f"""
         SELECT competencia, SUM(valor)
@@ -184,8 +196,8 @@ def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> di
 
 
 def _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros) -> dict:
-    driver = _metrica(cur, _METRICA_DRIVER_CLIENTES)
-    where, params = _filtros_sql(driver["id"], armazem_id, None, de_data, ate_data)
+    driver = metrica_info(cur, _METRICA_DRIVER_CLIENTES)
+    where, params = filtros_sql(driver["id"], armazem_id, None, de_data, ate_data)
 
     cur.execute(
         f"""
