@@ -402,7 +402,8 @@ def listar_sessoes(cur, limite: int = 20) -> list[dict]:
 def obter_sessao(cur, sessao_id: int) -> dict | None:
     cur.execute(
         """
-        SELECT id, criado_em, usuario, titulo, selecao, filtros, limites, perfil, status
+        SELECT id, criado_em, usuario, titulo, selecao, filtros, limites, perfil, status,
+               especificacao, decisao_nota, decidido_em
         FROM laboratorio_sessoes WHERE id = %s
         """,
         (sessao_id,),
@@ -420,4 +421,8 @@ def obter_sessao(cur, sessao_id: int) -> dict | None:
         "limites": linha[6],
         "perfil": linha[7],
         "status": linha[8],
+        # V1.6 (Bloco E): so preenchidos quando a sessao foi decidida
+        "especificacao": linha[9],
+        "decisao_nota": linha[10],
+        "decidido_em": linha[11].isoformat() if linha[11] else None,
     }

@@ -292,6 +292,27 @@ metadata:
   (caso `Vlr. Unitário`). Sessão grava `usuario='admin'` — senha única, sem
   identidade por pessoa até o V1.8.
 
-**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026, 31/jul/2026 e 02/ago/2026 — evita rediscutir do zero.
+- **Bloco E (V1.5 chat + V1.6 insight aprovado) executado em 03/ago/2026**
+  (autorizado pela Maria: "confirmado, pode seguir"). Decisão dela na abertura:
+  **provedor de IA é a Anthropic Claude API**, modelo padrão `claude-sonnet-5`
+  (custo, sem exigir o teto de raciocínio da tarefa), trocável por variável de
+  ambiente. Migration 0010: `laboratorio_mensagens` (chat) +
+  `especificacao`/`decisao_nota`/`decidido_em` em `laboratorio_sessoes`.
+  Contexto pra IA é sempre recalculado do perfil (nunca reaproveita
+  `resumo`/`limitacoes` persistidos como estão) — cliente/CNPJ mascarado por
+  pseudônimo consistente dentro do arquivo (`mascaramento.py`), unidade
+  sempre junto da filial (reusa `filiais_datahub`, nunca heurística própria).
+  Aprovar combina parte determinística do perfil (fontes/campos/conceitos/
+  unidade/limitações) com rascunho estruturado da IA (nome/pergunta de
+  negócio/fórmula/riscos/exemplos) — nunca publica KPI. Verificação
+  independente (agente separado, antes do commit) achou e corrigiu 1 crítico
+  (nome do filtro de cliente ecoado sem máscara no texto de limitação), 2
+  altos (erro da IA na aprovação virando HTTP 500 em vez de 400 tratado;
+  `resumo.filiais` colidindo código entre unidades diferentes — `RMSPII/001`
+  × `CWB3/001`) e 1 médio (resposta truncada por `max_tokens` gravada como
+  sucesso) — nenhum ficou pendente. 382 testes verdes, sempre mockados (zero
+  chamada de rede real à Anthropic na suíte).
+
+**Why:** decisões tomadas em conversa com a Maria em 15/jul/2026, 16/jul/2026, 17/jul/2026, 21/jul/2026, 22/jul/2026, 29/jul/2026, 30/jul/2026, 31/jul/2026, 02/ago/2026 e 03/ago/2026 — evita rediscutir do zero.
 **How to apply:** detalhes em docs/ARQUITETURA.md e docs/PLANO.md. Mudar essas decisões
 só com OK explícito dela. Ver [[projeto-nuvem-ia]].

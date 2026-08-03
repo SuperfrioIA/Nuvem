@@ -166,6 +166,55 @@ table.tbl tr:last-child td { border-bottom: 0; }
   cursor: pointer; font-family: var(--font-primary); font-size: 0.8rem; text-align: left;
 }
 .listaSessoes .sessaoMeta { color: var(--muted); font-size: 0.74rem; }
+
+.chatHistorico { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
+.chatMsg { border-radius: var(--radius-md); padding: 10px 12px; font-size: 0.84rem; max-width: 92%; }
+.chatMsg strong { display: block; font-size: 0.7rem; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); margin-bottom: 3px; }
+.chatMsg p { margin: 0; white-space: pre-wrap; line-height: 1.5; }
+.chatUsuario { align-self: flex-end; background: rgba(30,111,217,.10); border: 1px solid var(--line); }
+.chatAssistente { align-self: flex-start; background: var(--card-3); border: 1px solid var(--line); }
+.chatErro { align-self: flex-start; background: #fbe1df; border: 1px solid #f0b8b3; }
+.chatErro strong, .chatErro p { color: #b3261e; }
+
+.sugestoes { margin: 4px 0 14px; }
+.sugestaoGrupo { margin-bottom: 8px; }
+.sugestaoGrupo .subLabel { margin: 8px 0 5px; }
+.sugestoes button {
+  background: var(--card-2); border: 1px solid var(--line); color: var(--brand-azul-corporativo);
+  border-radius: var(--radius-pill); padding: 5px 12px; margin: 0 6px 6px 0; font-size: 0.76rem;
+  cursor: pointer; font-family: var(--font-primary);
+}
+.sugestoes button:hover { background: rgba(30,111,217,.14); }
+
+.chatEntrada { display: flex; gap: 10px; align-items: flex-end; }
+.chatEntrada textarea {
+  flex: 1; padding: 9px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  font-family: var(--font-primary); font-size: 0.85rem; resize: vertical;
+}
+.chatEntrada .acao { width: auto; margin-top: 0; padding: 10px 18px; }
+
+.chatDecisoes { display: flex; gap: 10px; margin-top: 16px; }
+.chatDecisoes .acao { width: auto; }
+.acaoSecundaria {
+  padding: 11px 18px; background: transparent; color: var(--brand-azul-institucional);
+  border: 1px solid var(--line-strong); border-radius: var(--radius-pill); font-weight: 700;
+  cursor: pointer; font-family: var(--font-primary); font-size: 0.88rem;
+}
+
+.feedbackRow { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.feedbackRow button {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--muted);
+  border-radius: var(--radius-pill); padding: 3px 10px; font-size: 0.7rem; cursor: pointer;
+  font-family: var(--font-primary);
+}
+.feedbackRow button.feedbackAtivo { background: var(--brand-azul-principal); color: #fff; border-color: var(--brand-azul-principal); }
+
+.decisaoBanner { border-radius: var(--radius-md); padding: 12px 14px; margin: 14px 0; font-size: 0.84rem; }
+.decisaoBanner p { margin: 6px 0 0; }
+.decisao-aprovada { background: #e2f3e6; color: #0f5132; }
+.decisao-descartada { background: var(--card-2); color: var(--muted); }
+.especificacao { margin-top: 10px; font-size: 0.82rem; line-height: 1.6; }
+.especificacao p { margin: 4px 0; color: var(--texto); }
 </style>
 </head>
 <body>
@@ -416,7 +465,7 @@ document.getElementById("btnPerfilar").addEventListener("click", async () => {
       }),
     });
     document.getElementById("labMsg").innerHTML = "";
-    renderizarSessao(sessao);
+    await renderizarSessao(sessao);
     carregarSessoes();
   } catch (e) {
     mostrarMsg(e.message);
@@ -426,7 +475,7 @@ document.getElementById("btnPerfilar").addEventListener("click", async () => {
   }
 });
 
-function renderizarSessao(sessao) {
+async function renderizarSessao(sessao) {
   const perfil = sessao.perfil;
   const resumo = perfil.resumo;
   const partes = [];
@@ -455,6 +504,7 @@ function renderizarSessao(sessao) {
   perfil.arquivos.forEach(arquivo => partes.push(cardDoArquivo(arquivo)));
   document.getElementById("labResultado").innerHTML = partes.join("");
   document.getElementById("labResultado").scrollIntoView({ behavior: "smooth", block: "start" });
+  await renderizarChat(sessao);
 }
 
 function stat(numero, rotulo) {
@@ -587,12 +637,222 @@ async function carregarSessoes() {
     lista.querySelectorAll("button[data-sessao]").forEach(botao => {
       botao.addEventListener("click", async () => {
         try {
-          renderizarSessao(await api("/laboratorio/sessoes/" + botao.dataset.sessao));
+          await renderizarSessao(await api("/laboratorio/sessoes/" + botao.dataset.sessao));
         } catch (e) {
           mostrarMsg(e.message);
         }
       });
     });
+  } catch (e) {
+    mostrarMsg(e.message);
+  }
+}
+
+// --- chat (Bloco E / V1.5) + promoção de insight (V1.6) --------------------
+// Mensagens sugeridas literais da seção 9.5 do direcionamento -- o usuário
+// pode clicar ou escrever livremente no campo de texto.
+const MENSAGENS_SUGERIDAS = {
+  "Entender os dados": [
+    "Explique de forma simples o que estes arquivos contêm.",
+    "Identifique as principais dimensões e medidas.",
+    "Avalie a qualidade e as limitações.",
+    "Identifique unidades e possíveis incompatibilidades.",
+  ],
+  "Descobrir indicadores": [
+    "Sugira KPIs úteis para uma visão executiva.",
+    "Sugira indicadores comparáveis entre filiais.",
+    "Sugira indicadores analisáveis por cliente.",
+    "Identifique quais indicadores podem ser consolidados.",
+    "Indique quais dados não devem ser somados.",
+  ],
+  "Comparar": [
+    "Mostre a evolução mensal.",
+    "Compare o período atual com o anterior.",
+    "Compare as filiais selecionadas.",
+    "Compare os clientes selecionados.",
+    "Mostre o acumulado do ano.",
+    "Identifique concentração por cliente.",
+  ],
+  "Validar": [
+    "Este indicador é confiável para diretoria?",
+    "Há risco de dupla contagem?",
+    "As unidades podem ser somadas?",
+    "Quais validações faltam?",
+    "Quais limitações devem aparecer no cockpit?",
+  ],
+};
+
+const FEEDBACK_OPCOES = [
+  { tipo: "gostei", rotulo: "Gostei" },
+  { tipo: "nao_gostei", rotulo: "Não gostei" },
+  { tipo: "pedir_ajuste", rotulo: "Pedir ajuste" },
+  { tipo: "pedir_comparacao", rotulo: "Pedir comparação" },
+  { tipo: "acrescentar_contexto", rotulo: "Acrescentar contexto" },
+];
+
+async function renderizarChat(sessao) {
+  const anterior = document.getElementById("chatSessao");
+  if (anterior) anterior.remove();
+
+  let mensagens = [];
+  try {
+    mensagens = (await api(`/laboratorio/sessoes/${sessao.id}/mensagens`)).mensagens;
+  } catch (e) {
+    mostrarMsg(e.message);
+    return;
+  }
+
+  const decidida = sessao.status === "aprovada" || sessao.status === "descartada";
+  const container = document.createElement("section");
+  container.className = "card perfilCard";
+  container.id = "chatSessao";
+  container.innerHTML = `
+    <h2>Conversa com a IA</h2>
+    <p class="ajuda">A IA recebe o perfil determinístico calculado acima e uma amostra com cliente/CNPJ
+      mascarados por pseudônimo — nunca a planilha crua. Ela não calcula nem publica KPI oficial, só
+      explora e sugere.</p>
+    ${sessao.status === "aprovada" || sessao.status === "descartada" ? bannerDecisao(sessao) : ""}
+    <div class="chatHistorico" id="chatHistorico"></div>
+    ${decidida ? "" : `
+      <div class="sugestoes" id="chatSugestoes">${sugestoesHtml()}</div>
+      <div class="chatEntrada">
+        <textarea id="chatPergunta" rows="2" placeholder="Ou escreva sua própria pergunta..."></textarea>
+        <button class="acao" id="btnEnviarPergunta">Enviar</button>
+      </div>
+      <div class="chatDecisoes">
+        <button class="acao" id="btnAprovar">Aprovar para implementação</button>
+        <button type="button" class="acaoSecundaria" id="btnDescartar">Descartar</button>
+      </div>
+    `}
+  `;
+  document.getElementById("labResultado").appendChild(container);
+
+  renderizarHistorico(mensagens, sessao.id);
+
+  if (!decidida) {
+    document.querySelectorAll("#chatSugestoes button").forEach(botao => {
+      botao.addEventListener("click", () => enviarPergunta(sessao.id, botao.textContent, botao.textContent));
+    });
+    document.getElementById("btnEnviarPergunta").addEventListener("click", () => {
+      const campo = document.getElementById("chatPergunta");
+      const texto = campo.value.trim();
+      if (texto) enviarPergunta(sessao.id, texto, null);
+    });
+    document.getElementById("btnAprovar").addEventListener("click", () => decidirSessao(sessao.id, "aprovar"));
+    document.getElementById("btnDescartar").addEventListener("click", () => decidirSessao(sessao.id, "descartar"));
+  }
+}
+
+function sugestoesHtml() {
+  return Object.entries(MENSAGENS_SUGERIDAS).map(([categoria, itens]) => `
+    <div class="sugestaoGrupo">
+      <span class="subLabel">${escaparHtml(categoria)}</span><br>
+      ${itens.map(t => `<button type="button">${escaparHtml(t)}</button>`).join("")}
+    </div>
+  `).join("");
+}
+
+function bannerDecisao(sessao) {
+  const aprovada = sessao.status === "aprovada";
+  return `<div class="decisaoBanner ${aprovada ? "decisao-aprovada" : "decisao-descartada"}">
+    <strong>${aprovada ? "Aprovada para implementação" : "Descartada"}</strong>
+    ${sessao.decidido_em ? " · " + escaparHtml(sessao.decidido_em) : ""}
+    ${sessao.decisao_nota ? `<p>${escaparHtml(sessao.decisao_nota)}</p>` : ""}
+    ${aprovada && sessao.especificacao ? especificacaoHtml(sessao.especificacao) : ""}
+  </div>`;
+}
+
+function especificacaoHtml(esp) {
+  return `<div class="especificacao">
+    <p class="subLabel">Especificação técnica (rascunho — revisão humana antes de implementar)</p>
+    <p><strong>${escaparHtml(esp.nome)}</strong></p>
+    <p>${escaparHtml(esp.pergunta_negocio)}</p>
+    <p><em>Fórmula:</em> ${escaparHtml(esp.formula)}</p>
+    <p><em>Fontes:</em> ${escaparHtml((esp.fontes || []).map(f => f.arquivo).join(", ") || "-")}</p>
+    <p><em>Conceitos:</em> ${escaparHtml((esp.conceitos || []).join(", ") || "-")}</p>
+    <p><em>Unidades:</em> ${escaparHtml((esp.unidades || []).join(", ") || "-")}</p>
+    <p><em>Granularidade:</em> ${escaparHtml((esp.granularidade || []).join(", ") || "-")}</p>
+    ${listaLimitacoes("Riscos", esp.riscos)}
+    ${listaLimitacoes("Limitações", esp.limitacoes)}
+  </div>`;
+}
+
+function renderizarHistorico(mensagens, sessaoId) {
+  const el = document.getElementById("chatHistorico");
+  if (!mensagens.length) {
+    el.innerHTML = `<p class="ajuda">Nenhuma mensagem ainda — escolha uma sugestão ou escreva uma pergunta.</p>`;
+    return;
+  }
+  el.innerHTML = mensagens.map(m => {
+    if (m.papel === "usuario") {
+      return `<div class="chatMsg chatUsuario"><strong>Você</strong><p>${escaparHtml(m.conteudo)}</p></div>`;
+    }
+    if (m.erro) {
+      return `<div class="chatMsg chatErro"><strong>IA</strong>
+        <p>Não foi possível obter resposta agora: ${escaparHtml(m.erro)}</p></div>`;
+    }
+    return `<div class="chatMsg chatAssistente">
+      <strong>IA</strong><p>${escaparHtml(m.conteudo)}</p>
+      ${feedbackHtml(m)}
+    </div>`;
+  }).join("");
+
+  document.querySelectorAll("#chatHistorico .feedbackRow button").forEach(botao => {
+    botao.addEventListener("click", () =>
+      enviarFeedback(sessaoId, Number(botao.dataset.mensagem), botao.dataset.tipo));
+  });
+}
+
+function feedbackHtml(mensagem) {
+  return `<div class="feedbackRow">${FEEDBACK_OPCOES.map(op => `
+    <button type="button" data-mensagem="${Number(mensagem.id)}" data-tipo="${op.tipo}"
+      class="${mensagem.feedback === op.tipo ? "feedbackAtivo" : ""}">${escaparHtml(op.rotulo)}</button>
+  `).join("")}</div>`;
+}
+
+async function enviarPergunta(sessaoId, pergunta, mensagemSugerida) {
+  const botao = document.getElementById("btnEnviarPergunta");
+  if (botao) { botao.disabled = true; botao.textContent = "Enviando..."; }
+  try {
+    await api(`/laboratorio/sessoes/${sessaoId}/mensagens`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pergunta, mensagem_sugerida: mensagemSugerida }),
+    });
+    await renderizarChat(await api(`/laboratorio/sessoes/${sessaoId}`));
+  } catch (e) {
+    mostrarMsg(e.message);
+  } finally {
+    if (botao) { botao.disabled = false; botao.textContent = "Enviar"; }
+  }
+}
+
+async function enviarFeedback(sessaoId, mensagemId, tipo) {
+  try {
+    await api(`/laboratorio/sessoes/${sessaoId}/mensagens/${mensagemId}/feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tipo }),
+    });
+    renderizarHistorico((await api(`/laboratorio/sessoes/${sessaoId}/mensagens`)).mensagens, sessaoId);
+  } catch (e) {
+    mostrarMsg(e.message);
+  }
+}
+
+async function decidirSessao(sessaoId, acao) {
+  const rotulo = acao === "aprovar" ? "aprovar esta sessão para implementação" : "descartar esta sessão";
+  if (!confirm(`Confirma ${rotulo}? Essa decisão é definitiva.`)) return;
+  try {
+    document.getElementById("labMsg").innerHTML = `<div class="msg">Processando decisão...</div>`;
+    await api(`/laboratorio/sessoes/${sessaoId}/${acao}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    document.getElementById("labMsg").innerHTML = "";
+    await renderizarChat(await api(`/laboratorio/sessoes/${sessaoId}`));
+    carregarSessoes();
   } catch (e) {
     mostrarMsg(e.message);
   }

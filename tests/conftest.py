@@ -22,6 +22,10 @@ os.environ["DATABASE_URL"] = os.environ.get(
 os.environ.setdefault("ADMIN_PASSWORD", "senha-teste")
 os.environ.setdefault("SECRET_KEY", "chave-de-teste-nao-usar-em-prod")
 os.environ.setdefault("UPLOADS_DIR", tempfile.mkdtemp(prefix="nuvem_uploads_"))
+# Bloco E (V1.5): so pra obter_configuracao_ia() nao levantar "faltam as
+# variaveis" -- os testes mockam ia_client.enviar_mensagem, entao esta chave
+# nunca chega a sair pra rede de verdade.
+os.environ.setdefault("ANTHROPIC_API_KEY", "sk-ant-teste-nao-usar-em-prod")
 
 import psycopg2
 import pytest

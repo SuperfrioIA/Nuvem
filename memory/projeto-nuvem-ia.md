@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status)
+description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco E (03/ago/2026) integrou Anthropic Claude no chat do Laboratório
 metadata:
   type: project
 ---
@@ -49,8 +49,20 @@ a correção do caminho vivo (a sigla das telas passou a sair da origem
 qualificada — os arquivos `001` da CWB3 apareciam como RMSPII). Não houve reparo
 de linhagem porque nada chegou a ser processado em produção; detalhes e o que
 foi cortado da análise original em [[reestruturacao-datahub-4-unidades]].
-**Nenhum bloco seguinte autorizado** — Bloco E (chat + insight aprovado) aguarda
-OK. O texto abaixo é o histórico até a virada.
+**Bloco E (V1.5 chat do Laboratório + V1.6 insight aprovado) feito em
+03/ago/2026**: primeira integração de IA generativa do projeto — provedor
+Anthropic Claude API (`claude-sonnet-5` padrão, configurável por env var).
+Contexto controlado (perfil determinístico do Bloco D + amostra mascarada,
+nunca a planilha) com cliente/CNPJ trocado por pseudônimo consistente e
+unidade sempre junto da filial (nunca só o código, ambíguo entre unidades
+desde a reestruturação). Aprovar gera especificação técnica (parte
+determinística do perfil + rascunho estruturado da IA), nunca publica KPI.
+Verificação independente achou e corrigiu 1 vazamento crítico (nome do
+filtro de cliente ecoado sem máscara), 2 altos (erro da IA na aprovação
+virando 500; colisão de código de filial entre unidades no contexto) e 1
+médio (resposta truncada tratada como sucesso) antes do commit — detalhes em
+`docs/V1_PLANO.md`. **Nenhum bloco seguinte autorizado** — Bloco F (cockpit
+executivo) aguarda OK.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

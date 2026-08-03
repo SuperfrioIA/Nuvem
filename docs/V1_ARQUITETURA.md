@@ -49,8 +49,10 @@ backend/
 │   ├── leitura_datahub.py       ← V1.4 (leitura estrutural genérica, por posição)
 │   ├── perfil_dados.py          ← V1.4 (perfil determinístico pré-IA)
 │   ├── laboratorio.py           ← V1.4 (seleção, limites, sessão de análise)
-│   ├── laboratorio_insights.py  ← V1.5 (chat, rastreabilidade)
-│   ├── promocao_kpi.py          ← V1.6 (especificação a partir do insight)
+│   ├── ia_client.py             ← V1.5 (wrapper do provedor de IA — Anthropic Claude)
+│   ├── mascaramento.py          ← V1.5 (cliente/CNPJ → pseudônimo antes da IA)
+│   ├── laboratorio_chat.py      ← V1.5 (contexto controlado, chat, rastreabilidade)
+│   ├── insight_aprovado.py      ← V1.6 (especificação a partir do insight aprovado)
 │   ├── cockpit.py               ← V1.7 (consultas com filtros globais)
 │   └── (existentes: graph_datahub, inventario_datahub, entrada_mercadorias,
 │        kpis_poc, resumo_poc, nuvem_datahub — mantidos)

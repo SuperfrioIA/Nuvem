@@ -56,3 +56,33 @@ def obter_configuracao_graph() -> ConfiguracaoGraph:
         site_path=os.environ["GRAPH_SITE_PATH"],
         pasta=os.environ["GRAPH_PASTA"],
     )
+
+
+# Provedor de IA do chat do Laboratorio (Bloco E / V1.5) -- Anthropic Claude,
+# decisao da Maria (03/ago/2026). Mesma leitura preguicosa do Graph acima: sem
+# a chave, o app sobe normal e so falha quando o chat for de fato usado.
+# IA_MODELO/IA_EFFORT tem default (troca de modelo/custo sem redeploy de codigo).
+
+
+class ConfiguracaoIAIncompletaError(RuntimeError):
+    """ANTHROPIC_API_KEY ausente no ambiente -- nenhuma chamada foi feita."""
+
+
+@dataclass(frozen=True)
+class ConfiguracaoIA:
+    api_key: str
+    modelo: str
+    effort: str
+
+
+def obter_configuracao_ia() -> ConfiguracaoIA:
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise ConfiguracaoIAIncompletaError(
+            "configuracao da IA incompleta -- falta a variavel: ANTHROPIC_API_KEY"
+        )
+    return ConfiguracaoIA(
+        api_key=api_key,
+        modelo=os.environ.get("IA_MODELO", "claude-sonnet-5"),
+        effort=os.environ.get("IA_EFFORT", "medium"),
+    )

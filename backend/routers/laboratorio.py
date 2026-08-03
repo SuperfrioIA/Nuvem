@@ -1,14 +1,16 @@
-"""Endpoints do Laboratorio de Insights (Bloco D / V1.4).
+"""Endpoints do Laboratorio de Insights (Bloco D / V1.4 + Bloco E / V1.5-V1.6).
 
-Tudo atras de sessao (`exigir_login`), como o resto do admin. Nenhuma chamada
-de IA aqui -- o V1.4 e seleção + perfil deterministico; o chat entra no V1.5.
+Tudo atras de sessao (`exigir_login`), como o resto do admin. Chat e
+aprovacao/descarte (Bloco E) sempre operam sobre uma sessao ja perfilada
+(Bloco D) -- por isso todo endpoint novo comeca buscando a sessao e devolve
+404 se ela nao existir, igual ao `GET /sessoes/{id}` que ja existia.
 """
 
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 
 from ..auth import exigir_login
 from ..database import get_conn
-from ..services import laboratorio
+from ..services import insight_aprovado, laboratorio, laboratorio_chat
 
 router = APIRouter(prefix="/laboratorio")
 
@@ -63,3 +65,87 @@ def sessao(request: Request, sessao_id: int):
     if encontrada is None:
         raise HTTPException(status_code=404, detail="sessão de análise não encontrada")
     return encontrada
+
+
+# --- chat (Bloco E / V1.5) --------------------------------------------------
+
+
+@router.get("/sessoes/{sessao_id}/mensagens")
+def listar_mensagens(request: Request, sessao_id: int):
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            if laboratorio.obter_sessao(cur, sessao_id) is None:
+                raise HTTPException(status_code=404, detail="sessão de análise não encontrada")
+            return {"mensagens": laboratorio_chat.listar_mensagens(cur, sessao_id)}
+
+
+@router.post("/sessoes/{sessao_id}/mensagens")
+def enviar_mensagem(
+    request: Request,
+    sessao_id: int,
+    pergunta: str = Body(..., embed=True),
+    mensagem_sugerida: str | None = Body(None, embed=True),
+):
+    """Sem IA configurada ou com falha do provedor, a mensagem do assistente
+    grava o erro em vez de 400 -- a conversa segue, nada é inventado (ver
+    docstring de `laboratorio_chat.perguntar`)."""
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            sessao_atual = laboratorio.obter_sessao(cur, sessao_id)
+            if sessao_atual is None:
+                raise HTTPException(status_code=404, detail="sessão de análise não encontrada")
+            try:
+                return laboratorio_chat.perguntar(
+                    cur, sessao_atual, pergunta, mensagem_sugerida=mensagem_sugerida
+                )
+            except laboratorio_chat.LaboratorioChatError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sessoes/{sessao_id}/mensagens/{mensagem_id}/feedback")
+def feedback(
+    request: Request,
+    sessao_id: int,
+    mensagem_id: int,
+    tipo: str = Body(..., embed=True),
+    comentario: str | None = Body(None, embed=True),
+):
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            try:
+                laboratorio_chat.registrar_feedback(cur, sessao_id, mensagem_id, tipo, comentario)
+            except laboratorio_chat.LaboratorioChatError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+# --- promoção de insight (Bloco E / V1.6) -----------------------------------
+
+
+@router.post("/sessoes/{sessao_id}/aprovar")
+def aprovar(request: Request, sessao_id: int, nota: str | None = Body(None, embed=True)):
+    """Gera a especificação técnica (seção 10 do direcionamento) e fecha a
+    sessão como 'aprovada'. Nunca publica KPI -- é insumo pra implementação
+    manual depois."""
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            try:
+                return insight_aprovado.aprovar(cur, sessao_id, nota)
+            except insight_aprovado.InsightAprovadoError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/sessoes/{sessao_id}/descartar")
+def descartar(request: Request, sessao_id: int, motivo: str | None = Body(None, embed=True)):
+    exigir_login(request)
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            try:
+                insight_aprovado.descartar(cur, sessao_id, motivo)
+            except insight_aprovado.InsightAprovadoError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}

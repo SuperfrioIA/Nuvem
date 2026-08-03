@@ -66,7 +66,7 @@ semântico).
 | **C** | V1.3 Persistência e série histórica | **feito** (31/jul/2026) |
 | **D** | V1.4 Laboratório: seleção e perfil | **feito** (02/ago/2026) |
 | **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
-| E | V1.5 Laboratório: chat + V1.6 Insight aprovado | a fazer — não autorizado |
+| **E** | V1.5 Laboratório: chat + V1.6 Insight aprovado | **feito** (03/ago/2026) |
 | F | V1.7 Cockpit executivo | a fazer — não autorizado |
 | G | V1.8 Produção e entrega | a fazer — não autorizado |
 
@@ -675,15 +675,123 @@ a árvore real (`RMSPII/...`) — inclusive o do router, que criava o arquivo so
 na raiz e por isso deixou de resolver de-para (o comportamento novo estava certo,
 o fixture é que não representava mais a fonte).
 
+## Bloco E — V1.5 Laboratório: chat + V1.6 Insight aprovado (feito, 03/ago/2026)
+
+Autorizado pela Maria em 03/ago/2026 ("confirmado, pode seguir"), depois de um
+plano em texto com uma decisão dela na abertura: **provedor de IA é a Anthropic
+Claude API**, modelo padrão `claude-sonnet-5` (custo, sem exigir o teto de
+raciocínio da tarefa), configurável por variável de ambiente sem redeploy de
+código.
+
+**O que o lote entregou:**
+
+- **Migration `0010_laboratorio_chat`** (aditiva): tabela `laboratorio_mensagens`
+  (uma linha por turno usuário/assistente; `contexto_enviado` grava o que de
+  fato saiu pro provedor, auditoria da seção 9.6/12; `erro` no lugar de
+  `conteudo` quando a chamada falha — nunca resposta inventada; `feedback` é
+  reação a UMA mensagem do assistente, gostei/não gostei/pedir ajuste/pedir
+  comparação/acrescentar contexto). `laboratorio_sessoes` ganha `especificacao`
+  (JSONB, só na aprovação), `decisao_nota` e `decidido_em` — aprovar/descartar
+  são decisão da SESSÃO inteira, não de uma mensagem.
+- **`backend/config.py`**: `obter_configuracao_ia()` no mesmo padrão preguiçoso
+  do Graph — sem `ANTHROPIC_API_KEY` o app sobe normal, só falha quando o chat
+  for de fato usado. `IA_MODELO`/`IA_EFFORT` com default, trocáveis por
+  variável de ambiente.
+- **`backend/services/ia_client.py`**: wrapper fino do SDK Anthropic (isola o
+  SDK, como `graph_datahub.py` isola o Graph). `thinking` sempre adaptativo;
+  recusa por política (`stop_reason == "refusal"`) e resposta truncada
+  (`stop_reason == "max_tokens"`) viram erro tratado, nunca sucesso silencioso
+  com conteúdo incompleto.
+- **`backend/services/mascaramento.py`**: função pura que troca cliente/CNPJ
+  por pseudônimo consistente (mesmo cliente = mesmo pseudônimo) em quatro
+  pontos do perfil determinístico onde o nome aparece em claro: amostra,
+  `clientes.top`, `colunas[].exemplos` e o texto de limitação do filtro de
+  cliente (esse último só apareceu na verificação independente — é o nome que
+  o próprio usuário digitou no filtro, ecoado de volta pelo perfil).
+- **`backend/services/laboratorio_chat.py`**: monta o contexto controlado
+  (perfil determinístico do Bloco D + amostra mascarada, nunca a planilha),
+  resolve **unidade junto da filial** por arquivo (reusa `filiais_datahub`/
+  `inventario_datahub`, sem heurística própria) e recalcula duas chaves do
+  resumo da sessão especificamente para a IA — nunca no formato persistido do
+  Bloco D: `limitacoes` (deduplicada a partir das já mascaradas por arquivo) e
+  `filiais` (trocada pela origem qualificada; o código nu colide entre
+  unidades diferentes, ex. `RMSPII/001` × `CWB3/001`). Envia pergunta,
+  grava resposta ou erro, nunca lança exceção pro chamador.
+- **`backend/services/insight_aprovado.py`** (V1.6): ao aprovar, gera a
+  especificação técnica da seção 10 combinando parte determinística do perfil
+  (fontes, campos, conceitos, unidade, granularidade, limitações — nunca da
+  IA) com saída estruturada da IA (nome, pergunta de negócio, fórmula, riscos,
+  exemplos — schema fixo). Nunca publica KPI nem grava em tabela de métrica
+  oficial. Descartar não chama a IA.
+- **Endpoints novos** em `routers/laboratorio.py`: `GET/POST
+  /sessoes/{id}/mensagens`, `POST /sessoes/{id}/mensagens/{id}/feedback`,
+  `POST /sessoes/{id}/aprovar`, `POST /sessoes/{id}/descartar` — todos atrás de
+  login, todos buscando a sessão primeiro (404 se não existir).
+- **Painel de chat em `/laboratorio`**: mensagens sugeridas da seção 9.5 como
+  botões, campo livre, histórico, feedback por mensagem, aprovar/descartar com
+  confirmação; especificação aprovada e nota de decisão renderizadas na tela.
+
+**Verificação independente** (agente separado, antes do commit): achou 1
+crítico, 2 altos e 1 médio — todos corrigidos antes de fechar o lote:
+
+1. **Crítico** — o nome do filtro de cliente (texto digitado pelo usuário,
+   não vem da planilha) era ecoado sem máscara no texto de limitação
+   ("Perfil calculado APÓS filtro de cliente (SAPORE): ...") e ia inteiro pro
+   contexto da IA. Corrigido em `mascaramento.py` (mascara a limitação com o
+   mesmo mapa da amostra).
+2. **Alto** — falha da IA na aprovação (`insight_aprovado.gerar_especificacao`)
+   subia como exceção crua, virando HTTP 500 em vez do 400 tratado que o
+   resto do Laboratório sempre devolve. Corrigido com `try/except` mapeando
+   pra `InsightAprovadoError`.
+3. **Alto** — `resumo_da_sessao.filiais` embutia o código nu do Bloco D, que
+   colide entre unidades (`RMSPII/001` × `CWB3/001` viram os dois "001").
+   Corrigido recalculando `filiais` a partir da origem qualificada de cada
+   arquivo, só dentro do contexto do Bloco E (o formato persistido do Bloco D
+   não muda).
+4. **Médio** — resposta cortada pelo limite de tokens (`stop_reason ==
+   "max_tokens"`) era gravada como sucesso, sem sinal de que estava
+   incompleta. Corrigido em `ia_client.py` (vira erro tratado, mesmo caminho
+   de "conversa segue sem inventar resposta").
+
+**Decisões do lote:**
+
+1. **Contexto sempre recalculado a partir do perfil**, nunca reaproveitando
+   `resumo`/`limitacoes` do Bloco D como estão persistidos — o formato
+   gravado na sessão continua sendo o de exibição/histórico; o que vai pra IA
+   é uma projeção própria do Bloco E, montada a cada chamada.
+2. **Contexto completo reenviado a cada turno** (a API é sem estado; o perfil
+   da sessão é imutável) em vez de cache/prompt caching — simplicidade sobre
+   otimização de custo neste volume (ferramenta interna de CSC).
+3. **Sem consistência de pseudônimo ENTRE arquivos** da mesma sessão — casar
+   os mapas exigiria expor o de-para em algum lugar, contra o propósito do
+   mascaramento. Dentro de um arquivo, o mesmo cliente é sempre o mesmo
+   pseudônimo.
+4. **Aprovar é ação única, não conversação** — falha da IA na aprovação vira
+   erro tratado que interrompe a ação (o usuário tenta de novo), diferente do
+   chat, que grava o erro numa mensagem e deixa a conversa seguir.
+
+**Fora do lote (declarado):** cockpit (F); consolidação entre sessões/insights
+aprovados; qualquer leitura de `especificacao` fora da própria tela do
+Laboratório (a especificação é insumo pra implementação humana, não é
+consumida em código).
+
+**Limitação aceita (achado de severidade baixa da verificação independente,
+não corrigida):** a checagem do limite de mensagens por sessão
+(`MAX_MENSAGENS_POR_SESSAO`) não usa lock — duas requisições concorrentes na
+mesma sessão podem, em tese, passar do teto, porque a chamada à IA (até 60s)
+acontece dentro da mesma janela da checagem. Consistente com o resto do
+Laboratório (nenhum outro limite usa lock); é um teto de custo/uso, não um
+controle de segurança, e o volume esperado (ferramenta interna) não justifica
+a complexidade de lock agora.
+
+**Suíte**: **382 passed** (52 novos: 8 de mascaramento — incluindo o caso do
+achado crítico —, 6 do wrapper da IA testado com client falso — cobertura que
+não existia antes da verificação independente —, 24 do chat/contexto/
+endpoints e 14 da aprovação/descarte/endpoints; nenhum teste anterior removido
+ou enfraquecido). Testes sempre mockados — nenhuma chamada de rede real à
+Anthropic na suíte.
+
 ## Próximo bloco autorizado
 
-**Nenhum.** O Bloco E (V1.5 chat do Laboratório + V1.6 insight aprovado) só
-começa com autorização explícita da Maria.
-
-**Condição registrada para o Bloco E:** o bloqueio herdado da reestruturação era
-sobre consumir a **série persistida**, não sobre o bloco inteiro — o Laboratório
-lê o arquivo direto e não passa por `medidas`. Com o lote de correção fechado, a
-série deixou de ser risco de linhagem. Fica valendo um requisito de conteúdo: o
-contexto enviado à IA precisa carregar **unidade junto da filial**, nunca só
-"filial 001". Segue valendo também o requisito herdado do Bloco D: **mascarar a
-amostra antes de enviar ao provedor de IA**.
+**Nenhum.** O Bloco F (V1.7 cockpit executivo) só começa com autorização
+explícita da Maria.

@@ -1,4 +1,4 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–D + lote de correção da identidade do DataHub feitos, E–G aguardam OK
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–E feitos (chat + aprovação de insight com Anthropic Claude no E), F–G aguardam OK
 - **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, DataHub como fonte permanente (29/jul), decisões fixadas da V1 e do Bloco A (31/jul)
 - Escopo e status por lote da POC (histórico, P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — POC encerrada em 30/jul/2026

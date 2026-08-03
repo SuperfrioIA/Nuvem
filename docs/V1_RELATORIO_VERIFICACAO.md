@@ -217,3 +217,50 @@ ressalvas corrigíveis caíram antes do commit, cada um com teste; 8 ressalvas d
 robustez ficaram registradas como limitação conhecida no `docs/V1_PLANO.md`.
 Suíte final após as correções: **311 passed** (299 da rodada verificada + 12
 testes novos das correções).
+
+---
+
+## Bloco E — V1.5 Laboratório: chat + V1.6 Insight aprovado (03/ago/2026)
+
+**Método do verificador**: agente separado (segundo contexto), sem memória da
+implementação. Leu `git diff`/`git status` e os arquivos novos por completo,
+executou a suíte do lote contra o Postgres local, e escreveu (e depois
+removeu) dois scripts próprios pra confirmar na prática os dois achados mais
+graves antes de reportar — não se limitou a leitura estática.
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Mascaramento de cliente/CNPJ antes de qualquer envio à IA | **corrigido** | amostra, `clientes.top` e `colunas[].exemplos` mascarados desde a primeira versão; a limitação do filtro de cliente (nome digitado pelo usuário, não vem da planilha) vazava sem máscara — achado crítico, corrigido |
+| 2 | Unidade sempre junto da filial no contexto | **corrigido** | `origem_do_arquivo` por arquivo já estava certo; `resumo_da_sessao.filiais` embutia o código nu do Bloco D (colide entre unidades) — corrigido recalculando a partir da origem qualificada |
+| 3 | IA nunca calcula/publica KPI oficial | atendido | nenhuma tabela de métrica/cockpit tocada pelos módulos novos; `especificacao` não é lida em nenhum outro lugar do código |
+| 4 | Falha do provedor nunca vira resposta inventada nem exceção crua | **corrigido** | chat já tratava (mensagem grava o erro, conversa segue); a aprovação (`insight_aprovado.gerar_especificacao`) não tratava — subia HTTP 500 — corrigido com `try/except` |
+| 5 | Resposta truncada nunca vira sucesso silencioso | **corrigido** | `stop_reason == "max_tokens"` não era verificado — resposta cortada/vazia era gravada como completa; corrigido em `ia_client.py` |
+| 6 | Proteção contra prompt injection | atendido | dado de fonte sempre dentro de `<dados_da_fonte>`, marcado como não-instrução no system prompt; resposta da IA nunca tratada como comando/dado confiável |
+| 7 | Testes mockados (zero chamada de rede real) | atendido | os três arquivos de teste do lote executados contra o Postgres local, 40 passaram sem nenhuma chamada real à Anthropic |
+| 8 | XSS no frontend | atendido | todo texto novo (arquivo, resposta da IA, pergunta, nota de decisão, especificação) passa por `escaparHtml` |
+| 9 | Injeção de SQL | atendido | todo `cur.execute` novo é parametrizado (`%s`); os únicos f-strings em SQL interpolam uma tupla constante do módulo, nunca entrada de usuário |
+| 10 | Migration 0010 | atendido | aditiva de verdade; downgrade desfaz tudo na ordem certa; índice condiz com a única consulta existente |
+| 11 | Uso de `cur`/transação | atendido | nenhum serviço novo abre conexão própria — todos recebem `cur`, igual ao resto do projeto |
+| 12 | Limites (tamanho de pergunta, mensagens por sessão) | atendido, com ressalva | checados antes de qualquer gravação/chamada cara; sem lock — ver achado de baixa gravidade |
+
+### Achados e o que foi feito
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| E1 | Nome/CNPJ digitado no filtro de cliente (`filtro_aplicado.valores`) era ecoado sem máscara dentro do texto de `limitacoes`, que ia inteiro pro contexto da IA — confirmado executando o código real com um filtro de cliente aplicado | **crítico** | **corrigido** — `mascaramento.py` mascara `limitacoes` com o mesmo mapa de pseudônimos da amostra, casando por texto normalizado (`.lower().strip()`) |
+| E2 | `insight_aprovado.gerar_especificacao` não tratava `ConfiguracaoIAIncompletaError`/`ia_client.IAError` — falha do provedor na aprovação subia crua e virava HTTP 500 no endpoint | **alto** | **corrigido** — `try/except` mapeando pra `InsightAprovadoError` (o router já convertia essa classe em 400) |
+| E3 | `resumo_da_sessao.filiais` do contexto embutia o código nu do Bloco D (`"001"`), que colide entre unidades diferentes desde a reestruturação (`RMSPII/001` × `CWB3/001`) — confirmado com sessão de dois arquivos do mesmo código em unidades diferentes | **alto** | **corrigido** — `montar_contexto` recalcula `filiais` a partir da origem qualificada de cada arquivo; o formato persistido do Bloco D não muda |
+| E4 | `stop_reason == "max_tokens"` nunca era verificado — resposta cortada no meio (ou vazia, se o thinking consumiu o orçamento) era gravada como sucesso completo | **médio** | **corrigido** — `ia_client.py` levanta `IAIndisponivelError`, reaproveitando o caminho de "conversa segue sem inventar resposta" que já existia pra outras falhas |
+| E5 | Checagem de `MAX_MENSAGENS_POR_SESSAO` sem lock: duas requisições concorrentes na mesma sessão podem, em tese, passar do teto, porque a chamada à IA (até 60s) acontece dentro da mesma janela da checagem | baixo | **aceito, registrado** no `V1_PLANO.md` — consistente com o resto do Laboratório (nenhum outro limite usa lock); é teto de custo/uso, não controle de segurança |
+| E6 | Redundância: `obter_configuracao_ia()` é lido tanto em `laboratorio_chat.perguntar` quanto dentro de `ia_client._client()` na primeira chamada do processo | estilo | **aceito** — nenhum efeito funcional, ambas as leituras são de env var idempotente |
+
+**Conclusão: Bloco E atendido após as correções.** Os 4 achados reais (1
+crítico, 2 altos, 1 médio) caíram antes do commit, cada um com teste de
+regressão novo (inclusive um arquivo de teste inteiro, `tests/test_ia_client.py`,
+que passou a exercitar a lógica de `ia_client.py` com um client falso — antes
+só existia mock do wrapper inteiro, nunca da lógica interna dele). Achado de
+baixa gravidade (E5) e nota de estilo (E6) ficaram registrados como limitação
+conhecida. Suíte final após as correções: **382 passed** (330 antes do lote +
+52 novos: 8 de mascaramento, 6 do wrapper da IA, 24 do chat/contexto/
+endpoints, 14 da aprovação/descarte/endpoints; nenhum teste anterior removido
+ou enfraquecido). Zero chamada de rede real à Anthropic na suíte.
