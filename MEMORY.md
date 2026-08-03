@@ -5,6 +5,7 @@
 - Balanço da POC (o que foi provado, limitações, obstáculos do dado, riscos): [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md) — pendências: validar a nuvem ao vivo, subir pra VM (com UPDATE de `ativo` das filiais), devolução no card de valor
 - Plano de produto antigo (histórico, 0–11/R0–R3): [docs/PLANO.md](docs/PLANO.md) — nenhum lote de lá autorizado; o plano ativo é o V1_PLANO.md
 - [IP da VM da Nuvem IA](memory/vm-nuvem-ia.md) — `172.31.49.141:8002`, admin em produção
+- [Como rodar a suíte de testes local](memory/suite-testes-local.md) — sem venv, `python -m pytest`, Postgres de teste em container que o Docker Desktop desliga sozinho; erro de conexão em massa é ambiente, não regressão
 - [Reestruturação do DataHub em 4 unidades](memory/reestruturacao-datahub-4-unidades.md) — 31/jul/2026: 367 arquivos/61 pastas/955 MB e 7 colisões de nome; **corrigido em 02/ago/2026** (migration 0008: identidade por `item_id`, de-para qualificado `RMSPII/001`, guarda de colisão, RJ visível). Nunca contaminou produção — a VM está em `0004`
 - Fontes do SharePoint DataHub (inventário, colunas, obstáculos): [docs/FONTES_DATAHUB.md](docs/FONTES_DATAHUB.md) — ler antes de mexer no conector `sharepoint_excel`; atualizado em 02/ago/2026 com as 4 unidades, a família `ENTRADA_MERCADORIAS (UA)` e o layout de 18 colunas da RJ
 - [Chaves das famílias ENTRADA do DataHub](memory/chaves-nf-entrada-datahub.md) — agregar por `GEM`; colunas de NF truncadas, contagem de notas não é possível; guia cancelada não tem item

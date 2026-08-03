@@ -70,6 +70,31 @@ semântico).
 | F | V1.7 Cockpit executivo | a fazer — não autorizado |
 | G | V1.8 Produção e entrega | a fazer — não autorizado |
 
+## Estado do deploy (03/ago/2026)
+
+A VM (`172.31.49.141:8002`) estava parada em `0004_catalogo_metricas` desde
+30/jul — quatro migrations atrasadas. Em 03/ago/2026 subiu tudo e **três
+pendências não-código que estavam abertas desde o Bloco A foram fechadas**:
+
+| Pendência | Aberta desde | Fechada |
+|---|---|---|
+| Subir o código pra VM (`docs/DEPLOY.md`) | Bloco A (31/jul) | 03/ago/2026 — `git pull` + `up -d --build`, migrations `0005`→`0008` aplicadas no startup |
+| Aplicar o `UPDATE` de `ativo` das filiais (015 inativa / 016 ativa) | Bloco A (31/jul) | 03/ago/2026 — rodado na VM pela Maria |
+| Processar o histórico na VM ("Processar arquivos") | Bloco C (31/jul) | 03/ago/2026 — executado e validado pela Maria |
+
+O `UPDATE` de `ativo` foi a **lição que virou regra**: ficou como passo manual
+esquecível por quatro dias porque o seed é insert-only. Desde a migration
+`0009_cadastro_filiais` (03/ago), correção de dado de cadastro entra como
+migration, não como SQL manual no runbook — migration não esquece.
+
+**Ainda abertas** (não-código): validar o `/nuvem` ao vivo contra o SharePoint
+real (se já foi feita, marcar junto desta); decidir devolução/rótulo no card de
+valor (`docs/ENTREGA_POC.md`, seção 3); pendências humanas das fontes
+(`docs/FONTES_DATAHUB.md`, seção 6), onde entram os **de-paras das unidades
+novas** (`CWB3/001`, `SANCA/025`, `RJ/004-*`, `RJ/005-*`) e a filial `002`, que a
+Maria manteve pendente em 02/ago; cadastrar os clientes que aparecerem como
+pendência no painel.
+
 ## Bloco A — V1.0 Transição para produto (feito, 31/jul/2026)
 
 O que o lote entregou, item a item do direcionamento:
@@ -135,12 +160,15 @@ O que o lote entregou, item a item do direcionamento:
 **Fora do lote (declarado):** persistência/série histórica (C), compatibilidade
 de unidades (B), qualquer mudança de schema/migration, deploy na VM.
 
-**Pendências herdadas (não-código), na ordem:**
+**Pendências herdadas (não-código), na ordem** — situação atual na seção "Estado
+do deploy", no início deste documento; os itens 2 e 3 abaixo foram **fechados em
+03/ago/2026**:
 
 1. Validar o `/nuvem` ao vivo contra o SharePoint real (herdada do P5.5; as
    mudanças do Bloco A tornam essa validação ainda mais necessária);
-2. Subir o código atual pra VM (`docs/DEPLOY.md`, passo 4.1) **e aplicar o
-   `UPDATE` de `ativo` das filiais** (`memory/filiais-catering-poc.md`);
+2. ~~Subir o código atual pra VM (`docs/DEPLOY.md`, passo 4.1) **e aplicar o
+   `UPDATE` de `ativo` das filiais**~~ (`memory/filiais-catering-poc.md`) —
+   **feito em 03/ago/2026**;
 3. Decidir devolução/rótulo no card de valor (`docs/ENTREGA_POC.md`, seção 3);
 4. Pendências humanas das fontes (`docs/FONTES_DATAHUB.md`, seção 6).
 
@@ -338,7 +366,9 @@ no caminho vivo):
 ao vivo, subir pra VM com o `UPDATE` de `ativo` das filiais, devolução no card
 de valor, pendências humanas das fontes. Nova: **processar o histórico na VM**
 (clicar "Processar arquivos" depois do deploy) e cadastrar os clientes que
-aparecerem como pendência.
+aparecerem como pendência. **O deploy, o `UPDATE` de `ativo` e o processamento
+do histórico foram feitos em 03/ago/2026** — ver "Estado do deploy" no início
+deste documento.
 
 **Suíte**: **232 passed** (185 do Bloco B + 47 novos: 20 do processamento, 12
 da consulta de série, 6 da persistência do inventário, 6 dos endpoints novos,
