@@ -544,6 +544,34 @@ def test_migracao_0009_nao_toca_depara_de_outro_armazem(banco_vazio):
     ) == [(1,)]
 
 
+def test_migracao_0011_ciclo_completo_da_tabela_de_auditoria(banco_vazio):
+    """Bloco G / G2: eventos_auditoria e aditiva, sem preservacao de dado no
+    downgrade (evento de auditoria antigo nao e o mesmo caso da 0006/0008/0009,
+    que corrigem cadastro) -- o ciclo so prova que upgrade/downgrade/upgrade
+    nao quebra e que o downgrade de fato remove a tabela."""
+    from alembic import command
+
+    migracao.migrar()
+    _executar(
+        "INSERT INTO eventos_auditoria (tipo, detalhe, ip) "
+        "VALUES ('login_sucesso', '{}', '127.0.0.1')"
+    )
+    assert consultar("SELECT COUNT(*) FROM eventos_auditoria") == [(1,)]
+
+    command.downgrade(migracao._config(), "0010_laboratorio_chat")
+    assert consultar(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'eventos_auditoria'"
+    ) == [(0,)]
+
+    command.upgrade(migracao._config(), "head")
+    assert consultar("SELECT COUNT(*) FROM eventos_auditoria") == [(0,)]
+    _executar(
+        "INSERT INTO eventos_auditoria (tipo, detalhe, ip) "
+        "VALUES ('login_sucesso', '{}', '127.0.0.1')"
+    )
+    assert consultar("SELECT ator FROM eventos_auditoria") == [("admin",)]
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

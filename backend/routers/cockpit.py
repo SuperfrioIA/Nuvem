@@ -4,26 +4,24 @@ A serie historica e o acumulado NAO tem endpoint proprio aqui -- a tela
 consome direto `GET /api/admin/datahub/serie` (existe desde o Bloco C).
 """
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 
 from ..auth import exigir_login
 from ..database import get_conn
 from ..services import cockpit, serie_datahub
 
-router = APIRouter(prefix="/cockpit")
+router = APIRouter(prefix="/cockpit", dependencies=[Depends(exigir_login)])
 
 _ERROS = (cockpit.CockpitError, serie_datahub.SerieDatahubError)
 
 
 @router.get("/resumo")
 def resumo(
-    request: Request,
     de: str | None = None,
     ate: str | None = None,
     filial: str | None = None,
     cliente: str | None = None,
 ):
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -34,13 +32,11 @@ def resumo(
 
 @router.get("/comparacao/filiais")
 def comparacao_filiais(
-    request: Request,
     metrica: str,
     de: str | None = None,
     ate: str | None = None,
     cliente: str | None = None,
 ):
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -51,13 +47,11 @@ def comparacao_filiais(
 
 @router.get("/comparacao/clientes")
 def comparacao_clientes(
-    request: Request,
     metrica: str,
     de: str | None = None,
     ate: str | None = None,
     filial: str | None = None,
 ):
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -68,12 +62,10 @@ def comparacao_clientes(
 
 @router.get("/qualidade")
 def qualidade(
-    request: Request,
     de: str | None = None,
     ate: str | None = None,
     filial: str | None = None,
 ):
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:

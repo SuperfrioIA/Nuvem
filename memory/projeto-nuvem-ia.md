@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco F entregou o cockpit executivo, Bloco G/G1 (produção e continuidade) feito em 03/ago/2026, G2/G3 aguardam OK
+description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco F entregou o cockpit executivo, Bloco G/G1+G2 (produção, continuidade, acesso, auditoria e logs) feitos em 03–04/ago/2026, G3 aguarda OK
 metadata:
   type: project
 ---
@@ -82,8 +82,22 @@ exceção (Postgres caindo hoje virava 500 cru) + `connect_timeout`/
 `statement_timeout` no Postgres, e rollback reescrito por SHA local (a deploy
 key da VM é só leitura, git tag/push não funcionaria). Decisões da Maria na
 abertura do G: manter senha única, sem HTTPS por ora, secret do Graph criado
-em 15/jul/2026 (expira 15/jul/2027 — [[graph-secret-rotacao]]). G2 (acesso/
-auditoria/logs) e G3 (testes E2E/documentação/entrega) aguardam OK.
+em 15/jul/2026 (expira 15/jul/2027 — [[graph-secret-rotacao]]). **G2 (acesso,
+auditoria e logs) feito em 04/ago/2026**: gate por `Depends(exigir_login)` no
+router em vez de chamada imperativa (48 handlers não dependem mais de uma
+linha esquecível); páginas HTML fechadas com redirect pra `/admin` sem
+sessão + bloqueio de `.html` direto no mount `/frontend`; rate limit do
+login por IP (10 falhas / 10 min de bloqueio, calibrado pra não travar o CSC
+atrás do mesmo IP da rede interna); `/docs`/`/redoc`/`/openapi.json`
+fechados; tabela `eventos_auditoria` (migration `0011`, `ator` sempre
+`"admin"`) cobrindo login/logout/download de arquivo/cadastro de armazém e
+de-para/decisão de insight; logging estruturado com request id
+(`backend/logging_config.py`) e access log do uvicorn desligado (vazava
+nome de cliente/filial na query string). Verificação independente achou e
+corrigiu 2 antes do commit: request id se perdia no caso de 500 não tratado
+(`request.state` como fallback do `ContextVar`) e o bloqueio de `.html` era
+case-sensitive (`.lower()`). G3 (testes E2E/checklist/documentação de
+entrega) aguarda OK.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

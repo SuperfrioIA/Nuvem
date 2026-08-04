@@ -6,19 +6,18 @@ aprovacao/descarte (Bloco E) sempre operam sobre uma sessao ja perfilada
 404 se ela nao existir, igual ao `GET /sessoes/{id}` que ja existia.
 """
 
-from fastapi import APIRouter, Body, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 
-from ..auth import exigir_login
+from ..auth import exigir_login, ip_do_cliente
 from ..database import get_conn
-from ..services import insight_aprovado, laboratorio, laboratorio_chat
+from ..services import auditoria, insight_aprovado, laboratorio, laboratorio_chat
 
-router = APIRouter(prefix="/laboratorio")
+router = APIRouter(prefix="/laboratorio", dependencies=[Depends(exigir_login)])
 
 
 @router.get("/fontes")
-def fontes(request: Request):
+def fontes():
     """Familias e arquivos selecionaveis, do inventario ja sincronizado."""
-    exigir_login(request)
     try:
         return laboratorio.fontes_disponiveis()
     except laboratorio.LaboratorioError as exc:
@@ -27,14 +26,12 @@ def fontes(request: Request):
 
 @router.post("/perfil")
 def perfil(
-    request: Request,
     item_ids: list[str] = Body(...),
     filtros: dict | None = Body(None),
     linha_cabecalho: int | None = Body(None),
     titulo: str | None = Body(None),
 ):
     """Perfila a seleção e grava a sessão de análise. Sem IA: só código."""
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -47,18 +44,16 @@ def perfil(
 
 
 @router.get("/sessoes")
-def sessoes(request: Request, limite: int = Query(20, ge=1, le=100)):
+def sessoes(limite: int = Query(20, ge=1, le=100)):
     """limite com piso e teto: LIMIT negativo viraria erro do Postgres (500) e
     limite gigante devolveria o perfil inteiro de centenas de sessões."""
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             return {"sessoes": laboratorio.listar_sessoes(cur, limite=limite)}
 
 
 @router.get("/sessoes/{sessao_id}")
-def sessao(request: Request, sessao_id: int):
-    exigir_login(request)
+def sessao(sessao_id: int):
     with get_conn() as conn:
         with conn.cursor() as cur:
             encontrada = laboratorio.obter_sessao(cur, sessao_id)
@@ -71,8 +66,7 @@ def sessao(request: Request, sessao_id: int):
 
 
 @router.get("/sessoes/{sessao_id}/mensagens")
-def listar_mensagens(request: Request, sessao_id: int):
-    exigir_login(request)
+def listar_mensagens(sessao_id: int):
     with get_conn() as conn:
         with conn.cursor() as cur:
             if laboratorio.obter_sessao(cur, sessao_id) is None:
@@ -82,7 +76,6 @@ def listar_mensagens(request: Request, sessao_id: int):
 
 @router.post("/sessoes/{sessao_id}/mensagens")
 def enviar_mensagem(
-    request: Request,
     sessao_id: int,
     pergunta: str = Body(..., embed=True),
     mensagem_sugerida: str | None = Body(None, embed=True),
@@ -90,7 +83,6 @@ def enviar_mensagem(
     """Sem IA configurada ou com falha do provedor, a mensagem do assistente
     grava o erro em vez de 400 -- a conversa segue, nada é inventado (ver
     docstring de `laboratorio_chat.perguntar`)."""
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             sessao_atual = laboratorio.obter_sessao(cur, sessao_id)
@@ -106,13 +98,11 @@ def enviar_mensagem(
 
 @router.post("/sessoes/{sessao_id}/mensagens/{mensagem_id}/feedback")
 def feedback(
-    request: Request,
     sessao_id: int,
     mensagem_id: int,
     tipo: str = Body(..., embed=True),
     comentario: str | None = Body(None, embed=True),
 ):
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             try:
@@ -130,22 +120,27 @@ def aprovar(request: Request, sessao_id: int, nota: str | None = Body(None, embe
     """Gera a especificação técnica (seção 10 do direcionamento) e fecha a
     sessão como 'aprovada'. Nunca publica KPI -- é insumo pra implementação
     manual depois."""
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             try:
-                return insight_aprovado.aprovar(cur, sessao_id, nota)
+                resultado = insight_aprovado.aprovar(cur, sessao_id, nota)
             except insight_aprovado.InsightAprovadoError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            auditoria.registrar(
+                cur, "insight_aprovado", detalhe={"sessao_id": sessao_id}, ip=ip_do_cliente(request)
+            )
+            return resultado
 
 
 @router.post("/sessoes/{sessao_id}/descartar")
 def descartar(request: Request, sessao_id: int, motivo: str | None = Body(None, embed=True)):
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             try:
                 insight_aprovado.descartar(cur, sessao_id, motivo)
             except insight_aprovado.InsightAprovadoError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
+            auditoria.registrar(
+                cur, "insight_descartado", detalhe={"sessao_id": sessao_id}, ip=ip_do_cliente(request)
+            )
     return {"ok": True}

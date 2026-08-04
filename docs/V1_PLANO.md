@@ -68,7 +68,7 @@ semântico).
 | **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
 | **E** | V1.5 Laboratório: chat + V1.6 Insight aprovado | **feito** (03/ago/2026) |
 | **F** | V1.7 Cockpit executivo | **feito** (03/ago/2026) |
-| **G** | V1.8 Produção e entrega | **em andamento** — G1 feito (03/ago/2026); G2/G3 aguardam autorização |
+| **G** | V1.8 Produção e entrega | **em andamento** — G1 e G2 feitos (03–04/ago/2026); G3 aguarda autorização |
 
 ## Estado do deploy (03/ago/2026)
 
@@ -1008,8 +1008,100 @@ configuração de compose, não código Python testável em unidade):
 `curl /health` → 200; backup → drop total do schema → restore → contagem de
 linhas batendo com o estado anterior.
 
+### G2 — Acesso, auditoria e logs (feito, 04/ago/2026)
+
+Autorizado pela Maria em 03/ago/2026 ("bora pro g2"), com plano apresentado e
+aprovado antes de qualquer código. Ataca as quatro lacunas estruturais de
+acesso/auditoria/log deixadas fora do G1 de propósito.
+
+- **Gate declarativo em vez de chamada imperativa**: `exigir_login(request)`
+  era a primeira linha de 48 dos 51 handlers — uma rota nova que esquecesse a
+  linha ficava pública em silêncio. `backend/routers/admin.py` virou dois
+  routers (`router_publico`: `/login`, `/logout`, `/me`, sem gate;
+  `router`: o resto, com `dependencies=[Depends(exigir_login)]`); os outros 5
+  routers (`datahub`, `catalogo`, `laboratorio`, `cockpit`, `linhagem`)
+  ganharam a mesma `dependencies=` no `APIRouter(...)`. A chamada imperativa e
+  o parâmetro `request` (onde não sobrava outro uso) saíram de todos os
+  handlers — rota nova sem gate deixou de ser possível por construção.
+- **Páginas HTML fechadas**: `/nuvem`, `/laboratorio`, `/cockpit`, `/linhagem`
+  checam `autenticado(request)` e redirecionam pra `/admin` sem sessão;
+  `/admin` continua aberto (é a própria tela de login). O mount `/frontend`
+  ganhou uma subclasse de `StaticFiles` que recusa qualquer `.html` direto
+  (senão o redirect das páginas seria bypassável por
+  `/frontend/cockpit.html`) — nada no projeto referenciava esses caminhos
+  (confirmado por grep antes de fechar).
+- **Rate limit e trava no login**: `backend/auth.py` ganhou contador em
+  memória por IP — **10 falhas em 10 minutos bloqueia por 10 minutos**,
+  calibrado com a Maria pra não travar o CSC inteiro se estiver atrás do
+  mesmo IP da rede interna (um lockout mais agressivo travaria o time inteiro
+  por uma pessoa errando a senha).
+- **`/docs`, `/redoc`, `/openapi.json` fechados** (`docs_url=None` etc.) —
+  expunham o schema e a superfície inteira da API sem login.
+- **Tabela de auditoria com ator**: migration `0011_auditoria`
+  (`eventos_auditoria`: `criado_em`, `ator` default `'admin'`, `tipo`,
+  `detalhe JSONB`, `ip`) + `backend/services/auditoria.py` (`registrar`).
+  Cobre exatamente os pontos que o mapeamento do bloco apontou como ausentes:
+  `login_sucesso`/`login_falha`/`login_bloqueado`/`logout`,
+  `download_arquivo_execucao`, `armazem_criado`, `depara_criado`/
+  `depara_apagado`, `insight_aprovado`/`insight_descartado`. Sincronização do
+  DataHub não entra — já tem trilha própria (`sincronizacoes_datahub`).
+- **Logging estruturado**: `backend/logging_config.py` (novo) —
+  `configurar_logging()` lê `LOG_LEVEL`, formato com request id via
+  `contextvars`; chamada na importação de `backend/main.py`, cobrindo os
+  `log.info` de `backend/migracao.py` que antes não apareciam em lugar
+  nenhum. Middleware novo gera o id por requisição, devolve `X-Request-Id`,
+  loga 4xx/5xx por **método + path** (nunca query string — onde
+  `cliente`/`filial` vazavam em claro no access log do uvicorn, agora
+  desligado com `--no-access-log` no `Dockerfile`).
+- **Sanitização do `str(e)`**: dos 9 pontos com `except Exception`/`detail=
+  str(e)` no projeto, só 3 em `admin.py` eram de fato abertos (`except
+  Exception` genérico em torno de `upload_manual.preview`/`aplicar_modelo`) —
+  passaram a logar a exceção real (`logger.warning`) e devolver mensagem
+  genérica ao cliente. Os outros 6 (2 em `admin.py`, vindo do nosso
+  `ingestao.py`/`json` stdlib; 3 nos serviços) já eram seguros — mensagem
+  curada, não interpola exceção crua — e ficaram como estavam.
+
+**Decisões do lote:**
+
+1. Rate limit por IP, 10/10min — calibrado com a Maria especificamente pra
+   não travar o CSC atrás do mesmo IP da rede interna; estado em memória
+   (perde num restart do container), proporcional a ferramenta interna, não
+   defesa contra atacante determinado.
+2. `/docs` fechado por padrão — reverter é uma linha, se um dia fizer falta
+   pra uso próprio.
+3. `ator` da auditoria é sempre `"admin"` — senha única, mesma decisão do G1;
+   a coluna existe pronta pra identidade por pessoa, que não é deste bloco.
+4. Auditoria da sincronização do DataHub não duplicada — já tem trilha
+   própria desde o Bloco C.
+
+**Fora do G2 (declarado, fica pro G3):** teste E2E até cockpit/linhagem,
+checklist automatizado (`scripts/verificar_v1.py`), atualização de
+README/`V1_CRITERIOS_ACEITE.md`/`V1_ARQUITETURA.md`, identidade por pessoa.
+
+**Suíte**: **446 passed** (420 do G1 + 26 novos: 11 de `test_auth.py`
+— assinatura/expiração do cookie, rate limit puro e fim-a-fim —, 8 de
+`test_auditoria.py` — um por ponto de chamada —, 6 de `test_main.py` — gate
+das páginas, bloqueio de `.html`, `/docs` fechado, request id no header — e 1
+do ciclo da migration `0011`; nenhum teste anterior removido ou enfraquecido).
+
+**Verificação independente** (agente separado, antes do commit): achou 1
+alto e 1 médio, os dois corrigidos antes de fechar o lote:
+
+1. **Alto, corrigido** — o `X-Request-Id` saía `"-"` bem no caso que mais
+   precisa de correlação: o `ContextVar` do request id é resetado no
+   `finally` do middleware assim que a exceção propaga por cima dele, antes
+   do handler global (que roda no `ServerErrorMiddleware`, por fora) poder
+   lê-lo. Corrigido gravando o id também em `request.state` (o mesmo objeto
+   `Request` sobrevive à pilha inteira, ao contrário do `ContextVar`) e lendo
+   de lá no handler.
+2. **Médio, corrigido** — o bloqueio de `.html` no `/frontend` era
+   case-sensitive; num filesystem case-insensitive (Windows/Mac — não a VM
+   Linux de produção) `/frontend/ADMIN.HTML` passava direto. Corrigido com
+   `.lower()` antes de comparar; a proteção deixa de depender de acidente do
+   sistema de arquivos.
+
 ## Próximo bloco autorizado
 
-**Nenhum além do G1**, que já está feito. G2 (acesso, auditoria e logs) e G3
-(testes de integração, checklist automatizado e documentação de fechamento)
-só começam com autorização explícita da Maria.
+**Nenhum além do G1 e do G2**, que já estão feitos. G3 (testes de integração,
+checklist automatizado e documentação de fechamento) só começa com
+autorização explícita da Maria.

@@ -1,16 +1,36 @@
 import json
+import logging
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from .. import armazenamento, ingestao, motor, versoes
-from ..auth import autenticado, criar_sessao, encerrar_sessao, exigir_login, senha_confere
+from ..auth import (
+    autenticado,
+    criar_sessao,
+    encerrar_sessao,
+    exigir_login,
+    ip_do_cliente,
+    registrar_falha_login,
+    registrar_sucesso_login,
+    senha_confere,
+    verificar_bloqueio_login,
+)
 from ..conectores import upload_manual
 from ..database import get_conn
+from ..services import auditoria
 
-router = APIRouter()
+logger = logging.getLogger("nuvem.admin")
+
+# Publicas (login precisa ser alcancavel sem sessao; /me e consultado pelo
+# proprio JS de login pra saber se ja esta autenticado). Bloco G / G2:
+# gate por Depends nas demais rotas, nao mais chamada imperativa em cada
+# handler -- rota nova esquecida de gatear deixa de ser possivel por
+# construcao.
+router_publico = APIRouter()
+router = APIRouter(dependencies=[Depends(exigir_login)])
 
 
 async def _ler_upload(arquivo: UploadFile) -> bytes:
@@ -30,36 +50,49 @@ async def _ler_upload(arquivo: UploadFile) -> bytes:
     return conteudo
 
 
-@router.post("/login")
-def login(response: Response, senha: str = Form(...)):
+@router_publico.post("/login")
+def login(request: Request, response: Response, senha: str = Form(...)):
+    ip = ip_do_cliente(request)
+    try:
+        verificar_bloqueio_login(request)
+    except HTTPException:
+        with get_conn() as conn, conn.cursor() as cur:
+            auditoria.registrar(cur, "login_bloqueado", ip=ip)
+        raise
     if not senha_confere(senha):
+        registrar_falha_login(request)
+        with get_conn() as conn, conn.cursor() as cur:
+            auditoria.registrar(cur, "login_falha", ip=ip)
         raise HTTPException(status_code=401, detail="senha incorreta")
+    registrar_sucesso_login(request)
     criar_sessao(response)
+    with get_conn() as conn, conn.cursor() as cur:
+        auditoria.registrar(cur, "login_sucesso", ip=ip)
     return {"ok": True}
 
 
-@router.post("/logout")
-def logout(response: Response):
+@router_publico.post("/logout")
+def logout(request: Request, response: Response):
     encerrar_sessao(response)
+    with get_conn() as conn, conn.cursor() as cur:
+        auditoria.registrar(cur, "logout", ip=ip_do_cliente(request))
     return {"ok": True}
 
 
-@router.get("/me")
+@router_publico.get("/me")
 def me(request: Request):
     return {"autenticado": autenticado(request)}
 
 
 @router.get("/conectores")
-def listar_conectores(request: Request):
-    exigir_login(request)
+def listar_conectores():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, tipo, nome, ativo FROM conectores ORDER BY nome")
         return [{"id": r[0], "tipo": r[1], "nome": r[2], "ativo": r[3]} for r in cur.fetchall()]
 
 
 @router.get("/armazens")
-def listar_armazens(request: Request):
-    exigir_login(request)
+def listar_armazens():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, nome, sigla FROM armazens WHERE ativo ORDER BY nome")
         return [{"id": r[0], "nome": r[1], "sigla": r[2]} for r in cur.fetchall()]
@@ -67,26 +100,27 @@ def listar_armazens(request: Request):
 
 @router.post("/armazens")
 def criar_armazem(request: Request, nome: str = Form(...), sigla: str = Form(...)):
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             "INSERT INTO armazens (nome, sigla) VALUES (%s, %s) RETURNING id",
             (nome, sigla),
         )
-        return {"id": cur.fetchone()[0]}
+        armazem_id = cur.fetchone()[0]
+        auditoria.registrar(
+            cur, "armazem_criado", detalhe={"nome": nome, "sigla": sigla}, ip=ip_do_cliente(request)
+        )
+        return {"id": armazem_id}
 
 
 @router.get("/clientes")
-def listar_clientes(request: Request):
-    exigir_login(request)
+def listar_clientes():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT id, nk_erp, nome, catering FROM clientes ORDER BY nome")
         return [{"id": r[0], "nk_erp": r[1], "nome": r[2], "catering": r[3]} for r in cur.fetchall()]
 
 
 @router.get("/depara")
-def listar_depara(request: Request):
-    exigir_login(request)
+def listar_depara():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -117,7 +151,6 @@ def criar_depara(
     armazem_na_fonte: str = Form(...),
     armazem_id: int = Form(...),
 ):
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -133,20 +166,29 @@ def criar_depara(
             "DELETE FROM depara_pendencias WHERE conector_id = %s AND armazem_na_fonte = %s",
             (conector_id, armazem_na_fonte),
         )
+        auditoria.registrar(
+            cur,
+            "depara_criado",
+            detalhe={
+                "conector_id": conector_id,
+                "armazem_na_fonte": armazem_na_fonte,
+                "armazem_id": armazem_id,
+            },
+            ip=ip_do_cliente(request),
+        )
         return {"id": novo_id}
 
 
 @router.delete("/depara/{depara_id}")
 def apagar_depara(request: Request, depara_id: int):
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM depara_armazem WHERE id = %s", (depara_id,))
+        auditoria.registrar(cur, "depara_apagado", detalhe={"depara_id": depara_id}, ip=ip_do_cliente(request))
     return {"ok": True}
 
 
 @router.get("/pendencias")
-def listar_pendencias(request: Request):
-    exigir_login(request)
+def listar_pendencias():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -170,8 +212,7 @@ def listar_pendencias(request: Request):
 
 
 @router.get("/modelos")
-def listar_modelos(request: Request, conector_id: int | None = None):
-    exigir_login(request)
+def listar_modelos(conector_id: int | None = None):
     with get_conn() as conn, conn.cursor() as cur:
         if conector_id:
             cur.execute(
@@ -184,8 +225,7 @@ def listar_modelos(request: Request, conector_id: int | None = None):
 
 
 @router.get("/modelos/{modelo_id}/versoes")
-def listar_versoes(request: Request, modelo_id: int):
-    exigir_login(request)
+def listar_versoes(modelo_id: int):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -208,11 +248,10 @@ def listar_versoes(request: Request, modelo_id: int):
 
 
 @router.post("/modelos/{modelo_id}/versoes")
-def criar_versao_modelo(request: Request, modelo_id: int, mapeamento_json: str = Form(...)):
+def criar_versao_modelo(modelo_id: int, mapeamento_json: str = Form(...)):
     """Editar um modelo = criar uma versao nova. A configuracao historica nunca e
     alterada; a versao nova vira a padrao (usada por uploads novos). Execucoes
     antigas seguem apontando pra versao que usaram (nao muda resultado historico)."""
-    exigir_login(request)
     try:
         mapeamento = json.loads(mapeamento_json)
     except json.JSONDecodeError as e:
@@ -226,25 +265,23 @@ def criar_versao_modelo(request: Request, modelo_id: int, mapeamento_json: str =
 
 
 @router.post("/upload/preview")
-async def upload_preview(request: Request, arquivo: UploadFile = File(...)):
-    exigir_login(request)
+async def upload_preview(arquivo: UploadFile = File(...)):
     conteudo = await _ler_upload(arquivo)
     try:
         return upload_manual.preview(conteudo, arquivo.filename)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"não foi possível ler o arquivo: {e}")
+        logger.warning("falha ao pre-visualizar upload %s: %s", arquivo.filename, e)
+        raise HTTPException(status_code=400, detail="não foi possível ler o arquivo enviado") from e
 
 
 @router.post("/upload/processar")
 async def upload_processar(
-    request: Request,
     arquivo: UploadFile = File(...),
     modelo_id: int | None = Form(None),
     nome_novo_modelo: str | None = Form(None),
     mapeamento_json: str | None = Form(None),
     fonte_id: int | None = Form(None),
 ):
-    exigir_login(request)
     conteudo = await _ler_upload(arquivo)
 
     with get_conn() as conn, conn.cursor() as cur:
@@ -285,9 +322,10 @@ async def upload_processar(
     try:
         agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento, arquivo.filename)
     except Exception as e:
+        logger.warning("falha ao processar upload %s (execucao %s): %s", arquivo.filename, execucao_id, e)
         with get_conn() as conn, conn.cursor() as cur:
             ingestao.finalizar_execucao(cur, execucao_id, "erro", erro=str(e))
-        raise HTTPException(status_code=400, detail=f"erro ao processar arquivo: {e}")
+        raise HTTPException(status_code=400, detail="erro ao processar arquivo") from e
 
     try:
         with get_conn() as conn, conn.cursor() as cur:
@@ -312,13 +350,12 @@ async def upload_processar(
 
 
 @router.post("/execucoes/{execucao_id}/reprocessar")
-def reprocessar_execucao(request: Request, execucao_id: int):
+def reprocessar_execucao(execucao_id: int):
     """Reprocessa uma execucao antiga a partir do arquivo retido, usando a MESMA
     versao de modelo que ela usou originalmente — nunca a versao mais nova. Criar
     uma versao nova (v2, v3...) portanto nao muda o resultado de reprocessar uma
     execucao antiga. Gera uma execucao nova (origem 'reprocessamento') amarrada a
     versao original."""
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             "SELECT conector_id, modelo_id, modelo_versao_id, arquivo_path FROM execucoes WHERE id = %s",
@@ -347,9 +384,10 @@ def reprocessar_execucao(request: Request, execucao_id: int):
         conteudo = armazenamento.ler_arquivo(arquivo_path)
         agregados, linhas_lidas = upload_manual.aplicar_modelo(conteudo, mapeamento, nome_arquivo)
     except Exception as e:
+        logger.warning("falha ao reprocessar execucao %s (arquivo %s): %s", execucao_id, nome_arquivo, e)
         with get_conn() as conn, conn.cursor() as cur:
             ingestao.finalizar_execucao(cur, nova_execucao_id, "erro", erro=str(e))
-        raise HTTPException(status_code=400, detail=f"erro ao reprocessar arquivo: {e}")
+        raise HTTPException(status_code=400, detail="erro ao reprocessar arquivo") from e
 
     try:
         with get_conn() as conn, conn.cursor() as cur:
@@ -374,8 +412,7 @@ def reprocessar_execucao(request: Request, execucao_id: int):
 
 
 @router.get("/execucoes")
-def listar_execucoes(request: Request):
-    exigir_login(request)
+def listar_execucoes():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -405,16 +442,14 @@ def listar_execucoes(request: Request):
 
 
 @router.post("/scores/recalcular")
-def recalcular_scores(request: Request):
-    exigir_login(request)
+def recalcular_scores():
     with get_conn() as conn, conn.cursor() as cur:
         gravados = motor.calcular_scores(cur)
     return {"scores_gravados": gravados}
 
 
 @router.get("/scores")
-def listar_scores(request: Request):
-    exigir_login(request)
+def listar_scores():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -443,9 +478,8 @@ def listar_scores(request: Request):
 
 
 @router.get("/metricas")
-def listar_metricas(request: Request):
+def listar_metricas():
     """Catalogo semantico das metricas (Lote R3) — read-only."""
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -477,8 +511,7 @@ def listar_metricas(request: Request):
 
 
 @router.get("/catalogo")
-def listar_catalogo(request: Request):
-    exigir_login(request)
+def listar_catalogo():
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -503,8 +536,7 @@ def listar_catalogo(request: Request):
 
 
 @router.get("/catalogo/{fonte_id}")
-def detalhe_catalogo(request: Request, fonte_id: int):
-    exigir_login(request)
+def detalhe_catalogo(fonte_id: int):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(
             """
@@ -569,10 +601,12 @@ def detalhe_catalogo(request: Request, fonte_id: int):
 
 @router.get("/execucoes/{execucao_id}/arquivo")
 def baixar_arquivo_execucao(request: Request, execucao_id: int):
-    exigir_login(request)
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("SELECT arquivo_path FROM execucoes WHERE id = %s", (execucao_id,))
         row = cur.fetchone()
-    if not row or not row[0]:
-        raise HTTPException(status_code=404, detail="arquivo não encontrado")
+        if not row or not row[0]:
+            raise HTTPException(status_code=404, detail="arquivo não encontrado")
+        auditoria.registrar(
+            cur, "download_arquivo_execucao", detalhe={"execucao_id": execucao_id}, ip=ip_do_cliente(request)
+        )
     return FileResponse(row[0], filename=f"execucao_{execucao_id}.xlsx")

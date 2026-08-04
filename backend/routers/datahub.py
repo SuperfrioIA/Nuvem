@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 
-from fastapi import APIRouter, Body, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException
 
 from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
@@ -18,7 +18,7 @@ from ..services import (
     serie_datahub,
 )
 
-router = APIRouter(prefix="/datahub")
+router = APIRouter(prefix="/datahub", dependencies=[Depends(exigir_login)])
 
 # Um arquivo de 400 KB tem milhares de linhas -- devolver tudo em JSON so
 # infla a resposta sem servir pro P4 (que le do proprio processo). A tela
@@ -43,14 +43,12 @@ def _serializar(estado: dict) -> dict:
 
 
 @router.get("/status")
-def status(request: Request):
-    exigir_login(request)
+def status():
     return _serializar(inventario_datahub.status())
 
 
 @router.post("/sincronizar")
-def sincronizar(request: Request):
-    exigir_login(request)
+def sincronizar():
     estado = inventario_datahub.sincronizar()
     # V1.3: sincronizacao OK e persistida -- o startup reidrata o cache dela
     if estado.get("ok"):
@@ -75,14 +73,13 @@ def _erros_como_http():
 
 
 @router.post("/ler")
-def ler(request: Request, item_id: str = Body(..., embed=True)):
+def ler(item_id: str = Body(..., embed=True)):
     """Le e valida um arquivo ENTRADA_MERCADORIAS ja sincronizado (Lote P3).
 
     def comum (nao async): o cliente Graph e sincrono (httpx.get/stream) --
     async def bloquearia o event loop do FastAPI durante o download, mesmo
     padrao ja adotado em /sincronizar.
     """
-    exigir_login(request)
     with _erros_como_http():
         resultado = entrada_mercadorias.ler(item_id)
 
@@ -92,7 +89,7 @@ def ler(request: Request, item_id: str = Body(..., embed=True)):
 
 
 @router.get("/kpis")
-def kpis(request: Request):
+def kpis():
     """KPIs auditaveis do arquivo ENTRADA_MERCADORIAS mais recente (Lote P4).
 
     Sem cache proprio -- cada chamada baixa e recalcula na hora (o botao
@@ -100,7 +97,6 @@ def kpis(request: Request):
     e sempre o mais recente sincronizado, sem escolha (ver
     entrada_mercadorias.item_mais_recente).
     """
-    exigir_login(request)
     with _erros_como_http():
         item_id = entrada_mercadorias.item_mais_recente()
         resultado = entrada_mercadorias.ler(item_id)
@@ -145,11 +141,10 @@ def kpis(request: Request):
 
 
 @router.post("/processar")
-def processar(request: Request, forcar: bool = Body(False, embed=True)):
+def processar(forcar: bool = Body(False, embed=True)):
     """Processa a familia ENTRADA_MERCADORIAS inteira pro banco (V1.3): arquivo
     novo/alterado e processado, inalterado e pulado (forcar=true reprocessa
     tudo). Erro em um arquivo nao derruba o lote -- vem no relatorio."""
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -159,10 +154,9 @@ def processar(request: Request, forcar: bool = Body(False, embed=True)):
 
 
 @router.get("/processamentos")
-def processamentos(request: Request):
+def processamentos():
     """Estado corrente por arquivo + pendencias de de-para (filial e cliente)
     do conector do DataHub, pro painel do admin."""
-    exigir_login(request)
     with get_conn() as conn:
         with conn.cursor() as cur:
             return {
@@ -174,7 +168,6 @@ def processamentos(request: Request):
 
 @router.get("/serie")
 def serie(
-    request: Request,
     metrica: str,
     de: str | None = None,
     ate: str | None = None,
@@ -183,7 +176,6 @@ def serie(
 ):
     """Serie historica persistida (V1.3): mensal + consolidacao anual +
     acumulado, do que esta em `medidas` -- nunca recalcula do arquivo."""
-    exigir_login(request)
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
@@ -193,12 +185,11 @@ def serie(
 
 
 @router.get("/nuvem")
-def nuvem(request: Request):
+def nuvem():
     """Bolinhas por familia do DataHub, agrupadas por area (Lote P5.5).
 
     Usa so o inventario ja em cache (P2) -- nenhuma chamada nova ao Graph.
     """
-    exigir_login(request)
     resumo = inventario_datahub.status().get("resumo")
     if not resumo:
         raise HTTPException(
