@@ -1168,6 +1168,20 @@ parágrafo de conclusão do Bloco E em `docs/V1_RELATORIO_VERIFICACAO.md`
 estava fisicamente colado no final do documento, depois da conclusão do
 Bloco F — reordenado, texto preservado integralmente.
 
+**Achado real, no primeiro deploy de verdade na VM (04/ago/2026):**
+`scripts/verificar_v1.py` usava `httpx` — dependência do projeto, mas só
+instalada **dentro da imagem Docker** (`scripts/` nem é copiado pro
+container pelo `Dockerfile`); o Python do host que roda o `docker compose`
+não tem nenhuma dependência do projeto. `ModuleNotFoundError: No module
+named 'httpx'` ao rodar no host. **Corrigido**: reescrito só com stdlib
+(`http.client`, sem `pip install` nenhum), testado de novo local (mesmos 21
+itens OK) e contra porta fechada (FALHA limpa, sem traceback). Nenhuma
+verificação — independente ou minha — tinha pegado isso antes porque todo
+teste rodou no Windows de desenvolvimento, que tem as dependências do
+projeto instaladas globalmente; o host da VM não. Lição: o ambiente onde um
+script de operação vai rodar de verdade precisa ser conferido, não só
+onde ele foi escrito.
+
 ## Conclusão da V1
 
 **Os sete blocos (A–G) estão feitos.** Relatório completo, com a lista de

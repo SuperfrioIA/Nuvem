@@ -434,6 +434,19 @@ migration em banco legado confirmou que a cobertura já existia, sem exigir
 código novo; os 3 achados reais (1 alto de documentação, 2 médios no script
 novo) caíram antes do commit. **Suíte**: 448 passed.
 
+**Achado G3-4, pós-commit, no primeiro deploy real na VM (04/ago/2026,
+alto)**: `scripts/verificar_v1.py` usava `httpx`, dependência do projeto que
+só existe **dentro da imagem Docker** — o `Dockerfile` não copia `scripts/`
+pro container, e o Python do host que roda o `docker compose` não tem
+nenhuma dependência do projeto instalada. `ModuleNotFoundError` ao rodar no
+host da VM, do jeito exato que o script foi pensado para ser usado. Nem a
+verificação independente nem os testes locais pegaram isso, porque os dois
+rodaram no Windows de desenvolvimento (dependências já instaladas
+globalmente) — nenhum dos dois reproduziu o ambiente real de execução do
+script. **Corrigido**: reescrito só com stdlib (`http.client`, sem `pip
+install`), reconfirmado local com os mesmos 21 itens OK e com o cenário de
+conexão fechada.
+
 ---
 
 ## Conclusão da V1 (Blocos A–G)
