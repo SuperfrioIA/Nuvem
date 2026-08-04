@@ -254,6 +254,17 @@ graves antes de reportar — não se limitou a leitura estática.
 | E5 | Checagem de `MAX_MENSAGENS_POR_SESSAO` sem lock: duas requisições concorrentes na mesma sessão podem, em tese, passar do teto, porque a chamada à IA (até 60s) acontece dentro da mesma janela da checagem | baixo | **aceito, registrado** no `V1_PLANO.md` — consistente com o resto do Laboratório (nenhum outro limite usa lock); é teto de custo/uso, não controle de segurança |
 | E6 | Redundância: `obter_configuracao_ia()` é lido tanto em `laboratorio_chat.perguntar` quanto dentro de `ia_client._client()` na primeira chamada do processo | estilo | **aceito** — nenhum efeito funcional, ambas as leituras são de env var idempotente |
 
+**Conclusão: Bloco E atendido após as correções.** Os 4 achados reais (1
+crítico, 2 altos, 1 médio) caíram antes do commit, cada um com teste de
+regressão novo (inclusive um arquivo de teste inteiro, `tests/test_ia_client.py`,
+que passou a exercitar a lógica de `ia_client.py` com um client falso — antes
+só existia mock do wrapper inteiro, nunca da lógica interna dele). Achado de
+baixa gravidade (E5) e nota de estilo (E6) ficaram registrados como limitação
+conhecida. Suíte final após as correções: **382 passed** (330 antes do lote +
+52 novos: 8 de mascaramento, 6 do wrapper da IA, 24 do chat/contexto/
+endpoints, 14 da aprovação/descarte/endpoints; nenhum teste anterior removido
+ou enfraquecido). Zero chamada de rede real à Anthropic na suíte.
+
 ---
 
 ## Bloco F — V1.7 Cockpit executivo (03/ago/2026)
@@ -311,13 +322,155 @@ foi só correção de texto.
 verificador independente contra o Postgres real e novamente após a correção
 do achado F1. Nenhum teste anterior foi alterado, enfraquecido ou removido.
 
-**Conclusão: Bloco E atendido após as correções.** Os 4 achados reais (1
-crítico, 2 altos, 1 médio) caíram antes do commit, cada um com teste de
-regressão novo (inclusive um arquivo de teste inteiro, `tests/test_ia_client.py`,
-que passou a exercitar a lógica de `ia_client.py` com um client falso — antes
-só existia mock do wrapper inteiro, nunca da lógica interna dele). Achado de
-baixa gravidade (E5) e nota de estilo (E6) ficaram registrados como limitação
-conhecida. Suíte final após as correções: **382 passed** (330 antes do lote +
-52 novos: 8 de mascaramento, 6 do wrapper da IA, 24 do chat/contexto/
-endpoints, 14 da aprovação/descarte/endpoints; nenhum teste anterior removido
-ou enfraquecido). Zero chamada de rede real à Anthropic na suíte.
+---
+
+## Bloco G — V1.8 Produção e entrega (G1: 03/ago/2026; G2: 04/ago/2026; G3: 04/ago/2026)
+
+Dividido em três checkpoints (G1/G2/G3), cada um com verificação independente
+própria antes do commit, mesma regra dos Blocos A–F. Esta seção consolida os
+três no formato deste relatório — G1 e G2 já tinham sido verificados por
+agente separado antes de cada commit, com os achados narrados em
+`docs/V1_PLANO.md`; o texto abaixo os transcreve pro formato tabular. G3 foi
+verificado de fato durante a escrita desta seção.
+
+### G1 — Produção destravada e continuidade
+
+**Método do verificador**: agente separado (segundo contexto), antes do
+commit `ddd4f87`. Conferiu `docker-compose.yml`/`.env.example` (variáveis da
+IA chegando ao container), rodou a suíte completa, testou de verdade o ciclo
+backup→drop total do schema→restore→contagem de linhas, e reproduziu o
+cenário de exceção crua pra confirmar o handler global.
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo (continuidade, não acesso/auditoria — isso é G2/G3) | atendido | IA env vars, backup/restore testado, `/health` + handler global + timeouts, rollback por SHA; nenhuma mudança de acesso/auditoria/logs neste checkpoint |
+| 2 | Arquitetura | atendido | aditivo; sem pool de conexões (decisão explícita — timeouts resolvem o risco de continuidade sem mudar a forma de acesso ao banco) |
+| 3 | Migrations | atendido | nenhuma migration nova no G1 |
+| 4 | Compatibilidade/regressões | atendido | `/health` e o handler global não mudam contrato de nenhum endpoint existente; os 70 `HTTPException` já espalhados continuam ganhando por MRO |
+| 5 | Segurança | atendido | `/health` sem login é sonda de infraestrutura (Docker healthcheck), não expõe dado de negócio — mesma lógica do `/docs`, que só fecha no G2; `restore.sh` exige confirmação explícita (destrutivo por natureza) |
+| 6 | Testes | atendido | **420 passed** (414 do Bloco F + 6 novos); `connect_timeout` não entrou em teste automatizado (exigiria simular host inacessível de forma confiável) — limitação aceita, mesmo padrão já usado em blocos anteriores |
+| 7 | Documentação | atendido | `docs/DEPLOY.md` (Passo 4.2, rotação do secret do Graph, backup e restauração, rollback reescrito por SHA), `memory/graph-secret-rotacao.md` |
+
+### Achados e o que foi feito (G1)
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| G1-1 | `scripts/backup.sh`/`restore.sh` sem bit executável no git — o repo tem `core.filemode=false` no Windows, então o bit setado em disco não era rastreado; um clone Linux (a VM) receberia os scripts sem permissão de execução | alto | **corrigido** — `git update-index --chmod=+x` nos dois arquivos antes do commit, confirmado por `git ls-files --stage` (`100755`) |
+| G1-2 | `restore.sh` sem `psql -v ON_ERROR_STOP=1` — uma restauração parcialmente falha continuaria executando e reportaria sucesso (exit 0), mascarando perda de dado silenciosa | alto | **corrigido** — flag acrescentada nos dois `psql` do script; reteste do caminho feliz confirmou que a restauração normal não regrediu (contagem de `armazens` igual antes/depois) |
+
+**Conclusão: G1 atendido após as correções.** Os 2 achados (ambos altos, um de
+infraestrutura de deploy e um de integridade de restauração) caíram antes do
+commit. **Suíte**: 420 passed.
+
+### G2 — Acesso, auditoria e logs
+
+**Método do verificador**: agente separado (segundo contexto), antes do
+commit `c71d71e`. Conferiu que o gate por `Depends(exigir_login)` nos 6
+routers cobre exatamente as mesmas rotas que a chamada imperativa cobria
+antes (nenhuma rota "sobrou" fora dos dois routers do admin), rodou a suíte
+completa, e reproduziu ao vivo os dois cenários dos achados (forçar uma
+exceção não tratada pra inspecionar o header; bater em `/frontend/ADMIN.HTML`
+num filesystem case-insensitive) antes de reportar como certeza.
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo | atendido | gate declarativo, páginas HTML fechadas, rate limit, `/docs` fechado, auditoria, logging estruturado, sanitização de `str(e)` — nenhum item de G1/G3 misturado |
+| 2 | Arquitetura | atendido | `dependencies=[Depends(exigir_login)]` a nível de router elimina a possibilidade estrutural de uma rota nova ficar pública por esquecimento; nenhum módulo movido |
+| 3 | Migration `0011_auditoria` | atendido | aditiva, com `downgrade` e teste de ciclo completo (a `0010` não tinha isso — lacuna registrada no G1 e fechada aqui) |
+| 4 | Compatibilidade/regressões | atendido | contratos HTTP de 401 preservados (testes existentes não mudaram de comportamento); nenhum handler perdeu funcionalidade ao remover o parâmetro `request` onde ele só servia pro `exigir_login` |
+| 5 | Segurança | atendido, com 2 achados corrigidos | 48 handlers cobertos por `Depends`; `/frontend/*.html` bloqueado (senão o redirect das páginas seria bypassável); rate limit calibrado (10 falhas/10min por IP, decisão da Maria pra não travar o CSC atrás do mesmo IP); `/docs`/`/redoc`/`/openapi.json` fechados |
+| 6 | Exposição de dados | atendido | nenhum endpoint novo sem login; os 3 pontos de `except Exception` genérico em `admin.py` (upload/preview/reprocessamento) deixaram de repassar `str(e)` cru ao cliente |
+| 7 | Testes | atendido | **446 passed** (420 do G1 + 26 novos: 11 de `test_auth.py`, 8 de `test_auditoria.py`, 6 de `test_main.py`, 1 do ciclo da migration `0011`) |
+| 8 | Documentação | atendido | `docs/V1_PLANO.md` (seção G2), memórias atualizadas |
+
+### Achados e o que foi feito (G2)
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| G2-1 | `X-Request-Id` saía `"-"` justo no caso de 500 não tratado (o que mais precisa de correlação no log): o `ContextVar` do request id é resetado no `finally` do middleware assim que a exceção propaga por cima dele, antes do handler global (que roda no `ServerErrorMiddleware`, por fora) poder lê-lo | alto | **corrigido** — o id passou a ser gravado também em `request.state` (o mesmo objeto `Request` sobrevive à pilha inteira, ao contrário do `ContextVar`) e lido de lá no handler; teste de regressão em `test_excecao_nao_tratada_vira_500_sem_expor_detalhe` |
+| G2-2 | Bloqueio de `.html` no mount `/frontend` era case-sensitive — num filesystem case-insensitive (Windows/Mac, não a VM Linux de produção) `/frontend/ADMIN.HTML` passava direto | médio | **corrigido** — `.lower()` antes de comparar; a proteção deixa de depender de acidente do sistema de arquivos; testes novos para `ADMIN.HTML` e `Admin.Html` |
+
+**Conclusão: G2 atendido após as correções.** 1 achado alto e 1 médio, ambos
+corrigidos antes do commit, cada um com teste de regressão. **Suíte**: 446
+passed.
+
+### G3 — Testes de integração, checklist e fechamento da V1
+
+**Método do verificador**: agente separado (segundo contexto, sem memória da
+implementação), antes do commit. Leu `git status`/`git diff` completos
+(confirmando que nenhum arquivo de `backend/`/`frontend/` entra no escopo —
+G3 só acrescenta testes, script e documentação), leu `tests/test_e2e_pipeline.py`
+linha a linha seguindo a cadeia real até `cockpit.py`/`linhagem.py` pra
+confirmar que as asserções dependem da lógica de produção (não são um atalho
+que passaria mesmo com um bug razoável no meio do caminho), rodou a suíte
+completa (448 passed) e especificamente `tests/test_migracao.py -k legado`
+pra confirmar, de forma independente, o achado de que a cadeia `0001`→`0011`
+já subia a partir do schema legado desde antes deste checkpoint, e rodou
+`scripts/verificar_v1.py` contra o stack local (21 itens OK) e contra uma
+porta fechada (pra checar o comportamento de erro).
+
+| # | Item | Status | Evidência |
+|---|---|---|---|
+| 1 | Escopo (sem alterar `backend/`/`frontend/`) | atendido | confirmado por `git diff --stat`; só testes, script e documentação |
+| 2 | Teste E2E até cockpit/linhagem prova a cadeia real | atendido | `tests/test_e2e_pipeline.py` chama `processamento_datahub.processar_arquivo` (o caminho de produção, só `graph_datahub.baixar_item` mockado); as asserções em `cockpit.comparar_filiais` (`GROUP BY a.sigla`) e `linhagem.origem_da_celula` (cruzamento `medidas → medidas_recebidas → execucoes → processamentos_datahub`) dependem da lógica real; CNPJs e de-paras de filial usados batem com os seeds reais |
+| 3 | Migrations em banco existente (clone do schema legado da VM) | atendido | achado próprio (não é lacuna nova): `migracao.migrar()` já faz `stamp(BASELINE)` + `upgrade("head")` a partir do `LEGADO_DDL`; `test_legado_valido_recebe_stamp_sem_tocar_dados` já prova isso contra o head dinâmico, que hoje é `0011` — confirmado de forma independente, sem necessidade de teste novo |
+| 4 | `scripts/verificar_v1.py`, com 2 achados corrigidos | atendido após correção | cobre health, gate de login, páginas fechadas, `/frontend/*.html`, `/docs`, request id; senha nunca exposta em log/print |
+| 5 | Documentação (README/V1_ARQUITETURA/V1_CRITERIOS_ACEITE/V1_RELATORIO_VERIFICACAO/V1_PLANO) | atendido após correção | ver achado G3-1; demais atualizações conferidas contra o código e contra este relatório |
+| 6 | Regressão | atendido | **448 passed** (446 do G2 + 2 novos de `test_e2e_pipeline.py`); nenhum teste anterior alterado, enfraquecido ou removido |
+| 7 | Segurança | atendido | nenhum segredo em log; `verificar_v1.py` é cliente HTTP, não abre superfície nova |
+| 8 | Correção de um defeito pré-existente neste documento (fora do escopo do G3, achado ao editar o arquivo) | corrigido | o parágrafo de conclusão do Bloco E estava fisicamente colado no final deste arquivo, depois da conclusão do Bloco F; reordenado pra logo após a tabela de achados do Bloco E, texto preservado integralmente |
+
+### Achados e o que foi feito (G3)
+
+| # | Achado | Gravidade | Resolução |
+|---|---|---|---|
+| G3-1 | `docs/V1_CRITERIOS_ACEITE.md` chegou a citar esta seção ("Bloco G") como evidência antes dela existir, e a marcar como feito o próprio item "verificação independente final e relatório de entrega" antes da verificação ter acontecido — ordem invertida em relação ao padrão dos Blocos A–F (verificar → corrigir → escrever a seção → só então marcar o critério de aceite citando ela) | alto | **corrigido** — esta seção foi escrita e os achados G3-2/G3-3 corrigidos antes de qualquer commit; a citação em `V1_CRITERIOS_ACEITE.md` agora aponta pra uma seção que já existe de fato |
+| G3-2 | `scripts/verificar_v1.py` alegava no próprio docstring cobrir "rate limit", mas o código nunca disparava as 10 falhas necessárias nem checava 429 | médio | **corrigido** — docstring ajustado pra declarar exatamente o que é testado; o cenário de rate limit permanece coberto (e correto, sem risco de travar o próprio IP) em `tests/test_auth.py` |
+| G3-3 | `scripts/verificar_v1.py` sem tratamento de erro de conexão — contra uma URL fora do ar, estourava traceback bruto do `httpx`/`httpcore` em vez de reportar FALHA de forma limpa | médio | **corrigido** — `try/except httpx.HTTPError` em `main()`, reproduzido antes e depois da correção (antes: traceback; depois: `FALHA nao foi possivel falar com ... `, saída 1) |
+
+**Conclusão: G3 atendido após as correções.** O teste E2E é genuinamente forte
+(depende da cadeia real de ponta a ponta, não é um atalho); o achado sobre a
+migration em banco legado confirmou que a cobertura já existia, sem exigir
+código novo; os 3 achados reais (1 alto de documentação, 2 médios no script
+novo) caíram antes do commit. **Suíte**: 448 passed.
+
+---
+
+## Conclusão da V1 (Blocos A–G)
+
+Os sete blocos da V1 (V1.0–V1.8) estão feitos, cada um com verificação
+independente própria e commit isolado, seguindo o mesmo método do início ao
+fim: agente separado sem memória da implementação, instruído a procurar
+defeito, rodando a suíte real contra Postgres (nunca mock de banco) e, nos
+casos de maior risco, reproduzindo o cenário ao vivo antes de reportar como
+certeza. Todo bloco menos o A, o C (achados só de robustez/documentação) e o
+G1 (achados de infraestrutura de deploy) teve pelo menos um defeito real de
+código encontrado e corrigido antes do commit — o Bloco D foi reprovado na
+primeira passada; o Bloco E teve um vazamento crítico de mascaramento; o
+Bloco F teve peso bruto em kg cru na tela default do cockpit; o G2 teve o
+request id perdido justo no caso que mais precisa de correlação. Nenhum
+defeito real chegou a produção: a VM está hoje em `origin/main` (commit
+`98ca86f`, Bloco F) — G1/G2/G3 existem só localmente até a Maria autorizar o
+deploy.
+
+**Pendências conhecidas, todas declaradas com decisão explícita da Maria (não
+esquecimento) e sem código pra fingir o contrário:**
+
+- destino externo do backup (fora da VM) — G1, decisão "pensar depois";
+- identidade por pessoa (a auditoria é sempre `ator = "admin"`) — segue senha
+  única, decisão do G1/G2; a coluna já existe pronta para quando entrar;
+- sem HTTPS — decisão do G1/G2; o cookie de sessão não tem `secure`;
+- filtro de filial/cliente do cockpit e linhagem aceita um valor por vez ou
+  "todos", não múltiplos — F2, Bloco F;
+- controle de processamento por nome de arquivo, superado pela reestruturação
+  do DataHub em 4 unidades — **corrigido** em 02/ago/2026 (chave por `item_id`);
+- rate limit de login em memória (sem persistência, perde estado num restart
+  do container) e sem lock no teto de mensagens do Laboratório (E5) —
+  proporcional a ferramenta interna de CSC, não defesa contra atacante
+  determinado;
+- grão único por métrica do DataHub é invariante de código, não de schema
+  (Bloco C) — nenhum modelo atual referencia essas métricas, mas não criar
+  sem revisar a regra.
+
+**V1 atendida.** Deploy de G1+G2+G3 na VM (`git push` + runbook de
+`docs/DEPLOY.md`) fica decisão separada da Maria — não é ação deste checkpoint.

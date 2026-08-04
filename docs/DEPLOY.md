@@ -294,6 +294,17 @@ Critério de sucesso desta subida:
 
 Me manda as 4 saídas. Se as 4 baterem, o app está **rodando e validado na VM**.
 
+**Checklist automatizado (Bloco G / G3):** `scripts/verificar_v1.py` cobre em
+um comando só boa parte do que os passos acima fazem à mão desde o Bloco A —
+`/health`, login (certo/errado), gate das rotas e páginas com e sem sessão,
+`/frontend/*.html` bloqueado, `/docs` fechado, header `X-Request-Id`. Não
+substitui a contagem de armazéns acima (isso é dado específico da VM) — é
+complemento, não troca:
+
+```bash
+ADMIN_PASSWORD=SUA_ADMIN_PASSWORD python scripts/verificar_v1.py http://localhost:8002
+```
+
 ---
 
 ## Passo 7 — Abrir pra rede

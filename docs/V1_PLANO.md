@@ -68,7 +68,7 @@ semântico).
 | **—** | Lote de correção: identidade e linhagem do DataHub | **feito** (02/ago/2026) |
 | **E** | V1.5 Laboratório: chat + V1.6 Insight aprovado | **feito** (03/ago/2026) |
 | **F** | V1.7 Cockpit executivo | **feito** (03/ago/2026) |
-| **G** | V1.8 Produção e entrega | **em andamento** — G1 e G2 feitos (03–04/ago/2026); G3 aguarda autorização |
+| **G** | V1.8 Produção e entrega | **feito** — G1, G2 e G3 (03–04/ago/2026) |
 
 ## Estado do deploy (03/ago/2026)
 
@@ -1100,8 +1100,85 @@ alto e 1 médio, os dois corrigidos antes de fechar o lote:
    `.lower()` antes de comparar; a proteção deixa de depender de acidente do
    sistema de arquivos.
 
+### G3 — Testes de integração, checklist e fechamento da V1 (feito, 04/ago/2026)
+
+Autorizado pela Maria em 04/ago/2026 ("vamos para o g3 agora"), com plano
+apresentado e aprovado antes de qualquer código. Ataca o que ficou
+deliberadamente fora do G1/G2: testes de integração ponta a ponta e a
+documentação/checklist de fechamento da V1 inteira (critério de aceite do
+V1.8: testes de integração e regressão; migrations em banco novo E existente;
+deploy documentado; checklist executado; verificação independente final e
+relatório de entrega).
+
+- **Teste E2E até cockpit/linhagem** (`tests/test_e2e_pipeline.py`, novo):
+  roda o pipeline real de ingestão
+  (`processamento_datahub.processar_arquivo`, com só o download do Graph
+  mockado) e confere que a mesma célula aparece consistente no cockpit
+  (`/cockpit/resumo`, `/cockpit/comparacao/filiais`) e na linhagem
+  (`/linhagem/celulas`, `/linhagem/celulas/{id}`) — prova que as camadas se
+  encaixam de ponta a ponta, não só cada uma isolada (os testes unitários por
+  endpoint continuam existindo, sem duplicação).
+- **Migrations em banco existente**: achado do próprio checkpoint, não
+  código novo — `tests/test_migracao.py` já provava, desde antes deste bloco,
+  que a cadeia completa de migrations sobe sem erro a partir do `LEGADO_DDL`
+  (o schema real de antes do Alembic) até o head dinâmico, que hoje é a
+  `0011_auditoria` do G2. A premissa do plano original ("falta esse teste")
+  estava errada; confirmado de forma independente antes de aceitar a
+  conclusão.
+- **`scripts/verificar_v1.py`** (novo): automatiza a verificação manual pós-
+  bloco que vinha sendo feita a mão com curl desde o Bloco A — health, gate
+  de login, páginas HTML fechadas, `/frontend/*.html` bloqueado, `/docs`
+  fechado, request id no header. Rodado contra o stack local (21 itens OK);
+  contra a VM fica para quando a Maria decidir fazer o deploy do bloco.
+- **Documentação de fechamento**: seção "Bloco G" em
+  `docs/V1_RELATORIO_VERIFICACAO.md` (G1+G2 transcritos pro formato tabular
+  do relatório + verificação de fato do G3 + conclusão final da V1);
+  checkboxes de V1.0–V1.8 marcados em `docs/V1_CRITERIOS_ACEITE.md`, cada um
+  citando a evidência e, onde existe, a ressalva conhecida; `README.md` e
+  `docs/V1_ARQUITETURA.md` atualizados para refletir os Blocos A–G feitos.
+
+**Fora do G3 (nenhuma decisão da Maria autoriza, e os critérios de aceite do
+V1.8 não pedem):** identidade por pessoa (segue senha única); deploy de fato
+na VM (`git push` + runbook) — fica decisão separada da Maria, por ser ação
+em sistema compartilhado.
+
+**Suíte**: **448 passed** (446 do G2 + 2 novos de `test_e2e_pipeline.py`).
+
+**Verificação independente** (agente separado, antes do commit): confirmou o
+teste E2E e o achado sobre a migration em banco legado, e achou 3 problemas,
+todos corrigidos antes de fechar o lote:
+
+1. **Alto, corrigido** — `docs/V1_CRITERIOS_ACEITE.md` citava a seção "Bloco
+   G" deste relatório como evidência antes dela existir, e marcava como feito
+   o próprio item "verificação independente final" antes da verificação
+   acontecer — ordem invertida em relação ao padrão dos Blocos A–F. Corrigido
+   escrevendo a seção de fato antes de qualquer commit.
+2. **Médio, corrigido** — `scripts/verificar_v1.py` alegava no docstring
+   cobrir rate limit, mas o código nunca disparava as 10 falhas necessárias.
+   Corrigido ajustando o docstring pra declarar exatamente o que é testado
+   (o cenário de rate limit já está coberto, corretamente, em
+   `tests/test_auth.py` — testá-lo de novo aqui arriscaria travar o próprio
+   IP por 10 minutos).
+3. **Médio, corrigido** — `scripts/verificar_v1.py` sem tratamento de erro de
+   conexão: contra uma URL fora do ar, estourava traceback bruto em vez de
+   reportar FALHA. Corrigido com `try/except httpx.HTTPError`.
+
+Achado adicional, fora do escopo do G3 mas corrigido ao editar o arquivo: o
+parágrafo de conclusão do Bloco E em `docs/V1_RELATORIO_VERIFICACAO.md`
+estava fisicamente colado no final do documento, depois da conclusão do
+Bloco F — reordenado, texto preservado integralmente.
+
+## Conclusão da V1
+
+**Os sete blocos (A–G) estão feitos.** Relatório completo, com a lista de
+pendências conhecidas e declaradas (destino externo do backup, identidade
+por pessoa, sem HTTPS, filtro de filial/cliente de valor único, rate limit
+sem persistência, grão único por métrica como invariante de código) em
+`docs/V1_RELATORIO_VERIFICACAO.md`, seção "Conclusão da V1". G1+G2+G3 existem
+só localmente (`origin/main` ainda está no Bloco F) — deploy fica decisão
+separada da Maria.
+
 ## Próximo bloco autorizado
 
-**Nenhum além do G1 e do G2**, que já estão feitos. G3 (testes de integração,
-checklist automatizado e documentação de fechamento) só começa com
-autorização explícita da Maria.
+**Nenhum.** A V1 está fechada; próximo passo é decisão da Maria (deploy do
+Bloco G na VM, ou novo trabalho fora do escopo da V1).

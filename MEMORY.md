@@ -1,4 +1,4 @@
-- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **em construção da V1 de produção desde 31/jul/2026** (POC DataHub concluída); Blocos A–F feitos, Bloco G/G1+G2 feitos em 03–04/ago/2026, G3 aguarda OK
+- [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **V1 de produção concluída (Blocos A–G, 04/ago/2026)**; deploy do Bloco G na VM fica decisão separada da Maria
 - [Rotação do secret do Graph](memory/graph-secret-rotacao.md) — criado 15/jul/2026, expira 15/jul/2027; processo de rotação registrado no Bloco G/G1
 - [Integração do cockpit com o Hub SuperFrio](memory/cockpit-hub-integracao.md) — link direto (sem iframe), filtros na URL, duas telas = dois cards no Hub; SSO pendente dos dois lados
 - **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)

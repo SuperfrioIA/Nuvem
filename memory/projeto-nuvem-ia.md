@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; desde 31/jul/2026 em construção da V1 de produção (blocos A–G, V1_PLANO.md é a fonte do status); Bloco F entregou o cockpit executivo, Bloco G/G1+G2 (produção, continuidade, acesso, auditoria e logs) feitos em 03–04/ago/2026, G3 aguarda OK
+description: Camada de insights SuperFrio — POC DataHub concluída; V1 de produção CONCLUÍDA (blocos A–G, V1_PLANO.md é a fonte do status); Bloco G/G1+G2+G3 (produção, acesso, auditoria, logs, testes de integração e checklist) feitos em 03–04/ago/2026; deploy do bloco na VM fica decisão separada da Maria
 metadata:
   type: project
 ---
@@ -96,8 +96,21 @@ de-para/decisão de insight; logging estruturado com request id
 nome de cliente/filial na query string). Verificação independente achou e
 corrigiu 2 antes do commit: request id se perdia no caso de 500 não tratado
 (`request.state` como fallback do `ContextVar`) e o bloqueio de `.html` era
-case-sensitive (`.lower()`). G3 (testes E2E/checklist/documentação de
-entrega) aguarda OK.
+case-sensitive (`.lower()`). **G3 (testes de integração, checklist e
+fechamento) feito em 04/ago/2026**: teste de ponta a ponta
+(`tests/test_e2e_pipeline.py`) provando que o pipeline real de ingestão
+chega consistente ao cockpit e à linhagem; achado próprio (não código novo)
+de que a suíte já provava a migration completa em banco legado (`LEGADO_DDL`
+até o head dinâmico); `scripts/verificar_v1.py` automatizando a checklist
+manual pós-bloco (health, gate, páginas fechadas, `/docs` fechado, request
+id); `docs/V1_CRITERIOS_ACEITE.md` com os checkboxes A–G marcados e
+`docs/V1_RELATORIO_VERIFICACAO.md` com a seção do Bloco G (G1+G2 transcritos,
+G3 verificado de fato, conclusão final da V1). Verificação independente achou
+3 (1 alto de documentação — ordem de citação invertida; 2 médios no script
+novo — docstring alegando cobrir rate limit sem testar, e traceback bruto em
+erro de conexão), os 3 corrigidos antes do commit. **V1 concluída (Blocos
+A–G)** — suíte com 448 testes; deploy de G1+G2+G3 na VM fica decisão
+separada da Maria (`origin/main` ainda está no Bloco F).
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

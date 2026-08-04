@@ -183,4 +183,7 @@ indevido, resposta da IA tratada como dado não confiável.
 Após cada bloco: `docs/V1_RELATORIO_VERIFICACAO.md` (escopo, arquitetura,
 migrations, compatibilidade, segurança, cálculos, unidades, filtros, qualidade,
 testes, documentação, código morto, dependências, regressões, exposição de
-dados, erros, rastreabilidade). Futuro, quando útil: `scripts/verificar_v1.py`.
+dados, erros, rastreabilidade). `scripts/verificar_v1.py` (Bloco G / G3)
+automatiza a parte da verificação manual pós-deploy que é HTTP puro (health,
+gate de login, páginas fechadas, `/docs` fechado, request id) — não substitui
+o relatório nem os testes pytest.

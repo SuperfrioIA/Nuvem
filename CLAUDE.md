@@ -21,10 +21,11 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 
 ## Regras para IA
 
-- Fase atual: **construção da V1 em blocos** (A, B e C feitos em 31/jul/2026;
-  D e o lote de correção de identidade do DataHub em 02/ago/2026; E–G aguardam
-  autorização). Não construir código sem pedido explícito da Maria. Antes de
-  mexer em ingestão do DataHub, ler a seção "Lote de correção" do V1_PLANO: a
+- Fase atual: **V1 concluída** (Blocos A–G, todos feitos entre 31/jul e
+  04/ago/2026 — ver `docs/V1_PLANO.md`, "Conclusão da V1"). G1+G2+G3 do
+  Bloco G existem só localmente; deploy na VM é decisão separada da Maria.
+  Não construir código sem pedido explícito da Maria. Antes de mexer em
+  ingestão do DataHub, ler a seção "Lote de correção" do V1_PLANO: a
   identidade do arquivo é o `item_id` e a origem é `unidade/filial`
   (`RMSPII/001`), nunca o nome nem o código de filial sozinho.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
