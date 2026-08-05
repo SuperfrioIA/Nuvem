@@ -1,6 +1,6 @@
 ---
 name: projeto-nuvem-ia
-description: Camada de insights SuperFrio — POC DataHub concluída; V1 de produção CONCLUÍDA (blocos A–G, V1_PLANO.md é a fonte do status); Bloco G/G1+G2+G3 (produção, acesso, auditoria, logs, testes de integração e checklist) feitos em 03–04/ago/2026; deploy do bloco na VM fica decisão separada da Maria
+description: Camada de insights SuperFrio — POC DataHub concluída; V1 de produção CONCLUÍDA E IMPLANTADA (blocos A–G, V1_PLANO.md é a fonte do status); Bloco G/G1+G2+G3 feitos em 03–04/ago/2026, deploy na VM em 05/ago/2026, validado ao vivo
 metadata:
   type: project
 ---
@@ -108,9 +108,12 @@ id); `docs/V1_CRITERIOS_ACEITE.md` com os checkboxes A–G marcados e
 G3 verificado de fato, conclusão final da V1). Verificação independente achou
 3 (1 alto de documentação — ordem de citação invertida; 2 médios no script
 novo — docstring alegando cobrir rate limit sem testar, e traceback bruto em
-erro de conexão), os 3 corrigidos antes do commit. **V1 concluída (Blocos
-A–G)** — suíte com 448 testes; deploy de G1+G2+G3 na VM fica decisão
-separada da Maria (`origin/main` ainda está no Bloco F).
+erro de conexão), os 3 corrigidos antes do commit; achado um 4º já no deploy
+real (`httpx` não existe no Python do host da VM, só dentro da imagem —
+reescrito com stdlib puro). **V1 concluída e implantada (Blocos A–G)** —
+suíte com 448 testes; deploy de G1+G2+G3 feito na VM em 05/ago/2026
+(`origin/main` e a VM em `a6b79a5`), validado ao vivo com
+`scripts/verificar_v1.py` e teste real do chat do Laboratório.
 
 Nuvem IA junta dados de sistemas (futuramente via Pentaho) e controles manuais
 (SharePoint/upload) numa camada fina (de-para + agregados + scores) e mostra uma nuvem

@@ -1184,15 +1184,18 @@ onde ele foi escrito.
 
 ## Conclusão da V1
 
-**Os sete blocos (A–G) estão feitos.** Relatório completo, com a lista de
-pendências conhecidas e declaradas (destino externo do backup, identidade
-por pessoa, sem HTTPS, filtro de filial/cliente de valor único, rate limit
-sem persistência, grão único por métrica como invariante de código) em
-`docs/V1_RELATORIO_VERIFICACAO.md`, seção "Conclusão da V1". G1+G2+G3 existem
-só localmente (`origin/main` ainda está no Bloco F) — deploy fica decisão
-separada da Maria.
+**Os sete blocos (A–G) estão feitos e implantados.** Relatório completo, com
+a lista de pendências conhecidas e declaradas (destino externo do backup,
+identidade por pessoa, sem HTTPS, filtro de filial/cliente de valor único,
+rate limit sem persistência, grão único por métrica como invariante de
+código) em `docs/V1_RELATORIO_VERIFICACAO.md`, seção "Conclusão da V1".
+**Deploy do Bloco G (G1+G2+G3) na VM feito em 05/ago/2026** — `origin/main`
+e a VM estão no commit `a6b79a5`; validado ao vivo com
+`scripts/verificar_v1.py` (21 itens OK) e teste real do chat do Laboratório
+com a `ANTHROPIC_API_KEY` configurada no `.env` da VM.
 
 ## Próximo bloco autorizado
 
-**Nenhum.** A V1 está fechada; próximo passo é decisão da Maria (deploy do
-Bloco G na VM, ou novo trabalho fora do escopo da V1).
+**Nenhum.** A V1 está fechada e implantada; próximo passo é decisão da Maria
+(destino externo do backup, identidade por pessoa, ou novo trabalho fora do
+escopo da V1).
