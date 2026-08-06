@@ -33,11 +33,12 @@ _GR_CNPJ = "02.905.110/0001-23"   # raiz 02905110, formatado de proposito
 _DESCONHECIDO_CNPJ = "99999999000199"  # raiz 99999999, fora do cadastro
 
 
-def _linha(cliente="SAPORE", cnpj=_SAPORE_CNPJ, peso_bruto=100.0, vlr_total=50.0):
+def _linha(cliente="SAPORE", cnpj=_SAPORE_CNPJ, peso_bruto=100.0, vlr_total=50.0,
+           nome_estoque="ESTOQUE 1"):
     return [
         cliente, cnpj, "GEM1", "N", "SOL1", "NF001", "COD1", "DESC",
         10, "CX", 1, "CX", 90.0, peso_bruto, 5.0, vlr_total, 3,
-        "EST1", "ESTOQUE 1", "ENTRADA",
+        "EST1", nome_estoque, "ENTRADA",
     ]
 
 
@@ -717,4 +718,201 @@ def test_arquivo_com_linhas_todas_invalidas_continua_erro_e_nao_sem_dado(cursor,
 
     assert relatorio["status"] == "ok"
     cursor.execute("SELECT linhas_validas FROM processamentos_datahub WHERE item_id = 'item-ruim'")
+    assert cursor.fetchone()[0] == 0
+
+
+# --- V2.2: tipo de estoque como dimensao ---------------------------------------
+#
+# A celula muda de grao: (metrica, armazem, competencia, cliente) vira
+# (metrica, armazem, competencia, cliente, tipo_estoque). tipo_estoque vem de
+# `Nome Estoque` por palavra-chave (backend/services/tipo_estoque.py), com
+# pendencia visivel pro que nao casar -- mesmo padrao do de-para de filial e da
+# pendencia de cliente.
+
+
+def test_quatro_tipos_conhecidos_classificam_corretamente(cursor, monkeypatch):
+    linhas = [
+        _linha(peso_bruto=10.0, nome_estoque="SECO_RMSPII"),
+        _linha(peso_bruto=20.0, nome_estoque="HORT-FRUTTI"),
+        _linha(peso_bruto=30.0, nome_estoque="CONGELADO"),
+        _linha(peso_bruto=40.0, nome_estoque="LC UTENSILIOS - GRUPO GR - RMSPII"),
+    ]
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    assert relatorio["tipos"] == 4
+    cursor.execute(
+        """
+        SELECT tipo_estoque, valor::float FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        WHERE mt.nome = 'peso_bruto_movimentado' ORDER BY tipo_estoque
+        """
+    )
+    assert cursor.fetchall() == [
+        ("CONGELADO", 30.0), ("HORTIFRUTI", 20.0), ("SECO", 10.0), ("UTENSILIOS", 40.0),
+    ]
+    assert processamento_datahub.listar_pendencias_tipo_estoque(cursor) == []
+
+
+def test_relatorio_conta_clientes_distintos_mesmo_com_varios_tipos(cursor, monkeypatch):
+    """clientes/sem_cliente contam por cliente distinto, nao por bucket
+    (cliente, tipo) -- um cliente com movimentacao em 2 tipos continua
+    contando como 1 cliente."""
+    linhas = [
+        _linha(peso_bruto=100.0, nome_estoque="SECO"),
+        _linha(peso_bruto=50.0, nome_estoque="CONGELADO"),
+        _linha(cliente="NOVO LTDA", cnpj=_DESCONHECIDO_CNPJ, peso_bruto=7.0, nome_estoque="SECO"),
+    ]
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    assert relatorio["clientes"] == 1  # sapore em 2 tipos conta uma vez
+    assert relatorio["sem_cliente"] == 1
+    assert relatorio["tipos"] == 2
+    # 3 baldes (sapore/SECO, sapore/CONGELADO, None/SECO) x 3 metricas
+    assert relatorio["medidas_gravadas"] == 9
+
+
+def test_valor_nao_classificado_de_nome_estoque_vira_pendencia_visivel(cursor, monkeypatch):
+    linhas = [_linha(peso_bruto=100.0, nome_estoque="ARMAZEM MISTO XYZ")]
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    assert relatorio["status"] == "ok"
+    pendencias = processamento_datahub.listar_pendencias_tipo_estoque(cursor)
+    assert [p["valor_na_fonte"] for p in pendencias] == ["ARMAZEM MISTO XYZ"]
+    # a linha nao some -- vira celula NAO_CLASSIFICADO, visivel na consulta
+    cursor.execute(
+        """
+        SELECT tipo_estoque, valor::float FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        WHERE mt.nome = 'peso_bruto_movimentado'
+        """
+    )
+    assert cursor.fetchall() == [("NAO_CLASSIFICADO", 100.0)]
+
+
+def test_nome_estoque_vazio_vira_pendencia_com_marcador_sem_valor(cursor, monkeypatch):
+    linhas = [_linha(peso_bruto=100.0, nome_estoque=None)]
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    pendencias = processamento_datahub.listar_pendencias_tipo_estoque(cursor)
+    assert [p["valor_na_fonte"] for p in pendencias] == ["(sem valor)"]
+
+
+def test_prune_remove_celula_de_grao_antigo_apos_reprocesso_v22(cursor, monkeypatch):
+    """Risco 4 da proposta V3: o grao da celula muda (V2.2 acrescenta
+    tipo_estoque). Uma celula gravada ANTES do lote (tipo_estoque NULL)
+    precisa ser removida pelo prune quando o arquivo reprocessa no grao novo --
+    se o escopo do prune tivesse ficado estreito por tipo, ela sobreviveria ao
+    lado das novas e o total da competencia dobraria."""
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    linhas = [
+        _linha(peso_bruto=100.0, nome_estoque="SECO"),
+        _linha(peso_bruto=50.0, nome_estoque="CONGELADO"),
+    ]
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    # simula o estado ANTES do lote: celula no grao antigo (sem tipo_estoque)
+    # pro mesmo armazem/competencia/cliente
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    metrica_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    armazem_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM clientes WHERE nk_erp = '67945071'")
+    cliente_id = cursor.fetchone()[0]
+    cursor.execute(
+        """
+        INSERT INTO medidas (metrica_id, armazem_id, competencia, cliente_id, valor, origem_tipo)
+        VALUES (%s, %s, '2026-07-01', %s, 999, 'recebida')
+        """,
+        (metrica_id, armazem_id, cliente_id),
+    )
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    assert relatorio["status"] == "ok"
+    assert relatorio["tipos"] == 2
+    # a celula de grao antigo (tipo_estoque NULL) foi removida como orfa --
+    # nao sobrevive ao lado das novas
+    cursor.execute(
+        "SELECT COUNT(*) FROM medidas WHERE metrica_id = %s AND cliente_id = %s "
+        "AND tipo_estoque IS NULL",
+        (metrica_id, cliente_id),
+    )
+    assert cursor.fetchone()[0] == 0
+    # o total da competencia bate com o arquivo -- nao com 999 + 150
+    cursor.execute(
+        "SELECT SUM(valor)::float FROM medidas WHERE metrica_id = %s AND cliente_id = %s",
+        (metrica_id, cliente_id),
+    )
+    assert cursor.fetchone()[0] == 150.0
+
+
+def test_reprocesso_forcado_preserva_total_por_competencia(cursor, monkeypatch):
+    """Prova que o total (SUM por competencia) e identico antes e depois do
+    reprocesso com forcar=True -- so o grao (numero de celulas) muda."""
+    linhas = [
+        _linha(peso_bruto=100.0, nome_estoque="SECO"),
+        _linha(peso_bruto=50.0, nome_estoque="CONGELADO"),
+        _linha(cliente="GR SA", cnpj=_GR_CNPJ, peso_bruto=30.0, nome_estoque="HORTIFRUTI"),
+    ]
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+
+    processamento_datahub.processar_todos(cursor)
+    cursor.execute(
+        "SELECT SUM(valor)::float, COUNT(*) FROM medidas m "
+        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_movimentado'"
+    )
+    total_antes, celulas_antes = cursor.fetchone()
+
+    processamento_datahub.processar_todos(cursor, forcar=True)
+    cursor.execute(
+        "SELECT SUM(valor)::float, COUNT(*) FROM medidas m "
+        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_movimentado'"
+    )
+    total_depois, celulas_depois = cursor.fetchone()
+
+    assert total_depois == total_antes == 180.0
+    assert celulas_depois == celulas_antes  # mesmo arquivo, mesmo grao nas duas rodadas
+
+
+def test_arquivo_republicado_vazio_apaga_todos_os_tipos(cursor, monkeypatch):
+    """A decisao (a) de 06/ago (arquivo republicado vazio apaga as celulas que
+    tinha gravado) continua valendo com o grao novo: todos os tipos, nao so
+    um."""
+    com_dado = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016")
+    linhas = [
+        _linha(peso_bruto=100.0, nome_estoque="SECO"),
+        _linha(peso_bruto=50.0, nome_estoque="CONGELADO"),
+    ]
+    _preparar(monkeypatch, [(com_dado, _xlsx(linhas))])
+    processamento_datahub.processar_todos(cursor)
+    cursor.execute(
+        "SELECT COUNT(*) FROM medidas m JOIN metricas mt ON mt.id = m.metrica_id "
+        "WHERE mt.nome = 'peso_bruto_movimentado'"
+    )
+    assert cursor.fetchone()[0] == 2  # SECO e CONGELADO
+
+    republicado = _arquivo(
+        "ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016",
+        modificado_em="2026-08-06T00:00:00Z",
+    )
+    _preparar(monkeypatch, [(republicado, _xlsx([]))])
+    processamento_datahub.processar_todos(cursor)
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM medidas m JOIN metricas mt ON mt.id = m.metrica_id "
+        "WHERE mt.nome = 'peso_bruto_movimentado'"
+    )
     assert cursor.fetchone()[0] == 0

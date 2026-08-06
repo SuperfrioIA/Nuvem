@@ -64,6 +64,22 @@ def registrar_cliente_pendencia(cur, conector_id: int, cliente_na_fonte: str, no
     )
 
 
+def registrar_tipo_estoque_pendencia(cur, conector_id: int, valor_na_fonte: str) -> None:
+    """Mesmo padrao do de-para de filial e da pendencia de cliente (V2.2):
+    acumula primeira/ultima vez em que um valor de `Nome Estoque` nao casou com
+    nenhuma palavra-chave (backend/services/tipo_estoque.py) -- visivel no
+    painel, nunca descartado em silencio."""
+    cur.execute(
+        """
+        INSERT INTO tipo_estoque_pendencias (conector_id, valor_na_fonte)
+        VALUES (%s, %s)
+        ON CONFLICT (conector_id, valor_na_fonte)
+        DO UPDATE SET ultima_vez_em = now()
+        """,
+        (conector_id, valor_na_fonte),
+    )
+
+
 def upsert_medida(
     cur,
     metrica_id: int,
@@ -73,22 +89,28 @@ def upsert_medida(
     conector_id: int,
     medida_recebida_id: int,
     cliente_id: int | None = None,
+    tipo_estoque: str | None = None,
 ) -> None:
     """cliente_id NULL = celula sem cliente (todo o caminho do upload manual e
-    as linhas do DataHub sem cliente identificado). A identidade da celula e a
-    constraint medidas_celula_unica (V1.3, NULLS NOT DISTINCT) -- NULL conflita
-    com NULL, entao o upsert continua idempotente nos dois graos."""
+    as linhas do DataHub sem cliente identificado). tipo_estoque NULL = a
+    dimensao nao se aplica (upload manual, medida derivada, celula anterior ao
+    V2.2) -- o sentinela NAO_CLASSIFICADO e outra coisa (valor da fonte que nao
+    casou com nenhuma palavra-chave, ver backend/services/tipo_estoque.py). A
+    identidade da celula e a constraint medidas_celula_unica (NULLS NOT
+    DISTINCT) -- NULL conflita com NULL, entao o upsert continua idempotente
+    em qualquer combinacao de graos."""
     cur.execute(
         """
         INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, conector_id,
-                             medida_recebida_id, origem_tipo, cliente_id)
-        VALUES (%s, %s, %s, %s, %s, %s, 'recebida', %s)
+                             medida_recebida_id, origem_tipo, cliente_id, tipo_estoque)
+        VALUES (%s, %s, %s, %s, %s, %s, 'recebida', %s, %s)
         ON CONFLICT ON CONSTRAINT medidas_celula_unica
         DO UPDATE SET valor = EXCLUDED.valor, conector_id = EXCLUDED.conector_id,
                       medida_recebida_id = EXCLUDED.medida_recebida_id, origem_tipo = 'recebida',
                       atualizado_em = now()
         """,
-        (metrica_id, armazem_id, competencia, valor, conector_id, medida_recebida_id, cliente_id),
+        (metrica_id, armazem_id, competencia, valor, conector_id, medida_recebida_id,
+         cliente_id, tipo_estoque),
     )
 
 
@@ -125,20 +147,24 @@ def registrar_recebida_datahub(
     valor: float,
     unidade: str | None,
     arquivo_origem: str | None,
+    tipo_estoque: str | None = None,
 ) -> int:
     """Variante do DataHub (V1.3): sem modelo de importacao (a leitura e a do
     P3, nao a dos modelos), com fonte logica, cliente, unidade canonica e
-    arquivo de origem explicitos. Mesma tabela, mesmo append-only."""
+    arquivo de origem explicitos. Mesma tabela, mesmo append-only.
+    tipo_estoque (V2.2) carrega o mesmo grao fino da celula canonica -- sem
+    ele, duas recebidas da mesma (execucao, cliente, metrica) mas de tipos
+    diferentes ficariam indistinguiveis na auditoria."""
     cur.execute(
         """
         INSERT INTO medidas_recebidas
             (execucao_id, fonte_id, armazem_id, cliente_id, metrica_id,
-             competencia, valor, unidade, arquivo_origem)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+             competencia, valor, unidade, arquivo_origem, tipo_estoque)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         RETURNING id
         """,
         (execucao_id, fonte_id, armazem_id, cliente_id, metrica_id,
-         competencia, valor, unidade, arquivo_origem),
+         competencia, valor, unidade, arquivo_origem, tipo_estoque),
     )
     return cur.fetchone()[0]
 

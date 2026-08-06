@@ -93,6 +93,64 @@ def test_upsert_idempotente_e_corrige_valor(cursor):
     assert (total, float(valor)) == (1, 120.0)
 
 
+def test_upsert_medida_com_tipo_estoque_grava_celulas_distintas_por_tipo(cursor):
+    """V2.2: tipo_estoque entrou na UNIQUE -- duas celulas do mesmo
+    metrica/armazem/competencia/cliente(NULL) mas tipos diferentes coexistem,
+    e cada uma upserta de forma independente."""
+    conector_id = _conector_id(cursor)
+    execucao_id = _execucao(cursor, conector_id, "datahub")
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    metrica_id = cursor.fetchone()[0]
+    cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    armazem_id = cursor.fetchone()[0]
+    competencia = date(2026, 7, 1)
+
+    for tipo, valor in (("SECO", 100.0), ("CONGELADO", 40.0)):
+        recebida_id = ingestao.registrar_recebida_datahub(
+            cursor, execucao_id, None, armazem_id, None, metrica_id, competencia, valor,
+            "kg", "arquivo.xlsx", tipo_estoque=tipo,
+        )
+        ingestao.upsert_medida(
+            cursor, metrica_id, armazem_id, competencia, valor, conector_id, recebida_id,
+            cliente_id=None, tipo_estoque=tipo,
+        )
+
+    cursor.execute(
+        "SELECT tipo_estoque, valor::float FROM medidas WHERE metrica_id = %s ORDER BY tipo_estoque",
+        (metrica_id,),
+    )
+    assert cursor.fetchall() == [("CONGELADO", 40.0), ("SECO", 100.0)]
+
+    # upsert idempotente por tipo: reenviar SECO corrige so aquela celula
+    recebida_id = ingestao.registrar_recebida_datahub(
+        cursor, execucao_id, None, armazem_id, None, metrica_id, competencia, 120.0,
+        "kg", "arquivo.xlsx", tipo_estoque="SECO",
+    )
+    ingestao.upsert_medida(
+        cursor, metrica_id, armazem_id, competencia, 120.0, conector_id, recebida_id,
+        cliente_id=None, tipo_estoque="SECO",
+    )
+    cursor.execute(
+        "SELECT tipo_estoque, valor::float FROM medidas WHERE metrica_id = %s ORDER BY tipo_estoque",
+        (metrica_id,),
+    )
+    assert cursor.fetchall() == [("CONGELADO", 40.0), ("SECO", 120.0)]
+
+
+def test_gravar_agregados_upload_manual_grava_tipo_estoque_null(cursor):
+    """O caminho do upload manual nunca tem tipo de estoque -- upsert_medida
+    grava NULL (dimensao nao se aplica), nao o sentinela NAO_CLASSIFICADO."""
+    conector_id = _conector_id(cursor)
+    execucao_id = _execucao(cursor, conector_id)
+    item = {"armazem_na_fonte": "RPI", "competencia": date(2026, 6, 1),
+            "metrica": "volumetria_recebimento", "valor": 100.0}
+
+    ingestao.gravar_agregados(cursor, conector_id, execucao_id, [item])
+
+    cursor.execute("SELECT tipo_estoque FROM medidas")
+    assert cursor.fetchall() == [(None,)]
+
+
 def test_grava_recebida_e_publica_canonica_vinculada(cursor):
     conector_id = _conector_id(cursor)
     execucao_id = _execucao(cursor, conector_id)

@@ -201,6 +201,7 @@ def test_qualidade_agrega_por_status(cursor):
     }
     assert isinstance(resultado["pendencias_filial"], list)
     assert isinstance(resultado["pendencias_cliente"], list)
+    assert isinstance(resultado["pendencias_tipo_estoque"], list)
 
 
 def test_qualidade_filtra_por_filial(cursor):
@@ -209,3 +210,18 @@ def test_qualidade_filtra_por_filial(cursor):
 
     assert resultado["total_arquivos"] == 1
     assert resultado["por_status"]["ok"] == {"arquivos": 1, "linhas_validas": 20, "medidas_gravadas": 3}
+
+
+def test_qualidade_expoe_pendencia_de_tipo_estoque(cursor):
+    """V2.2: valor de 'Nome Estoque' nao classificado aparece na qualidade do
+    cockpit, mesmo padrao das pendencias de filial e de cliente."""
+    cursor.execute("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")
+    conector_id = cursor.fetchone()[0]
+    cursor.execute(
+        "INSERT INTO tipo_estoque_pendencias (conector_id, valor_na_fonte) VALUES (%s, %s)",
+        (conector_id, "ARMAZEM MISTO XYZ"),
+    )
+    resultado = cockpit.qualidade(cursor)
+    assert [p["valor_na_fonte"] for p in resultado["pendencias_tipo_estoque"]] == [
+        "ARMAZEM MISTO XYZ"
+    ]

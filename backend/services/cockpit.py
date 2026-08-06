@@ -290,4 +290,5 @@ def qualidade(cur, de=None, ate=None, filial=None) -> dict:
         "total_arquivos": sum(v["arquivos"] for v in por_status.values()),
         "pendencias_filial": processamento_datahub.listar_pendencias_filial(cur),
         "pendencias_cliente": processamento_datahub.listar_pendencias_cliente(cur),
+        "pendencias_tipo_estoque": processamento_datahub.listar_pendencias_tipo_estoque(cur),
     }

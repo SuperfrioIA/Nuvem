@@ -128,8 +128,8 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
     <p class="subLabel">Células encontradas</p>
     <div class="tblWrap">
       <table class="tbl" id="tabelaCelulas">
-        <thead><tr><th>Filial</th><th>Cliente</th><th class="num">Valor</th><th>Origem</th><th></th></tr></thead>
-        <tbody><tr><td colspan="5" class="tblEmpty">Escolha os filtros e clique em "Buscar células".</td></tr></tbody>
+        <thead><tr><th>Filial</th><th>Cliente</th><th>Tipo de estoque</th><th class="num">Valor</th><th>Origem</th><th></th></tr></thead>
+        <tbody><tr><td colspan="6" class="tblEmpty">Escolha os filtros e clique em "Buscar células".</td></tr></tbody>
       </table>
     </div>
 
@@ -230,6 +230,19 @@ async function buscarCelulas() {
   }
 }
 
+// Rótulo legível do tipo de estoque (V2.2). NULL (traço) é dimensão que não se
+// aplica (célula anterior ao lote, upload manual, medida derivada) — diferente
+// de NAO_CLASSIFICADO, que é valor da fonte que não casou com nenhuma
+// palavra-chave (ver backend/services/tipo_estoque.py). Confundir os dois
+// esconderia qual dos dois aconteceu.
+const ROTULO_TIPO_ESTOQUE = {
+  CONGELADO: "Congelado",
+  SECO: "Seco",
+  HORTIFRUTI: "Hortifruti",
+  UTENSILIOS: "Utensílios",
+  NAO_CLASSIFICADO: "Não classificado",
+};
+
 function renderizarCelulas(resultado) {
   const linhas = resultado.celulas || [];
   const tbody = document.querySelector("#tabelaCelulas tbody");
@@ -237,10 +250,11 @@ function renderizarCelulas(resultado) {
     <tr>
       <td>${escaparHtml(c.filial)}</td>
       <td>${escaparHtml(c.cliente)}</td>
+      <td>${escaparHtml(ROTULO_TIPO_ESTOQUE[c.tipo_estoque] || "—")}</td>
       <td class="num">${escaparHtml(formatarNumeroKpi(c.valor, ""))}</td>
       <td><span class="badge ${c.tem_origem_rastreavel ? "sim" : "nao"}">${c.tem_origem_rastreavel ? "rastreável" : "sem origem"}</span></td>
       <td>${c.tem_origem_rastreavel ? `<button type="button" class="btnOrigem" data-idx="${i}">Ver origem</button>` : ""}</td>
-    </tr>`).join("") || `<tr><td colspan="5" class="tblEmpty">Nenhuma célula encontrada para este filtro.</td></tr>`;
+    </tr>`).join("") || `<tr><td colspan="6" class="tblEmpty">Nenhuma célula encontrada para este filtro.</td></tr>`;
 
   tbody.querySelectorAll(".btnOrigem").forEach(btn =>
     btn.addEventListener("click", () => verOrigem(linhas[Number(btn.dataset.idx)].medida_id)));

@@ -174,14 +174,15 @@ def processar(forcar: bool = Body(False, embed=True)):
 
 @router.get("/processamentos")
 def processamentos():
-    """Estado corrente por arquivo + pendencias de de-para (filial e cliente)
-    do conector do DataHub, pro painel do admin."""
+    """Estado corrente por arquivo + pendencias de de-para (filial, cliente e
+    tipo de estoque) do conector do DataHub, pro painel do admin."""
     with get_conn() as conn:
         with conn.cursor() as cur:
             return {
                 "processamentos": processamento_datahub.listar_processamentos(cur),
                 "pendencias_filial": processamento_datahub.listar_pendencias_filial(cur),
                 "pendencias_cliente": processamento_datahub.listar_pendencias_cliente(cur),
+                "pendencias_tipo_estoque": processamento_datahub.listar_pendencias_tipo_estoque(cur),
             }
 
 
@@ -192,13 +193,19 @@ def serie(
     ate: str | None = None,
     filial: str | None = None,
     cliente: str | None = None,
+    tipo_estoque: str | None = None,
 ):
     """Serie historica persistida (V1.3): mensal + consolidacao anual +
-    acumulado, do que esta em `medidas` -- nunca recalcula do arquivo."""
+    acumulado, do que esta em `medidas` -- nunca recalcula do arquivo.
+    tipo_estoque (V2.2) e filtro de dimensao, igual filial/cliente -- ranking e
+    distribuicao por tipo continuam fora desta consulta (V2.4)."""
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                return serie_datahub.serie(cur, metrica, de=de, ate=ate, filial=filial, cliente=cliente)
+                return serie_datahub.serie(
+                    cur, metrica, de=de, ate=ate, filial=filial, cliente=cliente,
+                    tipo_estoque=tipo_estoque,
+                )
     except serie_datahub.SerieDatahubError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

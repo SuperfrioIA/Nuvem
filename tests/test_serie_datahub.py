@@ -157,6 +157,44 @@ def test_serie_vazia_sem_dado_persistido(cursor):
     assert resultado["acumulado"] == 0
 
 
+def _semear_tipo_estoque(cur):
+    """Peso bruto de RMSPIV em 2026-07, separado por tipo de estoque (V2.2):
+    SECO=100, CONGELADO=40."""
+    peso = _id(cur, "SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    rmspiv = _id(cur, "SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    for tipo, valor in (("SECO", 100), ("CONGELADO", 40)):
+        cur.execute(
+            "INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, tipo_estoque) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (peso, rmspiv, date(2026, 7, 1), valor, tipo),
+        )
+
+
+def test_filtro_por_tipo_estoque(cursor):
+    _semear_tipo_estoque(cursor)
+    resultado = serie_datahub.serie(
+        cursor, "peso_bruto_movimentado", filial="RMSPIV", tipo_estoque="SECO"
+    )
+    assert resultado["mensal"] == [{"competencia": "2026-07", "valor": 100.0}]
+    assert resultado["filtros"]["tipo_estoque"] == "SECO"
+
+
+def test_sem_filtro_de_tipo_estoque_soma_todos_os_tipos(cursor):
+    _semear_tipo_estoque(cursor)
+    resultado = serie_datahub.serie(cursor, "peso_bruto_movimentado", filial="RMSPIV")
+    assert resultado["mensal"] == [{"competencia": "2026-07", "valor": 140.0}]
+
+
+def test_tipo_estoque_desconhecido_e_recusado(cursor):
+    with pytest.raises(serie_datahub.SerieDatahubError, match="tipo de estoque desconhecido"):
+        serie_datahub.serie(cursor, "peso_bruto_movimentado", tipo_estoque="GELO_SECO")
+
+
+def test_clientes_atendidos_recusa_filtro_de_tipo_estoque(cursor):
+    with pytest.raises(serie_datahub.SerieDatahubError, match="nao aceita filtro de tipo de estoque"):
+        serie_datahub.serie(cursor, "clientes_atendidos", tipo_estoque="SECO")
+
+
 def test_serie_nao_toca_o_sharepoint(cursor, monkeypatch):
     """Criterio de aceite do V1.3: a consulta le SO o Postgres -- qualquer
     chamada ao Graph aqui e defeito."""

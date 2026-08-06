@@ -48,12 +48,13 @@ def celulas(cur, metrica: str, competencia: str, filial=None, cliente=None) -> d
 
     cur.execute(
         f"""
-        SELECT m.id, a.sigla, c.nome, m.valor, m.origem_tipo, m.medida_recebida_id
+        SELECT m.id, a.sigla, c.nome, m.valor, m.origem_tipo, m.medida_recebida_id,
+               m.tipo_estoque
         FROM medidas m
         JOIN armazens a ON a.id = m.armazem_id
         LEFT JOIN clientes c ON c.id = m.cliente_id
         WHERE {where}
-        ORDER BY a.sigla, c.nome NULLS LAST
+        ORDER BY a.sigla, c.nome NULLS LAST, m.tipo_estoque NULLS FIRST
         """,
         params,
     )
@@ -65,8 +66,14 @@ def celulas(cur, metrica: str, competencia: str, filial=None, cliente=None) -> d
             "valor": float(valor),
             "origem_tipo": origem_tipo,
             "tem_origem_rastreavel": recebida_id is not None,
+            # V2.2: NULL = dimensao nao se aplica (celula anterior ao lote,
+            # upload manual, medida derivada) -- diferente do sentinela
+            # NAO_CLASSIFICADO (valor da fonte que nao casou com nenhuma
+            # palavra-chave). A tela decide o rotulo pros dois casos.
+            "tipo_estoque": tipo_estoque,
         }
-        for medida_id, sigla, nome_cliente, valor, origem_tipo, recebida_id in cur.fetchall()
+        for medida_id, sigla, nome_cliente, valor, origem_tipo, recebida_id, tipo_estoque
+        in cur.fetchall()
     ]
 
     return {

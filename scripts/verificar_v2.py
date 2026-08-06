@@ -192,6 +192,84 @@ def verificar_banco() -> None:
         "o prefixo da UNIQUE medidas_celula_unica ja atende esse acesso",
     )
 
+    # V2.2: tipo de estoque como dimensao --------------------------------------
+
+    colunas_medidas = {
+        linha[0] for linha in
+        _sql("SELECT column_name FROM information_schema.columns WHERE table_name = 'medidas'")
+    }
+    _checar("coluna tipo_estoque existe em medidas", "tipo_estoque" in colunas_medidas)
+
+    colunas_recebidas = {
+        linha[0] for linha in _sql(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_name = 'medidas_recebidas'"
+        )
+    }
+    _checar(
+        "coluna tipo_estoque existe em medidas_recebidas",
+        "tipo_estoque" in colunas_recebidas,
+    )
+
+    colunas_unique_medidas = {
+        linha[0] for linha in _sql(
+            """
+            SELECT a.attname FROM pg_constraint c
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY(c.conkey)
+            WHERE c.conrelid = 'medidas'::regclass AND c.conname = 'medidas_celula_unica'
+            """
+        )
+    }
+    _checar(
+        "UNIQUE de medidas cobre as 5 colunas (com tipo_estoque)",
+        colunas_unique_medidas
+        == {"metrica_id", "armazem_id", "competencia", "cliente_id", "tipo_estoque"},
+        f"encontrado {sorted(colunas_unique_medidas)}",
+    )
+
+    # o guarda central do risco 4 (prune de orfas): se o escopo do prune tivesse
+    # ficado estreito por tipo_estoque, celula de grao antigo (NULL) sobreviveria
+    # ao lado da nova apos o primeiro reprocesso -- e o total dobraria em
+    # silencio. Este check pega isso -- mas so como AVISO, nao FALHA: a propria
+    # migration 0014 documenta que, entre o deploy (upgrade da migration) e o
+    # "Processar arquivos" com FORCAR (dois passos manuais separados do
+    # runbook), toda celula das 3 metricas fica com tipo_estoque NULL por
+    # desenho -- "total certo, dimensao ausente", nao um defeito. Reprovar o
+    # deploy por rodar o script antes do reprocesso confundiria rotina com erro.
+    grao_misto = _sql(
+        """
+        SELECT mt.nome, COUNT(*) FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        WHERE mt.nome IN
+            ('peso_bruto_movimentado', 'valor_mercadoria_movimentada', 'registros_movimentacao')
+          AND m.tipo_estoque IS NULL
+        GROUP BY 1
+        """
+    )
+    if grao_misto:
+        _avisar(
+            "celulas do DataHub ainda no grao antigo (tipo_estoque NULL)",
+            f"{grao_misto} -- normal ate rodar 'Processar arquivos' com FORCAR; "
+            "so e defeito se persistir depois do reprocesso",
+        )
+    else:
+        _checar("nenhuma celula das metricas do DataHub com tipo_estoque NULL (grao misto)", True)
+
+    distribuicao = _sql(
+        """
+        SELECT mt.nome, COALESCE(m.tipo_estoque, '(nulo)'), COUNT(*), ROUND(SUM(m.valor), 3)
+        FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        WHERE mt.nome IN
+            ('peso_bruto_movimentado', 'valor_mercadoria_movimentada', 'registros_movimentacao')
+        GROUP BY 1, 2 ORDER BY 1, 2
+        """
+    )
+    print("\n      distribuicao por tipo de estoque:")
+    for metrica, tipo, qtd, soma in distribuicao:
+        print(f"        {metrica:<32} {tipo:<18} {qtd:>6} celula(s)   soma {soma}")
+    print()
+
     # unidade NULL so e legitima em arquivo solto na raiz (sem galho de unidade)
     sem_unidade = _sql(
         "SELECT arquivo, caminho FROM processamentos_datahub "
@@ -250,6 +328,17 @@ def verificar_banco() -> None:
         _avisar(
             f"pendencia esperada ausente: {sorted(resolvidas)}",
             "os arquivos dessa origem ainda nao foram processados, ou ela ganhou de-para",
+        )
+
+    pendencias_tipo_estoque = _sql(
+        "SELECT tp.valor_na_fonte FROM tipo_estoque_pendencias tp "
+        "JOIN conectores c ON c.id = tp.conector_id "
+        "WHERE c.tipo = 'sharepoint_datahub'"
+    )
+    for (valor,) in pendencias_tipo_estoque:
+        _avisar(
+            f"valor de 'Nome Estoque' nao classificado: {valor}",
+            "decisao humana (revisar palavra-chave em tipo_estoque.py), nao defeito",
         )
 
 

@@ -108,6 +108,19 @@ def test_celulas_lista_filtrada_por_metrica_e_competencia(cursor, monkeypatch):
     assert por_cliente["Sem cliente identificado"]["valor"] == 7.0
 
 
+def test_celulas_inclui_tipo_estoque(cursor, monkeypatch):
+    """V2.2: a celula ganhou a dimensao tipo_estoque -- a linhagem precisa
+    expor pra tela nao renderizar linhas identicas (mesma filial/cliente/valor)
+    sem nada que as distinga."""
+    linhas = [_linha(peso_bruto=100.0, vlr_total=10.0)]  # "ESTOQUE 1" no fixture
+    arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
+    processamento_datahub.processar_arquivo(cursor, "item-016")
+
+    resultado = linhagem.celulas(cursor, "peso_bruto_movimentado", "2026-07")
+    assert [c["tipo_estoque"] for c in resultado["celulas"]] == ["NAO_CLASSIFICADO"]
+
+
 def test_celulas_filtra_por_filial_e_cliente(cursor, monkeypatch):
     linhas = [_linha(peso_bruto=100.0, vlr_total=10.0)]
     arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")

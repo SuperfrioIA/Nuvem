@@ -400,6 +400,8 @@ function renderizarQualidade(q, pesoBrutoKg) {
     `<li>Origem <strong>${escaparHtml(p.origem_na_fonte)}</strong> sem de-para de filial.</li>`).join("");
   const pendCliente = (q.pendencias_cliente || []).map(p =>
     `<li>Cliente <strong>${escaparHtml(p.nome_na_fonte || p.cliente_na_fonte)}</strong> sem cadastro (CNPJ raiz ${escaparHtml(p.cliente_na_fonte)}).</li>`).join("");
+  const pendTipoEstoque = (q.pendencias_tipo_estoque || []).map(p =>
+    `<li>Valor <strong>${escaparHtml(p.valor_na_fonte)}</strong> de "Nome Estoque" não classificado em nenhum tipo.</li>`).join("");
 
   document.getElementById("cockpitQualidade").innerHTML = `
     ${pesoBrutoKg != null ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoBrutoKg))}</div>` : ""}
@@ -407,6 +409,7 @@ function renderizarQualidade(q, pesoBrutoKg) {
     ${linhas}
     ${pendFilial ? `<ul class="pendenciasLista">${pendFilial}</ul>` : ""}
     ${pendCliente ? `<ul class="pendenciasLista">${pendCliente}</ul>` : ""}
+    ${pendTipoEstoque ? `<ul class="pendenciasLista">${pendTipoEstoque}</ul>` : ""}
   `;
 }
 

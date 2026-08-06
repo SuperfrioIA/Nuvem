@@ -44,7 +44,7 @@ o Laboratório explorando em cima dessa base já governada.
 |---|---|---|
 | **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **feito** (06/ago/2026, deployado na VM) |
 | **V2.1.1** | `sem_dado`: competência sem movimento não é erro | **feito** (06/ago/2026) — achado na primeira rodada real |
-| **V2.2** | Tipo de estoque como dimensão | não autorizado |
+| **V2.2** | Tipo de estoque como dimensão | **feito** (06/ago/2026) |
 | **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | não autorizado |
 | **V2.4** | Consultas de volumetria sob `/cockpit/` | não autorizado |
 | **V2.5** | Cockpit visual | não autorizado |
@@ -310,6 +310,105 @@ vazio passou a exigir a leitura marcada, que é o comportamento novo).
 
 ---
 
+## Lote V2.2 — Tipo de estoque como dimensão (feito, 06/ago/2026)
+
+Autorizado pela Maria em 06/ago/2026, com plano apresentado em texto cobrindo os
+dois pontos que ela pediu explicitamente: o escopo do prune de órfãs
+acompanhando a UNIQUE nova (risco 4 da `proposta_v3_volumetria.md`) e a prova de
+que o total por competência é o mesmo antes e depois do reprocesso.
+
+> Introduzir a dimensão na entrada, antes de existir saída.
+
+Escopo:
+
+1. **`backend/services/tipo_estoque.py`** (novo) — classificação por
+   palavra-chave de `Nome Estoque`: `CONGELADO`, `SECO`, `HORTIFRUTI`,
+   `UTENSILIOS`, ou o sentinela `NAO_CLASSIFICADO` (valor vazio, sem palavra-chave
+   ou ambíguo — nunca desempatado por ordem da lista). O leitor
+   (`entrada_mercadorias.py`) não foi tocado: `Nome Estoque` já era lido e só era
+   descartado na agregação.
+2. **Migration `0014_tipo_estoque`**: coluna em `medidas` e `medidas_recebidas`,
+   `CHECK` fechando os 5 valores, `medidas_celula_unica` vira `UNIQUE NULLS NOT
+   DISTINCT` de 5 colunas, tabela nova `tipo_estoque_pendencias` (mesmo padrão de
+   `depara_pendencias`/`cliente_pendencias`). Upgrade sem backfill nem DELETE — as
+   linhas existentes ficam com `tipo_estoque` NULL e continuam únicas (a UNIQUE
+   de 4 colunas já garantia isso). Downgrade destrutivo só para células com
+   `tipo_estoque` preenchido e a linhagem delas, preservando a célula sem a
+   dimensão — mesma política da 0006 para `cliente_id`.
+3. **`processamento_datahub._agregar_por_cliente_e_tipo`**: agregação passa a
+   agrupar por `(cliente_id, tipo_estoque)`; pendência de tipo registrada uma vez
+   por valor distinto dentro do arquivo, mesmo padrão de cliente e de-para.
+4. **`_remover_celulas_orfas`**: o `WHERE` que busca candidatos a órfã continua
+   `(metrica_id, armazem_id, competencia)`, **sem** `tipo_estoque` — o filtro por
+   tipo é feito depois, em Python, comparando `(cliente_id, tipo)` contra o que o
+   processamento atual emitiu. É essa varredura larga que limpa a célula do grão
+   antigo (`tipo_estoque` NULL) assim que o arquivo reprocessa; estreitar o
+   `WHERE` por tipo teria deixado a célula antiga sobreviver ao lado da nova e o
+   total da competência dobraria em silêncio.
+5. **`serie_datahub.serie`**: filtro opcional `tipo_estoque`, mesmo nível de
+   filial/cliente; `clientes_atendidos` recusa esse filtro com mensagem clara.
+   **Fora do lote**: ranking/distribuição por tipo (V2.4).
+6. **`linhagem.celulas`** passa a devolver `tipo_estoque`; a tela `/linhagem`
+   ganhou a coluna com rótulo legível (nunca o identificador cru).
+7. **`cockpit.qualidade`** e o painel do admin passam a exibir pendências de
+   tipo de estoque, mesmo padrão das pendências de filial e cliente.
+8. **`scripts/verificar_v2.py`**: checks novos (coluna existe nas duas tabelas,
+   UNIQUE de 5 colunas, distribuição por tipo impressa, pendências como AVISO). O
+   check de "nenhuma célula com `tipo_estoque` NULL" é **AVISO, não FALHA** — a
+   janela entre o deploy (upgrade da migration no startup) e o "Processar
+   arquivos" com FORÇAR é estado esperado, documentado na própria migration;
+   tratar como FALHA reprovaria uma rotina de deploy normal.
+9. **`scripts/totais_competencia.py`** (novo), somente leitura: soma por
+   `(métrica, competência, filial)`, arredondada a 3 casas (a mesma soma em
+   acumuladores separados por tipo pode divergir no último bit de um float —
+   arredondar evita falso positivo no `diff`). Runbook: rodar antes do deploy,
+   rodar depois do reprocesso com forçar, `diff` — a coluna do total tem que
+   bater linha a linha, só `n_celulas` cresce.
+10. **Reprocesso com `forcar=True`**: prova automatizada
+    (`test_reprocesso_forcado_preserva_total_por_competencia`) e prova manual
+    (`totais_competencia.py`).
+
+**Aceite:** os quatro tipos aparecem na consulta; valor não casado vira
+pendência visível e não some; total por competência antes e depois do lote é o
+mesmo — confirmado por teste (soma agregada, não célula por célula) e por
+validação manual da migration nos dois sentidos via `alembic` CLI direto contra
+o banco de teste (upgrade → dado real → downgrade → reprocessar upgrade),
+independente da suíte.
+
+### Verificação independente (agente separado, antes do commit): aprovado com uma ressalva
+
+Um achado, severidade média: o check novo de "grão misto" em `verificar_v2.py`
+usava `_checar` (reprova o deploy) para um estado que a própria migration
+documenta como correto — célula com `tipo_estoque` NULL entre o deploy e o
+"Processar arquivos" com FORÇAR. Rodar o script nessa janela normal daria FALHA
+falsa. Corrigido: virou `_avisar`, mesmo padrão do check análogo de unidade sem
+arquivo processado.
+
+O verificador confirmou como **corretos**: o escopo do prune (não filtra por
+tipo, varre o recorte inteiro — testado com célula de grão antigo semeada à mão
+e reprocesso real, não simulado já no grão novo), a migration nos dois sentidos
+e em banco com dado, todos os consumidores de `medidas`/`medidas_recebidas`
+varridos (`serie_datahub`, `cockpit`, `linhagem`, `motor.calcular_scores`), a
+contagem de `clientes`/`sem_cliente` no relatório por cliente distinto (não por
+bucket cliente×tipo), a validação do filtro de tipo de estoque na série
+(inclusive a recusa em `clientes_atendidos`), o frontend sem identificador cru
+em nenhuma tela e sem `colspan` desalinhado, e nenhuma escrita no SharePoint.
+
+**Suíte**: **514 passed** (471 do V2.1.1 + 43 novos: 22 de `tipo_estoque.py`
+puro, 7 de agregação/prune/reprocesso em `processamento_datahub`, 4 de migration,
+4 de filtro em `serie_datahub`, 2 de `ingestao`, 2 de router, 1 de `linhagem`, 1
+de `cockpit`; nenhum removido). Um teste pré-existente
+(`test_migracao_0006_ciclo_completo_preserva_grao_filial`) fixava o formato da
+constraint no "head" — atualizado para refletir as 5 colunas, mesma lição do
+próprio docstring do arquivo ("os testes de migração comparam contra o head, não
+contra a baseline fixa").
+
+**Fora do lote (declarado):** ranking/distribuição por tipo de estoque nas
+consultas do cockpit (V2.4), leitor e ingestão da saída (V2.3), tela (V2.5),
+conciliação com o Power BI (V2.6).
+
+---
+
 ## Próximo lote autorizado
 
 **Nenhum.** O V2.1 foi deployado e validado na VM em 06/ago/2026
@@ -317,6 +416,7 @@ vazio passou a exigir a leitura marcada, que é o comportamento novo).
 de pendência). O V2.1.1 corrige o único achado dessa rodada e **ainda não subiu
 pra VM** — precisa de `git pull` + `up -d --build` (a migration `0013` roda no
 startup) e de um "Processar arquivos" pra os 5 arquivos da SANCA saírem de `erro`
-e virarem `sem movimento`.
+e virarem `sem movimento`. O V2.2 fica no mesmo estado: fechado localmente,
+migration `0014` e reprocesso com FORÇAR ainda não aplicados na VM.
 
-O V2.2 (tipo de estoque como dimensão) só começa com autorização explícita.
+O V2.3 (saída) só começa com autorização explícita.

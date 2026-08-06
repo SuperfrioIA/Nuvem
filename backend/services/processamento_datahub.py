@@ -7,10 +7,11 @@ canonicas em `medidas`, no grao competencia x filial x cliente.
 
 Regras que sustentam a prevencao de dupla contagem:
 
-- Uma metrica do DataHub existe num grao SO: cliente (cliente_id NULL =
-  "sem cliente identificado no cadastro", nunca "total da filial"). O total da
-  filial e SEMPRE a soma das linhas -- nunca ha duas granularidades da mesma
-  metrica no banco.
+- Uma metrica do DataHub existe num grao SO: cliente x tipo de estoque
+  (cliente_id NULL = "sem cliente identificado no cadastro", tipo_estoque NULL
+  so em celula anterior ao V2.2; nunca "total da filial"). O total da filial e
+  SEMPRE a soma das linhas -- nunca ha duas granularidades da mesma metrica no
+  banco.
 - Idempotencia: o mesmo arquivo processado 2x upserta as MESMAS celulas
   (constraint medidas_celula_unica); reprocessar um arquivo alterado cria
   execucao nova (auditoria acumula) e atualiza as celulas.
@@ -58,6 +59,7 @@ from . import (
     filiais_datahub,
     graph_datahub,
     inventario_datahub,
+    tipo_estoque as tipo_estoque_servico,
 )
 
 _FONTE_CHAVE = "datahub_entrada_mercadorias"
@@ -153,11 +155,15 @@ def _unidades_dos_conceitos(cur) -> dict[str, str]:
     return unidades
 
 
-def _agregar_por_cliente(cur, conector_id: int, linhas: list[dict]) -> dict:
-    """{cliente_id (int|None): {metrica: valor}} -- resolucao de cliente pela
-    raiz do CNPJ, com pendencia registrada uma vez por raiz desconhecida."""
+def _agregar_por_cliente_e_tipo(cur, conector_id: int, linhas: list[dict]) -> dict:
+    """{(cliente_id, tipo_estoque): {metrica: valor}} (V2.2) -- cliente pela
+    raiz do CNPJ (pendencia por raiz desconhecida) e tipo de estoque por
+    palavra-chave em `Nome Estoque` (pendencia por valor nao classificado,
+    tipo_estoque.py) -- cache por valor distinto nos dois, pra nao registrar a
+    mesma pendencia N vezes dentro de um arquivo so."""
     resolvidos: dict[str, int | None] = {}
-    agregados: dict[int | None, dict[str, float]] = {}
+    tipos_pendentes_registrados: set[str] = set()
+    agregados: dict[tuple, dict[str, float]] = {}
     for linha in linhas:
         raiz = raiz_cnpj(linha.get("Cliente CNPJ"))
         if raiz is None:
@@ -171,8 +177,18 @@ def _agregar_por_cliente(cur, conector_id: int, linhas: list[dict]) -> dict:
                 ingestao.registrar_cliente_pendencia(cur, conector_id, raiz, nome)
             resolvidos[raiz] = cliente_id
 
+        valor_bruto = linha.get("Nome Estoque")
+        tipo = tipo_estoque_servico.classificar(valor_bruto)
+        if tipo == tipo_estoque_servico.NAO_CLASSIFICADO:
+            valor_pendencia = (
+                str(valor_bruto).strip() if valor_bruto not in (None, "") else "(sem valor)"
+            )
+            if valor_pendencia not in tipos_pendentes_registrados:
+                ingestao.registrar_tipo_estoque_pendencia(cur, conector_id, valor_pendencia)
+                tipos_pendentes_registrados.add(valor_pendencia)
+
         acc = agregados.setdefault(
-            cliente_id, {nome: 0.0 for nome, _ in _METRICAS}
+            (cliente_id, tipo), {nome: 0.0 for nome, _ in _METRICAS}
         )
         for nome, coluna in _METRICAS:
             acc[nome] += 1 if coluna is None else linha[coluna]
@@ -183,8 +199,19 @@ def _remover_celulas_orfas(
     cur, metrica_ids: list[int], armazem_id: int, competencia: date, manter: set
 ) -> int:
     """Apaga celulas canonicas das metricas do DataHub que o processamento
-    atual nao emitiu (ver docstring do modulo). Compara cliente_id em Python
-    porque NULL nao entra em `= ANY(...)`.
+    atual nao emitiu (ver docstring do modulo). `manter` e um conjunto de
+    tuplas (cliente_id, tipo_estoque) -- comparadas em Python porque NULL nao
+    entra em `= ANY(...)`.
+
+    O escopo do WHERE cobre TODO o recorte (metrica, armazem, competencia),
+    **independente de tipo_estoque** -- de proposito (V2.2, risco 4 da proposta
+    V3). O arquivo e dono do recorte inteiro, nao so das combinacoes
+    (cliente, tipo) que ele emitiu desta vez. Se o WHERE filtrasse por
+    tipo_estoque, uma celula de grao antigo (tipo_estoque IS NULL, gravada
+    antes deste lote) sobreviveria ao lado da nova no primeiro reprocesso, e o
+    total da competencia dobraria -- exatamente o que este escopo largo evita.
+    E varrendo o recorte inteiro que o prune tambem limpa, de graca, a celula
+    de grao antigo assim que o arquivo reprocessa.
 
     O escopo (metrica, armazem, competencia) so e seguro porque o armazem ja
     distingue as unidades (de-para qualificado) e porque a rodada aborta se
@@ -194,12 +221,15 @@ def _remover_celulas_orfas(
     """
     cur.execute(
         """
-        SELECT id, cliente_id FROM medidas
+        SELECT id, cliente_id, tipo_estoque FROM medidas
         WHERE metrica_id = ANY(%s) AND armazem_id = %s AND competencia = %s
         """,
         (metrica_ids, armazem_id, competencia),
     )
-    orfas = [mid for mid, cliente_id in cur.fetchall() if cliente_id not in manter]
+    orfas = [
+        mid for mid, cliente_id, tipo in cur.fetchall()
+        if (cliente_id, tipo) not in manter
+    ]
     if orfas:
         cur.execute("DELETE FROM medida_linhagem WHERE medida_id = ANY(%s)", (orfas,))
         cur.execute("DELETE FROM medidas WHERE id = ANY(%s)", (orfas,))
@@ -301,7 +331,7 @@ def processar_arquivo(cur, item_id: str) -> dict:
     resultado = entrada_mercadorias.ler(item_id)
     linhas = resultado.pop("linhas")
 
-    agregados = _agregar_por_cliente(cur, conector_id, linhas)
+    agregados = _agregar_por_cliente_e_tipo(cur, conector_id, linhas)
 
     execucao_id = ingestao.iniciar_execucao(
         cur, conector_id, None, None, "datahub", origem["caminho"]
@@ -310,15 +340,15 @@ def processar_arquivo(cur, item_id: str) -> dict:
     gravadas = 0
     for nome, _ in _METRICAS:
         metrica_id = metrica_ids[nome]
-        for cliente_id, valores in agregados.items():
+        for (cliente_id, tipo), valores in agregados.items():
             recebida_id = ingestao.registrar_recebida_datahub(
                 cur, execucao_id, fonte_id, armazem_id, cliente_id,
                 metrica_id, competencia, valores[nome],
-                unidades[nome], resultado["arquivo"],
+                unidades[nome], resultado["arquivo"], tipo_estoque=tipo,
             )
             ingestao.upsert_medida(
                 cur, metrica_id, armazem_id, competencia, valores[nome],
-                conector_id, recebida_id, cliente_id,
+                conector_id, recebida_id, cliente_id, tipo_estoque=tipo,
             )
             gravadas += 1
 
@@ -344,6 +374,7 @@ def processar_arquivo(cur, item_id: str) -> dict:
         cur, origem, status, detalhe=detalhe, execucao_id=execucao_id,
         linhas_validas=resultado["linhas_validas"], medidas_gravadas=gravadas,
     )
+    clientes_do_arquivo = {cliente_id for cliente_id, _ in agregados}
     return {
         "arquivo": origem["arquivo"],
         "status": status,
@@ -352,8 +383,11 @@ def processar_arquivo(cur, item_id: str) -> dict:
         "competencia": origem["competencia"],
         # id interno: alimenta a guarda de colisao de processar_todos
         "armazem_id": armazem_id,
-        "clientes": sum(1 for c in agregados if c is not None),
-        "sem_cliente": 1 if None in agregados else 0,
+        "clientes": sum(1 for c in clientes_do_arquivo if c is not None),
+        "sem_cliente": 1 if None in clientes_do_arquivo else 0,
+        # tipos de estoque distintos gravados (V2.2) -- explica o salto no
+        # numero de medidas_gravadas em relacao a antes do lote
+        "tipos": len({tipo for _, tipo in agregados}),
         "medidas_gravadas": gravadas,
         "celulas_removidas": removidas,
     }
@@ -547,6 +581,30 @@ def listar_pendencias_cliente(cur) -> list[dict]:
             "nome_na_fonte": r[1],
             "primeira_vez_em": r[2].isoformat() if r[2] else None,
             "ultima_vez_em": r[3].isoformat() if r[3] else None,
+        }
+        for r in cur.fetchall()
+    ]
+
+
+def listar_pendencias_tipo_estoque(cur) -> list[dict]:
+    """Valores de `Nome Estoque` que nao casaram com nenhuma palavra-chave
+    (backend/services/tipo_estoque.py), pro painel do admin -- mesmo padrao
+    das pendencias de filial e de cliente (V2.2)."""
+    cur.execute(
+        """
+        SELECT tp.valor_na_fonte, tp.primeira_vez_em, tp.ultima_vez_em
+        FROM tipo_estoque_pendencias tp
+        JOIN conectores c ON c.id = tp.conector_id
+        WHERE c.tipo = %s
+        ORDER BY tp.ultima_vez_em DESC
+        """,
+        (TIPO_CONECTOR,),
+    )
+    return [
+        {
+            "valor_na_fonte": r[0],
+            "primeira_vez_em": r[1].isoformat() if r[1] else None,
+            "ultima_vez_em": r[2].isoformat() if r[2] else None,
         }
         for r in cur.fetchall()
     ]

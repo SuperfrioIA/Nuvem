@@ -321,7 +321,10 @@ def test_migracao_0006_ciclo_completo_preserva_grao_filial(banco_vazio):
     command.upgrade(migracao._config(), "head")
 
     assert _versao_alembic() == _head()
-    assert consultar("SELECT valor, cliente_id FROM medidas") == [(10, None)]
+    # head inclui a 0014 (V2.2): a linha sobrevivente ganha tipo_estoque NULL
+    # (dimensao nao se aplica a celula anterior ao lote), mesmo padrao do
+    # cliente_id na 0006
+    assert consultar("SELECT valor, cliente_id, tipo_estoque FROM medidas") == [(10, None, None)]
     constraint = consultar(
         """
         SELECT pg_get_constraintdef(con.oid)
@@ -330,7 +333,10 @@ def test_migracao_0006_ciclo_completo_preserva_grao_filial(banco_vazio):
         """
     )
     assert constraint == [
-        ("UNIQUE NULLS NOT DISTINCT (metrica_id, armazem_id, competencia, cliente_id)",)
+        (
+            "UNIQUE NULLS NOT DISTINCT "
+            "(metrica_id, armazem_id, competencia, cliente_id, tipo_estoque)",
+        )
     ]
 
 
@@ -692,6 +698,127 @@ def test_check_do_status_recusa_valor_desconhecido(banco_vazio):
             "(arquivo, item_id, filial, competencia, execucao_id, status) "
             "VALUES ('x.xlsx', 'item-x', '016', '2026-01-01', "
             f"{execucao_id}, 'status_inventado')"
+        )
+
+
+def test_migracao_0014_ciclo_completo_preserva_celula_sem_tipo_estoque(banco_vazio):
+    """V2.2: upgrade -> downgrade -> upgrade da 0014. O downgrade restaura a
+    UNIQUE de 4 colunas e descarta SO as celulas com tipo_estoque preenchido
+    (nao representaveis nela, e a linhagem delas junto); a celula sem a
+    dimensao (tipo_estoque NULL, grao anterior ao lote) sobrevive ao ciclo
+    inteiro -- mesmo padrao do cliente_id na 0006."""
+    from alembic import command
+
+    migracao.migrar()
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('upload_manual', 'Upload manual');
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 10)"
+    )
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, tipo_estoque) "
+        f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 7, 'SECO')"
+    )
+    medida_seco_id = consultar("SELECT id FROM medidas WHERE tipo_estoque = 'SECO'")[0][0]
+    _executar(
+        f"INSERT INTO medida_linhagem (medida_id, medida_origem_tipo, medida_origem_id) "
+        f"VALUES ({medida_seco_id}, 'recebida', 1)"
+    )
+
+    command.downgrade(migracao._config(), "0013_status_sem_dado")
+
+    assert consultar("SELECT to_regclass('public.tipo_estoque_pendencias') IS NULL")[0][0] is True
+    # a celula SEM a dimensao sobreviveu; a com SECO (e a linhagem dela) sumiu
+    assert consultar("SELECT valor FROM medidas") == [(10,)]
+    assert consultar("SELECT COUNT(*) FROM medida_linhagem") == [(0,)]
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'medidas' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [
+        ("UNIQUE NULLS NOT DISTINCT (metrica_id, armazem_id, competencia, cliente_id)",)
+    ]
+
+    command.upgrade(migracao._config(), "head")
+
+    assert _versao_alembic() == _head()
+    assert consultar("SELECT valor, tipo_estoque FROM medidas") == [(10, None)]
+    constraint = consultar(
+        """
+        SELECT pg_get_constraintdef(con.oid)
+        FROM pg_constraint con JOIN pg_class rel ON rel.oid = con.conrelid
+        WHERE rel.relname = 'medidas' AND con.contype = 'u'
+        """
+    )
+    assert constraint == [
+        (
+            "UNIQUE NULLS NOT DISTINCT "
+            "(metrica_id, armazem_id, competencia, cliente_id, tipo_estoque)",
+        )
+    ]
+
+
+def test_check_tipo_estoque_aceita_os_valores_validos(banco_vazio):
+    migracao.migrar()
+    _executar(
+        """
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    for tipo in ("CONGELADO", "SECO", "HORTIFRUTI", "UTENSILIOS", "NAO_CLASSIFICADO", None):
+        valor_sql = f"'{tipo}'" if tipo is not None else "NULL"
+        _executar(
+            f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, tipo_estoque) "
+            f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 1, {valor_sql})"
+        )
+    assert consultar("SELECT COUNT(*) FROM medidas") == [(6,)]
+
+
+def test_check_tipo_estoque_recusa_valor_desconhecido(banco_vazio):
+    """A guarda do CHECK (mesmo padrao da 0013 pro status): tipo_estoque nao
+    virou TEXT livre -- um valor fora do conjunto fechado e rejeitado."""
+    migracao.migrar()
+    _executar(
+        """
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('metrica_teste', 'un');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        _executar(
+            f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor, tipo_estoque) "
+            f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 1, 'GELADO_INVENTADO')"
+        )
+
+
+def test_tipo_estoque_pendencias_tem_unique_por_conector_e_valor(banco_vazio):
+    migracao.migrar()
+    _executar("INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub')")
+    conector_id = consultar("SELECT id FROM conectores")[0][0]
+    _executar(
+        f"INSERT INTO tipo_estoque_pendencias (conector_id, valor_na_fonte) "
+        f"VALUES ({conector_id}, 'ARMAZEM XYZ')"
+    )
+    with pytest.raises(psycopg2.errors.UniqueViolation):
+        _executar(
+            f"INSERT INTO tipo_estoque_pendencias (conector_id, valor_na_fonte) "
+            f"VALUES ({conector_id}, 'ARMAZEM XYZ')"
         )
 
 

@@ -389,6 +389,38 @@ def test_serie_parametro_invalido_da_400(cliente):
     assert "nao cadastrada" in resposta.json()["detail"]
 
 
+def test_processamentos_expoe_pendencia_de_tipo_estoque(cliente, monkeypatch):
+    """V2.2: 'Nome Estoque' = 'ESTOQUE 1' nao casa com nenhuma palavra-chave --
+    vira pendencia visivel no /processamentos, mesmo padrao das pendencias de
+    filial e cliente."""
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+    cliente.post("/api/admin/datahub/processar", json={})
+
+    listagem = cliente.get("/api/admin/datahub/processamentos").json()
+    assert [p["valor_na_fonte"] for p in listagem["pendencias_tipo_estoque"]] == ["ESTOQUE 1"]
+
+
+def test_serie_aceita_filtro_de_tipo_estoque(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
+    )
+    cliente.post("/api/admin/datahub/processar", json={})
+
+    serie = cliente.get(
+        "/api/admin/datahub/serie",
+        params={
+            "metrica": "peso_bruto_movimentado", "filial": "RMSPII/001",
+            "tipo_estoque": "NAO_CLASSIFICADO",
+        },
+    ).json()
+    assert serie["mensal"] == [{"competencia": "2026-07", "valor": 1300.0}]
+    assert serie["filtros"]["tipo_estoque"] == "NAO_CLASSIFICADO"
+
+
 # --- GET /nuvem (Lote P5.5) ----------------------------------------------
 
 

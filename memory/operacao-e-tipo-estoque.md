@@ -1,6 +1,6 @@
 ---
 name: operacao-e-tipo-estoque
-description: A coluna Operação é tipo de movimento (devolução é 39% das linhas), não temperatura — o tipo de estoque vem de Nome Estoque por palavra-chave
+description: A coluna Operação é tipo de movimento (devolução é 39% das linhas), não temperatura — o tipo de estoque vem de Nome Estoque por palavra-chave, implementado no V2.2
 metadata:
   type: project
 ---
@@ -45,9 +45,19 @@ mostra que a dimensão não é só temperatura — tem linha de serviço ali den
 decisão foi chamar de "tipo de estoque" e manter os 4 valores em vez de jogar num balde.
 
 **How to apply:** o leitor já lê `Operação`, `Nome Estoque` e `Código Estoque` — as três
-estão em `_COLUNAS_ESPERADAS` e são lidas linha a linha; só são descartadas na agregação,
-que agrupa apenas por cliente (`backend/services/processamento_datahub.py:156-179`).
-Derivar tipo de estoque por palavra-chave com **pendência visível** para o que não casar,
-mesmo padrão de `depara_pendencias` — a lista de nove valores é de uma filial só e vai
-crescer. A decisão de somar tudo em `Operação` está registrada em
-[[volumetria-v2-decisoes]] e precisa aparecer na conciliação.
+estão em `_COLUNAS_ESPERADAS` e são lidas linha a linha. A decisão de somar tudo em
+`Operação` está registrada em [[volumetria-v2-decisoes]] e precisa aparecer na
+conciliação.
+
+**Implementado no V2.2 (06/ago/2026)**, ver `docs/V2_PLANO.md`: `backend/services/
+tipo_estoque.py` classifica por palavra-chave (`classificar()`), com o sentinela
+`NAO_CLASSIFICADO` para valor vazio, sem palavra-chave, ou ambíguo (casa com mais de
+uma) — nunca desempatado por ordem da lista. `NAO_CLASSIFICADO` é diferente de NULL:
+NULL é "dimensão não se aplica" (célula anterior ao lote, upload manual, medida
+derivada); o sentinela é "valor da fonte existe mas não classificou", com pendência
+visível em `tipo_estoque_pendencias` (mesmo padrão de `depara_pendencias`/
+`cliente_pendencias`). A agregação em `processamento_datahub.py` passou a agrupar por
+`(cliente_id, tipo_estoque)` — a UNIQUE de `medidas` (migration `0014`) ganhou a
+coluna, e o prune de órfãs continua varrendo o recorte inteiro (métrica, armazém,
+competência) sem filtrar por tipo, para não deixar célula do grão antigo sobreviver
+ao lado da nova.

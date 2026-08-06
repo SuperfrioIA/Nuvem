@@ -749,8 +749,13 @@ function renderizarProcessamentos(dados) {
       dados.pendencias_cliente.map(p =>
         `${escaparHtml(p.nome_na_fonte || "(sem nome)")} (${escaparHtml(p.cliente_na_fonte)})`).join(" · "));
   }
+  if ((dados.pendencias_tipo_estoque || []).length) {
+    pendencias.push(`<strong>Valores de "Nome Estoque" não classificados (${dados.pendencias_tipo_estoque.length})</strong> ` +
+      "— não casaram com nenhum tipo (congelado/seco/hortifruti/utensílios): " +
+      dados.pendencias_tipo_estoque.map(p => escaparHtml(p.valor_na_fonte)).join(", "));
+  }
   document.getElementById("datahubPendencias").innerHTML =
-    pendencias.length ? pendencias.join("<br>") : "Nenhuma pendência de de-para ou cliente.";
+    pendencias.length ? pendencias.join("<br>") : "Nenhuma pendência de de-para, cliente ou tipo de estoque.";
 }
 
 async function processarDatahub(botao, forcar) {

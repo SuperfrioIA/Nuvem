@@ -26,6 +26,7 @@ identificar um armazem -- ele existe em mais de uma unidade da fonte.
 from datetime import date
 
 from ..seed_datahub import TIPO_CONECTOR
+from . import tipo_estoque as tipo_estoque_servico
 
 # driver da contagem distinta de clientes: qualquer metrica do DataHub emite
 # exatamente um registro por balde de cliente; registros_movimentacao e a mais
@@ -112,7 +113,20 @@ def exigir_metrica_aditiva(info: dict) -> None:
         )
 
 
-def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
+def resolver_tipo_estoque(valor: str) -> str:
+    """Valida o filtro de tipo de estoque (V2.2) contra o conjunto fechado do
+    CHECK (migration 0014) -- filtro com valor desconhecido e erro claro, nunca
+    uma consulta que silenciosamente devolve vazio."""
+    tipo = (valor or "").strip().upper()
+    if tipo not in tipo_estoque_servico.TIPOS_VALIDOS:
+        raise SerieDatahubError(
+            "tipo de estoque desconhecido (esperado um de "
+            f"{sorted(tipo_estoque_servico.TIPOS_VALIDOS)}): {valor!r}"
+        )
+    return tipo
+
+
+def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate, tipo_estoque=None):
     condicoes = ["metrica_id = %s"]
     params = [metrica_id]
     if armazem_id is not None:
@@ -121,6 +135,9 @@ def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
     if cliente_id is not None:
         condicoes.append("cliente_id = %s")
         params.append(cliente_id)
+    if tipo_estoque is not None:
+        condicoes.append("tipo_estoque = %s")
+        params.append(tipo_estoque)
     if de is not None:
         condicoes.append("competencia >= %s")
         params.append(de)
@@ -130,8 +147,10 @@ def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate):
     return " AND ".join(condicoes), params
 
 
-def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> dict:
-    """Serie mensal + consolidacao anual + acumulado, do que esta persistido."""
+def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None, tipo_estoque=None) -> dict:
+    """Serie mensal + consolidacao anual + acumulado, do que esta persistido.
+    tipo_estoque (V2.2) e filtro de dimensao igual filial/cliente -- ranking e
+    distribuicao por tipo (comparar N tipos entre si) ficam fora (V2.4)."""
     de_data = parse_competencia(de, "competencia inicial (de)") if de else None
     ate_data = parse_competencia(ate, "competencia final (ate)") if ate else None
     if de_data and ate_data and de_data > ate_data:
@@ -143,10 +162,12 @@ def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> di
     cliente_id = cliente_nome = None
     if cliente:
         cliente_id, cliente_nome = resolver_cliente(cur, cliente)
+    tipo_estoque_resolvido = resolver_tipo_estoque(tipo_estoque) if tipo_estoque else None
 
     filtros = {
         "de": de, "ate": ate,
         "filial": filial_sigla, "cliente": cliente_nome,
+        "tipo_estoque": tipo_estoque_resolvido,
     }
 
     if metrica == "clientes_atendidos":
@@ -155,12 +176,19 @@ def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None) -> di
                 "clientes_atendidos e uma contagem distinta de clientes -- "
                 "nao aceita filtro de cliente"
             )
+        if tipo_estoque_resolvido is not None:
+            raise SerieDatahubError(
+                "clientes_atendidos e uma contagem distinta de clientes -- "
+                "nao aceita filtro de tipo de estoque"
+            )
         return _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros)
 
     info = metrica_info(cur, metrica)
     exigir_metrica_aditiva(info)
 
-    where, params = filtros_sql(info["id"], armazem_id, cliente_id, de_data, ate_data)
+    where, params = filtros_sql(
+        info["id"], armazem_id, cliente_id, de_data, ate_data, tipo_estoque_resolvido
+    )
     cur.execute(
         f"""
         SELECT competencia, SUM(valor)
