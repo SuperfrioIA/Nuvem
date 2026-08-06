@@ -162,7 +162,7 @@ def _paranum_br(valor):
 
 def item_mais_recente() -> str:
     """item_id do arquivo ENTRADA_MERCADORIAS mais recente no inventario,
-    RESTRITO as unidades com de-para confirmado (hoje so a RMSPII).
+    RESTRITO a unidade representativa (filiais_datahub.UNIDADE_REPRESENTATIVA).
 
     Decisao de 29/jul/2026: a tela de KPIs (Lote P4) nao deixa escolher entre
     os arquivos da familia -- sempre mostra o mais recente sincronizado, mais
@@ -172,24 +172,31 @@ def item_mais_recente() -> str:
     "mais recente da familia" pode ser um arquivo de CWB3 ou da RJ, e a tela
     executiva passaria a exibir numero de outra unidade sob o rotulo da RMSPII
     (a CWB3 usa o mesmo codigo `001`), ou quebraria na leitura (a RJ tem 18
-    colunas). O recorte cai quando essas unidades tiverem de-para e leitor
-    homologados -- e ele que mantem a tela exatamente como ela ja se comporta.
+    colunas).
+
+    Ate o V2.1 esse recorte era DERIVADO do mapa de de-para, e isso estava
+    errado: dar de-para pra CWB3 e SANCA -- que era justamente o objetivo do
+    lote -- expandiria o recorte de graca, e o card executivo passaria a poder
+    exibir o arquivo mais recente de Curitiba sob o rotulo da RMSPII, sem
+    ninguem pedir. Ter de-para e poder gravar; ser representativo e outra
+    pergunta. Agora a unidade e explicita, e ampliar cobertura de ingestao nao
+    mexe mais nesta tela.
     """
     resumo = inventario_datahub.status().get("resumo")
     if not resumo:
         raise EntradaMercadoriasError(
             "nenhuma sincronizacao do DataHub ainda -- clique em 'Sincronizar agora' primeiro"
         )
-    unidades = filiais_datahub.unidades_conhecidas()
+    unidade = filiais_datahub.UNIDADE_REPRESENTATIVA
     candidatos = [
         a for a in resumo.get("arquivos", [])
         if _PADRAO_NOME.match(a.get("nome", ""))
-        and inventario_datahub.unidade_do_caminho(a.get("caminho")) in unidades
+        and inventario_datahub.unidade_do_caminho(a.get("caminho")) == unidade
     ]
     if not candidatos:
         raise EntradaMercadoriasError(
-            "nenhum arquivo ENTRADA_MERCADORIAS de unidade com de-para confirmado "
-            f"({', '.join(sorted(unidades))}) encontrado na ultima sincronizacao"
+            f"nenhum arquivo ENTRADA_MERCADORIAS da unidade {unidade} encontrado "
+            "na ultima sincronizacao"
         )
     mais_recente = max(candidatos, key=lambda a: a.get("modificado_em") or "")
     return mais_recente["id"]

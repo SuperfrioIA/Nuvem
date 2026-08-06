@@ -47,10 +47,13 @@ def test_origem_do_arquivo_com_de_para_confirmado():
 
 
 def test_origem_do_arquivo_sem_de_para_confirmado():
+    """A RJ e o exemplo de origem sem de-para desde o V2.1 -- antes era a CWB3,
+    que passou a ter de-para naquele lote. A RJ segue pendente porque a
+    ENTRADA_MERCADORIAS dela tem 18 colunas e o leitor da variante nao existe."""
     origem = laboratorio_chat.origem_do_arquivo(
-        {"caminho": "CWB3/ENTRADA/ENTRADA MERCADORIAS/x.xlsx", "filial": "001"}
+        {"caminho": "RJ/ENTRADA/ENTRADA MERCADORIAS/x.xlsx", "filial": "004-003"}
     )
-    assert origem == "CWB3/001 (sem de-para confirmado)"
+    assert origem == "RJ/004-003 (sem de-para confirmado)"
 
 
 def test_origem_do_arquivo_sem_filial_no_nome():
@@ -116,7 +119,7 @@ def test_montar_contexto_resumo_filiais_distingue_unidades_com_mesmo_codigo(monk
     contexto = laboratorio_chat.montar_contexto(sessao)
 
     assert contexto["resumo_da_sessao"]["filiais"] == [
-        "CWB3/001 (sem de-para confirmado)",
+        "CWB3/001 (CWBIII)",
         "RMSPII/001 (RMSPII)",
     ]
 

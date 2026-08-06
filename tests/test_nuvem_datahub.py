@@ -30,15 +30,95 @@ def test_agrupa_por_familia_area_e_estado():
     assert por_familia["ENTRADA_MERCADORIAS"]["total_arquivos"] == 2
     assert por_familia["ENTRADA_MERCADORIAS"]["area"] == "ENTRADA"
     assert por_familia["ENTRADA_MERCADORIAS"]["estado"] == "integrada"
-    assert por_familia["GUIAS_ENTRADA"]["estado"] == "mapeada"
+    assert por_familia["GUIAS_ENTRADA"]["estado"] == "nao_integrada"
     assert por_familia["SAIDA_MERCADORIAS"]["area"] == "SAIDA"
+    # V2.1: o rotulo e a nota de cobertura vem do backend -- antes a tela
+    # redecidia "integrada" pelo NOME da familia
+    assert por_familia["ENTRADA_MERCADORIAS"]["estado_tag"] == "Integrada"
+    assert por_familia["GUIAS_ENTRADA"]["estado_tag"] == "Não integrada"
+    assert "por decisão" in por_familia["GUIAS_ENTRADA"]["estado_nota"]
+
+
+def test_ua_e_familia_propria_e_nao_entra_como_integrada():
+    """O defeito que o V2.1 corrigiu: `ENTRADA_MERCADORIAS (UA)_...` casa com o
+    prefixo da familia integrada, entao os arquivos dela apareciam DENTRO da
+    bolinha "Integrada" -- rotulados "dados lidos, validados e usados nos
+    indicadores". Nenhum deles e lido (nao casa no padrao de nome do
+    processamento), e sao 50 competencias desde out/2021."""
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS (UA)_016_2607.xlsx"),
+    ]}
+    por_familia = {b["familia"]: b for b in nuvem_datahub.montar_bolinhas(resumo)}
+
+    assert por_familia["ENTRADA_MERCADORIAS"]["total_arquivos"] == 1
+    assert por_familia["ENTRADA_MERCADORIAS (UA)"]["total_arquivos"] == 1
+    assert por_familia["ENTRADA_MERCADORIAS (UA)"]["estado"] == "nao_integrada"
+
+
+def test_cobertura_declara_o_motivo_certo_de_cada_arquivo():
+    """Dentro da bolinha "Integrada" ha arquivo que a nuvem nao le e arquivo que
+    le mas nao mostra nesta tela -- por motivos DIFERENTES, que pedem acoes
+    diferentes de quem le. Sem declaracao, todos se leem como processados.
+
+    Achados da verificacao independente do V2.1: dizer "origem sem de-para" na RJ
+    convida o admin a cadastrar o de-para (o painel tem POST /api/admin/depara,
+    que cria e apaga a pendencia) e transformar 8 pendencias limpas em 8 erros de
+    leitura; e arquivo de CWB3/SANCA com Cobertura vazia se le como incluido nos
+    indicadores da tela, que sao so da RMSPII."""
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx",
+                 caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_016_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_004-003_2607.xlsx",
+                 caminho="RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_001_2607.xlsx",
+                 caminho="CWB3/ENTRADA/ENTRADA_MERCADORIAS_001_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS_002_2607.xlsx",
+                 caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_002_2607.xlsx"),
+    ]}
+    arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
+    cobertura = {a["filial"]: a["cobertura"] for a in arquivos}
+
+    # unidade representativa, com de-para: nada a declarar
+    assert cobertura["016"] is None
+    # RJ: a causa e o LAYOUT, e o texto tem que impedir o cadastro do de-para
+    assert "layout não homologado" in cobertura["004-003"]
+    assert "não cadastrar" in cobertura["004-003"]
+    assert "sem de-para" not in cobertura["004-003"]
+    # CWB3: tem de-para, e ingerida na serie, mas nao esta nos numeros da tela
+    assert "série histórica" in cobertura["001"]
+    assert "RMSPII" in cobertura["001"]
+    # RMSPII/002: de-para mesmo -- decisao humana pendente
+    assert cobertura["002"] == "Fora da cobertura: origem sem de-para confirmado."
+
+
+def test_cobertura_de_nome_fora_do_padrao_nao_culpa_o_de_para():
+    """Sem filial no nome nao ha origem pra resolver: culpar o de-para mandaria
+    quem le cadastrar de-para de uma origem que nao existe."""
+    resumo = {"arquivos": [
+        _arquivo("ENTRADA_MERCADORIAS_resumo_anual.xlsx",
+                 caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_resumo_anual.xlsx"),
+    ]}
+    arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
+    assert arquivo["filial"] is None
+    assert "nome fora do padrão" in arquivo["cobertura"]
+
+
+def test_familia_nao_integrada_nao_declara_cobertura_por_arquivo():
+    """O estado da familia ja explica -- repetir por arquivo seria ruido."""
+    resumo = {"arquivos": [
+        _arquivo("GUIAS_ENTRADA_016_2607.xlsx"),
+        _arquivo("ENTRADA_MERCADORIAS (UA)_016_2607.xlsx"),
+    ]}
+    for bolinha in nuvem_datahub.montar_bolinhas(resumo):
+        assert all(a["cobertura"] is None for a in bolinha["arquivos"])
 
 
 def test_arquivo_pdf_vai_pra_familia_so_pdf():
     resumo = {"arquivos": [_arquivo("PALLETS_EXCEDENTES_CLIENTE_X_GELADO.pdf")]}
     bolinhas = nuvem_datahub.montar_bolinhas(resumo)
     assert bolinhas[0]["familia"] == "PALLETS_EXCEDENTES"
-    assert bolinhas[0]["estado"] == "só_pdf"
+    assert bolinhas[0]["estado"] == "so_pdf"
 
 
 def test_arquivo_desconhecido_vai_pra_outros():
@@ -46,7 +126,7 @@ def test_arquivo_desconhecido_vai_pra_outros():
     bolinhas = nuvem_datahub.montar_bolinhas(resumo)
     assert bolinhas[0]["familia"] == "Outros"
     assert bolinhas[0]["area"] == "OUTROS"
-    assert bolinhas[0]["estado"] == "não classificado"
+    assert bolinhas[0]["estado"] == "nao_classificada"
 
 
 def test_extrai_filial_e_competencia_quando_bate_o_padrao():
@@ -72,8 +152,12 @@ def test_depara_de_exibicao_cobre_as_tres_filiais_confirmadas():
 
 def test_mesmo_codigo_em_outra_unidade_nao_herda_a_sigla_da_rmspii():
     """O defeito no caminho vivo: os 7 arquivos `001` da CWB3 apareciam na tela
-    como "001 · RMSPII". A sigla vem da origem QUALIFICADA (unidade + codigo),
-    entao a CWB3 fica sem sigla ate ter de-para proprio."""
+    como "001 · RMSPII". A sigla vem da origem QUALIFICADA (unidade + codigo).
+
+    Desde o V2.1 a CWB3 tem de-para proprio, entao o `001` dela resolve pra
+    CWBIII -- o que prova o mesmo ponto de forma mais forte: o codigo nu nao
+    decide nada, a origem qualificada decide. O caso "sem de-para nenhum fica
+    sem sigla" segue coberto pela RJ, no teste seguinte."""
     resumo = {"arquivos": [
         _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx",
                  caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_001_2601.xlsx"),
@@ -83,7 +167,7 @@ def test_mesmo_codigo_em_outra_unidade_nao_herda_a_sigla_da_rmspii():
     arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
     assert {(a["unidade"], a["filial"], a["filial_sigla"]) for a in arquivos} == {
         ("RMSPII", "001", "RMSPII"),
-        ("CWB3", "001", None),
+        ("CWB3", "001", "CWBIII"),
     }
 
 

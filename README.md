@@ -5,7 +5,13 @@ Pentaho/API), entende suas estruturas, padroniza conceitos, permite explorar
 oportunidades com rastreabilidade e publica indicadores corporativos confiáveis em
 uma visão única por período, filial e cliente.
 
-**Status: V1 de produção concluída (Blocos A–G).** A POC da integração SharePoint
+**Status: construção da V2 — volumetria integrada e cockpit visual** (aberta em
+06/ago/2026; lote V2.1 em construção). Fonte única do status:
+[docs/V2_PLANO.md](docs/V2_PLANO.md); especificação e decisões fechadas em
+[docs/proposta_v3_volumetria.md](docs/proposta_v3_volumetria.md).
+
+A **V1 de produção está concluída e implantada (Blocos A–G)**, deploy do Bloco G na
+VM em 05/ago/2026. A POC da integração SharePoint
 DataHub foi concluída com sucesso em 30/jul/2026 (balanço em
 [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md)); a partir daí o projeto entrou na
 construção da V1. **Blocos A (V1.0 — transição para produto), B (V1.1 catálogo
@@ -14,18 +20,20 @@ histórica) feitos em 31/jul/2026; D (V1.4 Laboratório: seleção e perfil) e o
 lote de correção de identidade do DataHub em 02/ago/2026; E (V1.5 chat do
 Laboratório + V1.6 insight aprovado) e F (V1.7 cockpit executivo e linhagem)
 em 03/ago/2026; G (V1.8 produção e entrega — acesso, auditoria, logs, testes
-de integração e checklist) em 03–04/ago/2026.** Fonte única do status:
-[docs/V1_PLANO.md](docs/V1_PLANO.md).
+de integração e checklist) em 03–04/ago/2026.** O que a V1 entregou e as limitações
+que ela declarou: [docs/V1_PLANO.md](docs/V1_PLANO.md).
 
 Telas: `/nuvem` (visão executiva da família integrada), `/laboratorio`
 (exploração e perfil determinístico), `/cockpit` (visão de diretoria),
 `/linhagem` (rastreabilidade célula a célula) e `/admin` (administração).
 
-## Documentos ativos (V1)
+## Documentos ativos
 
 | Doc | O quê |
 |---|---|
-| [docs/V1_PLANO.md](docs/V1_PLANO.md) | **Fonte única do status da V1** (blocos A–G / macro-lotes V1.0–V1.8) |
+| [docs/V2_PLANO.md](docs/V2_PLANO.md) | **Fonte única do status da V2** (lotes V2.1–V2.8) — fase atual |
+| [docs/proposta_v3_volumetria.md](docs/proposta_v3_volumetria.md) | Especificação e decisões fechadas da V2 (06/ago/2026) |
+| [docs/V1_PLANO.md](docs/V1_PLANO.md) | O que a V1 entregou (blocos A–G / macro-lotes V1.0–V1.8) e as limitações declaradas |
 | [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md) | O direcionamento completo da V1 (produto, arquitetura, regras) |
 | [docs/V1_ESCOPO.md](docs/V1_ESCOPO.md) | Resumo do escopo e decisões fixadas da V1 |
 | [docs/V1_CRITERIOS_ACEITE.md](docs/V1_CRITERIOS_ACEITE.md) | Critérios de aceite por macro-lote |
@@ -40,6 +48,7 @@ Telas: `/nuvem` (visão executiva da família integrada), `/laboratorio`
 
 | Doc | O quê |
 |---|---|
+| [docs/proposta_v2_volumetria_cockpit_laboratorio.md](docs/proposta_v2_volumetria_cockpit_laboratorio.md) | Proposta inicial da V2 (05/ago/2026) — **superada pela V3**; registro do raciocínio |
 | [docs/POC_ATUAL.md](docs/POC_ATUAL.md) | POC DataHub (P0–P6) — escopo e status por lote, **encerrada em 30/jul/2026** |
 | [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md) | Balanço da POC: o que foi provado, limitações, obstáculos do dado, riscos |
 | [docs/DEMO_POC.md](docs/DEMO_POC.md) | Roteiro da apresentação da POC |

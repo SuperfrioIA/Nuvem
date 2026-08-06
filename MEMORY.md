@@ -1,7 +1,8 @@
 - [Projeto Nuvem IA](memory/projeto-nuvem-ia.md) — camada de insights; **V1 de produção concluída e implantada (Blocos A–G, deploy na VM em 05/ago/2026)**
 - [Rotação do secret do Graph](memory/graph-secret-rotacao.md) — criado 15/jul/2026, expira 15/jul/2027; processo de rotação registrado no Bloco G/G1
 - [Integração do cockpit com o Hub SuperFrio](memory/cockpit-hub-integracao.md) — link direto (sem iframe), filtros na URL, duas telas = dois cards no Hub; SSO pendente dos dois lados
-- **Status da V1 (fonte única, blocos A–G): [docs/V1_PLANO.md](docs/V1_PLANO.md)**; direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
+- **Status da V2 (fonte única, lotes V2.1–V2.8): [docs/V2_PLANO.md](docs/V2_PLANO.md)** — fase atual, aberta em 06/ago/2026
+- Status do que a V1 entregou (blocos A–G, fechada): [docs/V1_PLANO.md](docs/V1_PLANO.md); direcionamento completo em [docs/V1_NUVEM_IA_DIRECIONAMENTO.md](docs/V1_NUVEM_IA_DIRECIONAMENTO.md)
 - [Decisões fechadas de arquitetura](memory/decisoes-fechadas.md) — Receita 3, conectores plugáveis, Postgres, porta 8002, DataHub como fonte permanente (29/jul), decisões fixadas da V1 e do Bloco A (31/jul)
 - Escopo e status por lote da POC (histórico, P0–P6): [docs/POC_ATUAL.md](docs/POC_ATUAL.md) — POC encerrada em 30/jul/2026
 - Balanço da POC (o que foi provado, limitações, obstáculos do dado, riscos): [docs/ENTREGA_POC.md](docs/ENTREGA_POC.md) — pendências: validar a nuvem ao vivo, subir pra VM (com UPDATE de `ativo` das filiais), devolução no card de valor
@@ -9,7 +10,9 @@
 - [IP da VM da Nuvem IA](memory/vm-nuvem-ia.md) — `172.31.49.141:8002`, admin em produção
 - [Como rodar a suíte de testes local](memory/suite-testes-local.md) — sem venv, `python -m pytest`, Postgres de teste em container que o Docker Desktop desliga sozinho; erro de conexão em massa é ambiente, não regressão
 - [Reestruturação do DataHub em 4 unidades](memory/reestruturacao-datahub-4-unidades.md) — 31/jul/2026: 367 arquivos/61 pastas/955 MB e 7 colisões de nome; **corrigido em 02/ago/2026** (migration 0008: identidade por `item_id`, de-para qualificado `RMSPII/001`, guarda de colisão, RJ visível). Nunca contaminou produção
-- **V2 de volumetria — decisões fechadas em 06/ago/2026: [memory/volumetria-v2-decisoes.md](memory/volumetria-v2-decisoes.md)**; plano em [docs/proposta_v3_volumetria.md](docs/proposta_v3_volumetria.md) (a `proposta_v2` fica só como registro do raciocínio inicial)
+- **V2 de volumetria — decisões fechadas em 06/ago/2026: [memory/volumetria-v2-decisoes.md](memory/volumetria-v2-decisoes.md)**; especificação em [docs/proposta_v3_volumetria.md](docs/proposta_v3_volumetria.md) (a `proposta_v2` fica só como registro do raciocínio inicial); status em [docs/V2_PLANO.md](docs/V2_PLANO.md)
+- [Layout da ENTRADA_MERCADORIAS por unidade](memory/layout-entrada-por-unidade.md) — conferido no dado em 06/ago: CWB3 e SANCA têm as 20 colunas, **a RJ tem 18** (sem `Cliente`/`Cliente CNPJ`) e por isso fica fora do de-para até o V2.3
+- [Não alterar o SharePoint do DataHub](memory/sharepoint-datahub-somente-leitura.md) — regra da Maria (06/ago); vale também pra escrita pelo sistema de arquivos, e há uma pasta `.claude` na raiz da fonte que comprova o risco
 - [Histórico do DataHub por família](memory/historico-datahub-por-familia.md) — inventário dobrou pra 810 arquivos; entrada por item só tem 2026, mas `SAIDA_MERCADORIAS` e a família `(UA)` têm série desde out/2021; de-para das 4 unidades é 1:1
 - [Layout da SAIDA_MERCADORIAS](memory/layout-saida-mercadorias.md) — cabeçalho em dois níveis, três bandas de medida, banda oficial *Separado Fisicamente* (`Peso Bruto` na coluna 31); 33 MB por filial/competência partidos em `_f1`/`_f2`; `GUIAS_SAIDA` não serve pra volumetria
 - [Operação e tipo de estoque](memory/operacao-e-tipo-estoque.md) — `Operação` é tipo de movimento e devolução é 39% das linhas (diferença esperada vs Power BI); tipo de estoque vem de `Nome Estoque` por palavra-chave, 4 categorias

@@ -572,6 +572,70 @@ def test_migracao_0011_ciclo_completo_da_tabela_de_auditoria(banco_vazio):
     assert consultar("SELECT ator FROM eventos_auditoria") == [("admin",)]
 
 
+def test_migracao_0012_aplica_depara_em_banco_existente_e_apaga_a_pendencia(banco_vazio):
+    """Lote V2.1: a 0012 e migration de DADO pelo mesmo motivo da 0009 -- o
+    seed_datahub e insert-only, entao corrigir o seed nao alcanca banco que ja
+    tem as linhas. Simula o estado da VM (conector e armazens existindo, CWB3 e
+    SANCA sem de-para e com pendencia registrada) e prova que o upgrade cria o
+    de-para E limpa a pendencia resolvida."""
+    from alembic import command
+
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0011_auditoria")
+
+    _executar(
+        """
+        INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub');
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('São José dos Pinhais/PR', 'CWBIII', true);
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('Barueri/SP', 'RMSPV', true);
+        INSERT INTO armazens (nome, sigla, ativo) VALUES ('Duque de Caxias/RJ', 'RMRJ', true);
+        """
+    )
+    conector_id = consultar("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")[0][0]
+    for origem in ("CWB3/001", "SANCA/025", "RJ/004-003"):
+        _executar(
+            "INSERT INTO depara_pendencias (conector_id, armazem_na_fonte) "
+            f"VALUES ({conector_id}, '{origem}')"
+        )
+
+    command.upgrade(migracao._config(), "head")
+
+    assert consultar(
+        """
+        SELECT d.armazem_na_fonte, a.sigla
+        FROM depara_armazem d JOIN armazens a ON a.id = d.armazem_id
+        WHERE d.conector_id = %s ORDER BY d.armazem_na_fonte
+        """ % conector_id
+    ) == [("CWB3/001", "CWBIII"), ("SANCA/025", "RMSPV")]
+    # pendencia resolvida sai do painel; a da RJ FICA (ela nao ganhou de-para --
+    # o leitor da variante de 18 colunas e do V2.3)
+    assert consultar(
+        "SELECT armazem_na_fonte FROM depara_pendencias ORDER BY armazem_na_fonte"
+    ) == [("RJ/004-003",)]
+
+    # indices novos existem, e o redundante com a UNIQUE nao foi criado
+    assert consultar(
+        "SELECT indexname FROM pg_indexes WHERE tablename = 'medidas' ORDER BY indexname"
+    ) == [
+        ("ix_medidas_metrica_cliente_competencia",),
+        ("ix_medidas_metrica_competencia",),
+        ("medidas_celula_unica",),
+        ("medidas_pkey",),
+    ]
+
+    command.downgrade(migracao._config(), "0011_auditoria")
+
+    assert consultar("SELECT COUNT(*) FROM depara_armazem") == [(0,)]
+    assert consultar(
+        "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'medidas' "
+        "AND indexname LIKE 'ix_medidas%'"
+    ) == [(0,)]
+    # a pendencia apagada NAO volta: ela e derivada do processamento
+    assert consultar(
+        "SELECT armazem_na_fonte FROM depara_pendencias ORDER BY armazem_na_fonte"
+    ) == [("RJ/004-003",)]
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

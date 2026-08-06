@@ -6,23 +6,47 @@ SANCA) e o codigo `001` existe em RMSPII e em CWB3, apontando pra armazens
 diferentes. A chave e sempre o **codigo de origem qualificado pela unidade**
 (`RMSPII/001`), tanto na exibicao quanto na ingestao.
 
-So as tres filiais confirmadas pela Maria em 30/jul/2026
-(memory/filiais-catering-poc.md), todas da unidade RMSPII -- a arvore que o
-projeto ja conhecia antes da reestruturacao. Origem fora daqui (a `002` da
-propria RMSPII, e tudo de CWB3/SANCA/RJ) fica so com o codigo e vira pendencia
-visivel de de-para quando um arquivo dela for processado -- nao inventar sigla.
+Origem fora deste mapa (a `002` da propria RMSPII, e tudo da RJ) fica so com o
+codigo e vira pendencia visivel de de-para quando um arquivo dela for
+processado -- nao inventar sigla.
 
 No V1.3 este mesmo mapa e semeado em `depara_armazem` sob o conector
 sharepoint_datahub (backend/seed_datahub.py): a ingestao usa o banco, a
-exibicao usa este modulo, e o mapa aqui e a fonte unica dos dois caminhos.
+exibicao usa este modulo, e o mapa aqui e a fonte unica dos dois caminhos. Em
+banco que ja existe, quem aplica linha nova e a migration correspondente (o
+seed e insert-only) -- CWB3/SANCA entraram pela 0012_depara_cwb3_sanca.
 """
 
 # codigo de origem qualificado (unidade/codigo) -> sigla oficial do armazem
 SIGLA_POR_CODIGO = {
+    # confirmadas pela Maria em 30/jul/2026 (memory/filiais-catering-poc.md)
     "RMSPII/001": "RMSPII",
     "RMSPII/015": "RMSPIII",
     "RMSPII/016": "RMSPIV",
+    # decididas pela Maria em 06/ago/2026, aplicadas no lote V2.1. As duas tem
+    # as 20 colunas que o leitor da familia exige -- conferido no dado, arquivo
+    # por arquivo, antes de liberar (docs/V2_PLANO.md).
+    "CWB3/001": "CWBIII",
+    "SANCA/025": "RMSPV",
+    # `RJ/004-003 -> RMRJ` esta decidido mas NAO entra aqui: a
+    # ENTRADA_MERCADORIAS da RJ tem 18 colunas, sem `Cliente`/`Cliente CNPJ`, e
+    # o leitor exige as 20. Com de-para, os 8 arquivos dela sairiam de pendencia
+    # limpa e virariam erro de leitura. Entra no V2.3, junto do leitor da
+    # variante -- e a decisao de produto que vem com ele: sem coluna de cliente,
+    # toda a RMRJ cai no balde "sem cliente identificado".
 }
+
+# Unidade cujo arquivo pode representar a fonte inteira na tela executiva do
+# `/nuvem` (que mostra UM arquivo, o mais recente, sob um rotulo so).
+#
+# NAO derivar isto do de-para. Era o que `unidades_conhecidas()` fazia, e virou
+# armadilha no V2.1: acrescentar CWB3/SANCA ao mapa expandia o recorte de graca,
+# e o card executivo passaria a exibir o arquivo mais recente de Curitiba sob o
+# rotulo da RMSPII. Ter de-para significa "sei em que armazem gravar", nao "este
+# arquivo representa a operacao toda" -- sao duas perguntas diferentes, e so a
+# segunda interessa aqui. Mudar isto e decisao de produto: o lugar de comparar
+# unidades e o cockpit, com filtro explicito, nao um card de arquivo unico.
+UNIDADE_REPRESENTATIVA = "RMSPII"
 
 
 def codigo_qualificado(unidade, codigo) -> str | None:
@@ -46,11 +70,11 @@ def sigla(unidade, codigo) -> str | None:
     return SIGLA_POR_CODIGO.get(chave) if chave else None
 
 
-def unidades_conhecidas() -> set[str]:
-    """Unidades com pelo menos um de-para confirmado -- hoje so a RMSPII.
+def unidades_com_depara() -> set[str]:
+    """Unidades com pelo menos um de-para confirmado (RMSPII, CWB3, SANCA).
 
-    Usado pra recortar os caminhos que leem UM arquivo "representativo" da
-    fonte (a tela executiva): sem o recorte, um arquivo de unidade nao
-    autorizada poderia virar o numero exibido.
+    Serve pra dizer o que a ingestao consegue gravar. **Nao** serve pra escolher
+    o arquivo representativo da tela executiva -- pra isso e
+    UNIDADE_REPRESENTATIVA, e o comentario dela explica por que.
     """
     return {chave.split("/")[0] for chave in SIGLA_POR_CODIGO}

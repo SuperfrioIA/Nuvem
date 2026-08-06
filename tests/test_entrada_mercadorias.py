@@ -135,28 +135,52 @@ def test_item_mais_recente_acha_arquivo_da_familia():
 
 def test_item_mais_recente_ignora_unidade_sem_depara():
     """Recorte do lote de correcao: sem ele, o arquivo mais recente da familia
-    pode ser de CWB3 (mesmo codigo `001` da RMSPII, armazem outro) ou da RJ (18
-    colunas, quebra a leitura) -- e a tela executiva exibiria numero de outra
-    unidade, ou nao carregaria."""
+    pode ser da RJ, cuja ENTRADA_MERCADORIAS tem 18 colunas -- a tela executiva
+    nao carregaria.
+
+    O exemplo era a CWB3 ate o V2.1, quando ela ganhou de-para; o cenario
+    "unidade SEM de-para" migrou pra RJ, que segue sem. O caso complementar --
+    unidade COM de-para que ainda assim nao pode virar o card -- esta no teste
+    logo abaixo."""
     rmspii = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2601.xlsx", id_="item-rmspii")
     rmspii["modificado_em"] = "2026-01-01T00:00:00Z"
-    cwb3 = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2607.xlsx", id_="item-cwb3")
-    cwb3["caminho"] = "CWB3/ENTRADA/ENTRADA_MERCADORIAS_001_2607.xlsx"
-    cwb3["modificado_em"] = "2026-07-31T00:00:00Z"  # mais novo de proposito
-    inventario_datahub._cache["resumo"]["arquivos"] = [rmspii, cwb3]
+    rj = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_004-003_2607.xlsx", id_="item-rj")
+    rj["caminho"] = "RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2607.xlsx"
+    rj["modificado_em"] = "2026-07-31T00:00:00Z"  # mais novo de proposito
+    inventario_datahub._cache["resumo"]["arquivos"] = [rmspii, rj]
 
     assert entrada_mercadorias.item_mais_recente() == "item-rmspii"
 
 
-def test_item_mais_recente_sem_nenhuma_unidade_conhecida_falha_claro():
+def test_item_mais_recente_sem_arquivo_da_unidade_representativa_falha_claro():
     rj = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_004-003_2601.xlsx", id_="item-rj")
     rj["caminho"] = "RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2601.xlsx"
     inventario_datahub._cache["resumo"]["arquivos"] = [rj]
 
     with pytest.raises(
-        entrada_mercadorias.EntradaMercadoriasError, match="de-para confirmado"
+        entrada_mercadorias.EntradaMercadoriasError, match="unidade RMSPII"
     ):
         entrada_mercadorias.item_mais_recente()
+
+
+def test_item_mais_recente_ignora_unidade_com_de_para_mas_nao_representativa():
+    """Guarda do V2.1: a CWB3 GANHOU de-para neste lote, e mesmo assim o arquivo
+    dela nao pode virar o numero do card executivo -- que e rotulado como a
+    RMSPII e nao deixa escolher unidade.
+
+    Antes do lote o recorte era derivado do mapa de de-para, entao este cenario
+    falhava silenciosamente: o arquivo da CWB3 e mais recente, ganharia o `max`,
+    e Curitiba apareceria sob o rotulo da RMSPII.
+    """
+    rmspii = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2601.xlsx", id_="item-rmspii")
+    rmspii["caminho"] = "RMSPII/ENTRADA/ENTRADA_MERCADORIAS_001_2601.xlsx"
+    rmspii["modificado_em"] = "2026-01-31T00:00:00Z"
+    cwb3 = _arquivo_inventario(nome="ENTRADA_MERCADORIAS_001_2608.xlsx", id_="item-cwb3")
+    cwb3["caminho"] = "CWB3/ENTRADA/ENTRADA_MERCADORIAS_001_2608.xlsx"
+    cwb3["modificado_em"] = "2026-08-31T00:00:00Z"
+    inventario_datahub._cache["resumo"]["arquivos"] = [rmspii, cwb3]
+
+    assert entrada_mercadorias.item_mais_recente() == "item-rmspii"
 
 
 def test_dados_da_familia_aceita_filial_com_hifen():

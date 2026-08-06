@@ -9,7 +9,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from . import migracao
 from .auth import autenticado
-from .database import get_conn, init_db
+from .database import PoolEsgotadoError, fechar_pool, get_conn, init_db
 from .logging_config import configurar_logging, request_id_var
 from .routers.admin import router as admin_router
 from .routers.admin import router_publico as admin_router_publico
@@ -60,6 +60,9 @@ async def lifespan(app: FastAPI):
             sincronizado_em, resumo = inventario_datahub.carregar_persistido(cur)
     inventario_datahub.restaurar(sincronizado_em, resumo)
     yield
+    # V2.1: devolve as conexoes do pool no shutdown, em vez de deixar o processo
+    # morrer com elas abertas (o Postgres so as reclamaria por timeout)
+    fechar_pool()
 
 
 app = FastAPI(
@@ -126,6 +129,13 @@ def health():
     try:
         with get_conn() as conn, conn.cursor() as cur:
             cur.execute("SELECT 1")
+    except PoolEsgotadoError:
+        # V2.1: pool esgotado NAO e banco fora -- dizer "banco indisponivel" aqui
+        # manda quem esta de plantao investigar o Postgres, que esta otimo. O
+        # 503 continua (a aplicacao esta de fato sem capacidade), a causa muda.
+        return JSONResponse(
+            status_code=503, content={"status": "sem conexao livre no pool", "banco": "de pe"}
+        )
     except Exception:
         return JSONResponse(status_code=503, content={"status": "banco indisponivel"})
     return {"status": "ok"}

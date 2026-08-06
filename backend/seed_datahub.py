@@ -10,11 +10,17 @@ e metricas da familia integrada.
   31/jul/2026 e o `001` existe em RMSPII e em CWB3, apontando pra armazens
   diferentes (migration 0008). O campo e texto livre desde o 0001, entao a
   qualificacao nao pediu coluna nova.
-- De-para: so as tres origens confirmadas pela Maria em 30/jul/2026, importado
-  de backend/services/filiais_datahub.py (fonte unica dos dois caminhos --
-  exibicao e ingestao). `RMSPII/002` fica de fora de proposito, e CWB3/SANCA/RJ
-  tambem: aparecem como pendencia de de-para quando um arquivo delas for
-  processado.
+- De-para: as origens confirmadas pela Maria, importadas de
+  backend/services/filiais_datahub.py (fonte unica dos dois caminhos -- exibicao
+  e ingestao): as tres da RMSPII em 30/jul/2026, mais CWB3/001 e SANCA/025 em
+  06/ago/2026 (lote V2.1). `RMSPII/002` e `RJ/004-003` ficam de fora de
+  proposito e aparecem como pendencia de de-para quando um arquivo delas for
+  processado -- a 002 sem decisao de armazem, a RJ porque o layout dela tem 18
+  colunas e o leitor da variante nao existe (V2.3).
+
+  Em banco que JA existe quem aplica linha nova e a migration correspondente
+  (0012_depara_cwb3_sanca): este seed e insert-only de proposito, entao editar o
+  mapa nao alcanca banco que ja tem as linhas.
 - Metricas: mesmos nomes dos conceitos canonicos do V1.1 (seed_semantico) --
   o catalogo governado exige metrica pre-cadastrada (resolver_metrica_governada,
   R3). `clientes_atendidos` NAO vira metrica persistida: contagem distinta nao

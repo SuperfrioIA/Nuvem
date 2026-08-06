@@ -1,0 +1,257 @@
+# V2 — Plano e status
+
+**Este documento é a fonte única do status da V2** (lotes V2.1–V2.8). Criado em
+06/ago/2026, na abertura da V2. Especificação e decisões fechadas:
+`docs/proposta_v3_volumetria.md`; decisões em forma curta:
+`memory/volumetria-v2-decisoes.md`.
+
+A V1 está fechada e implantada — `docs/V1_PLANO.md`, seção "Conclusão da V1".
+Aquele documento continua sendo a fonte do que a V1 entregou e das limitações
+que ela declarou; **o status do que está sendo construído agora vive aqui**.
+
+Histórico do raciocínio: `docs/proposta_v2_volumetria_cockpit_laboratorio.md`
+(05/ago/2026) é a proposta inicial, superada pela V3 — consultar só para
+entender de onde as decisões vieram, nunca como plano.
+
+Regras de trabalho (as mesmas da V1): um lote por vez; ao final de cada lote
+rodar a suíte completa, validar migrations (upgrade e downgrade), atualizar este
+documento, commit isolado, verificação independente por agente separado e
+**aguardar autorização da Maria** antes do lote seguinte.
+
+---
+
+## Objetivo da V2
+
+Uma camada analítica visual de volumetria integrada, com número auditável até o
+arquivo de origem:
+
+```text
+quanto entrou · quanto saiu · total movimentado · saldo
+como evoluiu no mês e no acumulado
+quais unidades e quais clientes puxaram o resultado
+como se distribui por tipo de estoque
+o que está pendente ou fora de cobertura
+```
+
+Frase-guia: primeiro uma camada visual confiável de volumetria integrada; depois
+o Laboratório explorando em cima dessa base já governada.
+
+---
+
+## Status por lote
+
+| Lote | O quê | Status |
+|---|---|---|
+| **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **em construção** (aberto em 06/ago/2026) |
+| **V2.2** | Tipo de estoque como dimensão | não autorizado |
+| **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | não autorizado |
+| **V2.4** | Consultas de volumetria sob `/cockpit/` | não autorizado |
+| **V2.5** | Cockpit visual | não autorizado |
+| **V2.6** | Conciliação com o Power BI | não autorizado |
+| **V2.7** | Escala e operação | não autorizado |
+| **V2.8** | Laboratório com gráficos | não autorizado |
+
+---
+
+## Diagnóstico de partida (06/ago/2026)
+
+O levantamento da fonte que originou as decisões está na seção 4 da
+`proposta_v3_volumetria.md`. Antes de abrir o V2.1, os pontos que o lote toca
+foram conferidos no código e no dado real. O que mudou em relação ao que estava
+escrito:
+
+### Conferido no dado, hoje: o layout da RJ
+
+A `proposta_v3_volumetria.md`, seção 6, afirmava que a `ENTRADA_MERCADORIAS` da
+RJ que existe (`004-003`) tem as 20 colunas conhecidas, e que a variante sem
+`Cliente` "fica para quando aparecer". **Está errado.** Conferido pelo Graph,
+somente leitura, em 06/ago/2026, arquivo por arquivo:
+
+| Origem | Colunas na linha 1 | Bate com as 20 esperadas |
+|---|---:|---|
+| `CWB3/001` | 20 | sim, rótulo a rótulo |
+| `SANCA/025` | 20 | sim, rótulo a rótulo |
+| `RJ/004-003` | **18** | **não** — faltam `Cliente` e `Cliente CNPJ` |
+
+A RJ tem 8 arquivos (2601–2608), todos `004-003`, aba `SLIN`, cabeçalho na
+linha 1, sem nenhuma coluna de cliente. `docs/FONTES_DATAHUB.md` estava certo
+desde 02/ago; a proposta V3 é que assumiu o contrário.
+
+**Consequência no V2.1:** `RJ/004-003 → RMRJ` **não entra** no de-para deste
+lote. O leitor exige as 20 colunas; dar de-para pra RJ agora tiraria os 8
+arquivos dela de "pendência limpa" e os colocaria em erro de leitura — trocaria
+um problema por outro, exatamente o que o lote de identidade de 02/ago evitou. A
+RJ entra quando existir o leitor da variante (V2.3).
+
+**Consequência de produto, para decidir quando a RJ entrar:** sem coluna de
+cliente, todas as linhas da RMRJ caem no balde "sem cliente identificado". Peso
+e valor aparecem; decomposição por cliente, não. Isso é decisão da Maria no
+V2.3, não detalhe de implementação.
+
+### Conferido no código: expandir o de-para mexe no `/nuvem`
+
+`entrada_mercadorias.item_mais_recente()` — o arquivo que alimenta o card
+executivo do `/nuvem` — recorta os candidatos por
+`filiais_datahub.unidades_conhecidas()`, que é **derivado do mapa de de-para**.
+O docstring do próprio módulo (`entrada_mercadorias.py:171-176`) diz que esse
+recorte só deve cair quando as unidades tiverem "de-para **e leitor**
+homologados".
+
+Acrescentar CWB3 e SANCA ao mapa derruba o recorte de graça: o arquivo mais
+recente da família pode passar a ser de Curitiba, e o card executivo mostraria
+número de Curitiba sob o rótulo da RMSPII. O V2.1 corrige isso fixando a unidade
+representativa do `/nuvem` de forma explícita, sem derivar do de-para.
+
+### Conferido no código: um dos três índices propostos é morto
+
+A UNIQUE `medidas_celula_unica` é
+`(metrica_id, armazem_id, competencia, cliente_id)`
+(`alembic/versions/0006_persistencia_datahub.py:47-52`). O índice btree dela já
+atende `(metrica_id, armazem_id, competencia)` — que é o segundo índice da lista
+da proposta (seção 5, V2.1). Criá-lo custaria escrita e disco e enganaria quem
+lesse depois.
+
+O V2.1 cria os dois que de fato faltam:
+
+| Índice | Por quê |
+|---|---|
+| `(metrica_id, competencia)` | consultas por período sem filtro de armazém; hoje `competencia` é a 3ª coluna da UNIQUE |
+| `(metrica_id, cliente_id, competencia)` | `cliente_id` é a **4ª** coluna da UNIQUE — não serve a filtro de cliente |
+
+O terceiro **não é criado**, e o motivo fica registrado na migration.
+
+### Conferido no código: `processar_arquivo` isolado não está exposto
+
+A seção 19.2 da proposta V2 pedia guarda de colisão em qualquer processamento de
+arquivo individual. Hoje **só `processar_todos` está exposto por HTTP**
+(`backend/routers/datahub.py:151`), e é ele que tem as duas guardas de colisão.
+Nada a corrigir — mas o V2.3 empurra o processamento da saída para fora do
+request (33 MB por filial/competência), que é justamente o desenho onde aparece
+um gatilho por arquivo. **Regra do V2.3, escrita aqui para não se perder:**
+processamento por arquivo só pode existir passando pela guarda de colisão.
+
+### Herdado da proposta V2 e não carregado pela V3: estado de família não integrada
+
+A seção 19.3 da proposta V2 pedia estado explícito para família nova, família
+conhecida não integrada e layout não homologado. A V3 tira a
+`ENTRADA_MERCADORIAS (UA)` do escopo, mas não carregou a ideia de **exibir** o
+estado. Com 810 arquivos na fonte e uma família integrada, o painel hoje não
+distingue "fora de escopo por decisão" de "erro". Entra no V2.1, junto do
+de-para: os dois falam de cobertura.
+
+### Achado fora de escopo, registrado: pasta `.claude` na raiz do DataHub
+
+A listagem de 06/ago/2026 mostrou uma pasta `.claude` na raiz da pasta
+configurada do DataHub, contendo `scheduled_tasks.lock` e `settings.local.json`
+— arquivos de ferramenta, não do DataHub. Alguém rodou o Claude Code com o
+diretório de trabalho dentro da pasta sincronizada do SharePoint.
+
+O cliente Graph do projeto é somente leitura por construção (`Sites.Selected` +
+concessão `read`, mais a guarda de somente-leitura em
+`tests/test_graph_datahub.py`), mas **um processo com cwd na pasta sincronizada
+escreve no DataHub pelo sistema de arquivos, contornando essa garantia**. Nada
+foi tocado; a limpeza é decisão da Maria, pelo SharePoint.
+
+---
+
+## Lote V2.1 — Cobertura e base (em construção)
+
+Autorizado pela Maria em 06/ago/2026, com plano apresentado em texto e duas
+respostas dela: conferir o layout da RJ antes de decidir o de-para (feito, ver
+acima) e **pool de conexão dentro deste lote**, como último item.
+
+> Dobrar o dado disponível e indexar, sem tocar em leitor de planilha nem em
+> tela de dashboard.
+
+Escopo:
+
+1. **De-para das unidades novas** — `CWB3/001 → CWBIII` e `SANCA/025 → RMSPV`
+   (as duas siglas já existem e estão ativas em `backend/seed_depara.py`). Entra
+   em `filiais_datahub.SIGLA_POR_CODIGO`, que é a fonte única dos dois caminhos
+   (exibição e ingestão), e **como migration**, não só seed: o seed é
+   `ON CONFLICT DO NOTHING`, então em banco novo funciona, mas na VM as linhas
+   antigas de `depara_pendencias` ficariam penduradas no painel. A migration
+   insere o de-para e apaga a pendência correspondente — é a lição de 03/ago
+   (correção de cadastro entra como migration, não como SQL manual no runbook).
+   `RJ/004-003` fica fora (ver diagnóstico). `RMSPII/002`, `RJ/004-001` e
+   `RJ/005-001` seguem fora, por decisão da Maria de 02/ago.
+2. **`/nuvem` deixa de derivar a unidade representativa do de-para** — unidade
+   fixada explicitamente, com o motivo escrito, e teste provando que de-para
+   novo não muda o arquivo do card executivo.
+3. **Dois índices em `medidas`** (ver diagnóstico), com downgrade e o motivo do
+   terceiro não existir registrado na migration.
+4. **Estado explícito de cobertura** — família conhecida não integrada, família
+   nova detectada e layout não homologado visíveis no painel, em vez de silêncio
+   ou de "erro".
+5. **Pool de conexão** em `backend/database.py`, preservando o `connect_timeout`
+   e o `statement_timeout` atuais e devolvendo a conexão no `finally`. Último
+   item do lote: é o único que toca todos os requests da aplicação.
+6. **Sincronizar e processar**, incluindo a competência 2608 (a V1 processou até
+   2607). Arquivos hoje em `pendencia_depara` reprocessam sozinhos —
+   `_ja_processado` só reconhece status `ok`, então não precisa de `forcar`.
+7. **`scripts/verificar_v2.py`** somente leitura, no molde do `verificar_v1.py`:
+   alembic em head, UNIQUE de `item_id`, de-para sem código nu, contagem por
+   unidade, pendências visíveis, nenhum processamento com unidade NULL fora da
+   raiz.
+
+**Aceite:** CWB3 e SANCA saem de pendência e aparecem no ranking de unidades; a
+contagem de `processamentos_datahub` com status `ok` sobe de 21 para o total dos
+arquivos de entrada de 2026 das três unidades com de-para; a RJ continua como
+pendência **limpa** (nunca erro); as consultas do Cockpit passam a usar índice; o
+card do `/nuvem` continua exibindo o mesmo arquivo de antes do lote; o script
+readonly roda na VM sem gravar nada.
+
+**Fora do lote (declarado):** tipo de estoque (V2.2), leitor e ingestão da saída
+(V2.3), consultas de volumetria (V2.4), tela (V2.5), conciliação (V2.6), leitor
+da variante de 18 colunas da RJ (V2.3).
+
+### Verificação independente (agente separado, antes do commit): REPROVADO na primeira passada
+
+17 achados, 5 altos. Os quatro primeiros são a mesma falha de fundo — **mudei o
+backend e não varri os consumidores até o fim** —, e dois deles são o defeito que
+este projeto mais persegue (número parcial lido como completo). Todos corrigidos
+antes de fechar o lote:
+
+| # | Sev. | O que estava errado | Correção |
+|---|---|---|---|
+| 1 | alto | A mensagem de cobertura da RJ dizia "origem sem de-para", que se lê como cadastro esquecido. O painel tem `POST /api/admin/depara`, que cria o de-para e apaga a pendência: um admin lendo aquilo transformaria as 8 pendências limpas da RJ em 8 erros de leitura — exatamente o que o lote reteve o de-para pra evitar | `UNIDADES_SEM_LEITOR_HOMOLOGADO` em `nuvem_datahub`; a mensagem nomeia o layout de 18 colunas e diz "não cadastrar até existir o leitor da variante" |
+| 2 | alto | Arquivo de CWB3/SANCA dentro da bolinha "Integrada" com Cobertura vazia, sob uma nota que dizia "usados nos indicadores desta tela" — mas os indicadores são só da RMSPII. Lia-se como se os KPIs incluíssem Curitiba | `_cobertura_do_arquivo` declara "ingerido na série histórica, mas fora dos indicadores desta tela"; a nota da bolinha nomeia a unidade |
+| 3 | alto | A renomeação do vocabulário de estado vazou identificador cru: o chip do `/laboratorio` renderizava `estado` direto, então passaria a exibir `nao_integrada`, `so_pdf` | `listar_familias` repassa `estado_tag`/`estado_nota`; o chip usa o rótulo |
+| 4 | alto | A bolinha nova `ENTRADA_MERCADORIAS (UA)` caía no ramo de órfã, empilhada na **mesma posição fixa** do `PALLETS_EXCEDENTES` (círculos e rótulos sobrepostos, só o último clicável) e o ramo de órfã **descartava** o rótulo novo — a única família para a qual o vocabulário foi criado nunca o mostrava | `(UA)` entrou no domínio VOLUMETRIA (ela é entrada de mercadoria, grão UA); órfãs passaram a ser espaçadas; "sem domínio" e cobertura passaram a coexistir em vez de uma sobrescrever a outra |
+| 5 | alto | `perfil_dados.py` comparava com o valor antigo `"só_pdf"`: comparação morta, e uma **limitação declarada foi desligada em silêncio** | Constantes `ESTADO_*` em `nuvem_datahub` (a próxima renomeação quebra no import, não em silêncio) |
+| 6 | médio | O pool entregava conexão morta: depois de um restart do Postgres ou de um reaper de TCP ocioso, o primeiro request falhava com o banco de pé — buraco de continuidade novo, num módulo que existe pra fechá-los | Sonda de vivacidade na retirada, com uma retentativa |
+| 7 | médio | `minconn=1` não entregava o ganho declarado: o `_putconn` do psycopg2 só guarda enquanto `len(pool) < minconn` e **fecha o resto** — das 6 conexões de um load do Cockpit, cinco eram jogadas fora | `minconn=10` |
+| 8 | médio | `maxconn=20` abaixo do limitador de threads do anyio (40): `getconn` não espera por vaga, levanta `PoolError` → HTTP 500 para quem chegou depois, enquanto antes só ficava mais lento. E o `/health` respondia "banco indisponivel" — mandando quem está de plantão investigar um Postgres saudável | `maxconn=40`; `PoolEsgotadoError` próprio e `/health` distinguindo "sem conexão livre no pool" de "banco indisponível" |
+| 9 | médio | `desenharTabelaArquivos` **continuava** decidindo "Integrada" pelo nome da família e dizendo "Não mapeada" onde o nó já dizia "Não integrada": três rótulos para o mesmo estado na mesma tela | Rótulo do backend nas duas funções; legenda corrigida |
+| 10 | médio | Ao virar família própria, a `(UA)` perdeu o aviso que dizia que **os rótulos coincidem com os da família integrada e o grão é UA, não item** — a informação que de fato protege | `_RISCO_DE_ROTULO_COINCIDENTE`, com o aviso explícito de que tratar esses números como os da integrada dobraria quantidade |
+| 11–17 | baixo | `unidades_com_depara()` virou código morto; teste pré-existente com nome e docstring falsos (a CWB3 tem de-para agora) e duplicando o novo; `DELETE` da migration com subquery escalar em `conectores.tipo`, que não é UNIQUE; docstrings falsos em `seed_datahub` e `nuvem_datahub`; `verificar_v2.py` não capturava `http.client.HTTPException` (resposta malformada daria traceback); cobertura culpando o de-para quando a causa é o nome fora do padrão | todos corrigidos; `unidades_com_depara()` mantida com consumidor claro no docstring |
+
+O verificador confirmou como **corretos**: a migration nos dois sentidos e em banco
+existente, os dois índices se justificando por filtro real de `cliente_id`, o
+terceiro sendo de fato prefixo da UNIQUE, a `(UA)` não quebrando ingestão
+(`_PADRAO_NOME` não casa com ela), a proteção do Bloco D intacta, nenhuma escrita
+no SharePoint, `verificar_v2.py` só stdlib e falhando limpo, e nenhum teste
+removido.
+
+**Um estreitamento ficou registrado sem correção**: a combinação "homônimo +
+um lado em pendência" deixou de ser exercitada, porque as duas unidades homônimas
+reais (RMSPII/001 e CWB3/001) agora têm de-para. O mecanismo segue coberto por
+outros três testes; construir o cenário exigiria inventar uma unidade que não
+existe na fonte.
+
+**Suíte**: **462 passed** (448 no fechamento da V1 + 14 novos; nenhum removido).
+Sintaxe das quatro telas conferida com `node --check`.
+
+---
+
+## Próximo lote autorizado
+
+**Nenhum.** O V2.1 está construído e verificado, faltando duas ações da Maria:
+
+1. **Commit** — não commitado ainda.
+2. **Sincronizar e processar na VM**, incluindo a competência 2608 (item 6 do
+   lote). Depois disso, rodar `scripts/verificar_v2.py` na VM: os avisos de
+   "sem arquivo processado com status ok" devem virar OK, e CWB3/SANCA devem
+   aparecer no ranking de unidades.
+
+O V2.2 (tipo de estoque) só começa com autorização explícita.

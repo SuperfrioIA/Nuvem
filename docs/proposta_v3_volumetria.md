@@ -138,6 +138,13 @@ RJ/004-003  -> RMRJ     (Duque de Caxias/RJ, 008004)
 
 As três siglas já existem e estão ativas em `backend/seed_depara.py:97,106,136`.
 
+> **Correção de 06/08/2026 (conferido no dado, somente leitura):** só **duas** das
+> três entram no V2.1. `CWB3/001` e `SANCA/025` têm as 20 colunas que o leitor
+> exige, rótulo a rótulo; `RJ/004-003` tem **18** (faltam `Cliente` e
+> `Cliente CNPJ`). Dar de-para pra RJ antes do leitor da variante tiraria os 8
+> arquivos dela de pendência limpa e os colocaria em erro de leitura. A linha da
+> RJ passa para o V2.3.
+
 ### 4.3. `Operação` é tipo de movimento
 
 `ENTRADA_MERCADORIAS_016_2601`, 4.000 linhas amostradas:
@@ -353,7 +360,7 @@ Laboratório abre no Cockpit.
 | Ocupação por temperatura | Depende da capacidade das câmaras, que vem do DW. |
 | Drill-down além de um nível | Custo de frontend sem ganho proporcional. |
 | `RMSPII/002`, `RJ/004-001`, `RJ/005-001` | Só existem em `DADOS_GERAIS` e `OCORRENCIAS_ENTREGAS`, famílias não integradas. |
-| Variante da RJ de 18 colunas | A `ENTRADA_MERCADORIAS` da RJ que existe é a `004-003`; a variante sem `Cliente` fica para quando aparecer. |
+| Variante da RJ de 18 colunas | **Corrigido em 06/08/2026:** a `ENTRADA_MERCADORIAS` da RJ que existe é a `004-003` **e ela É a variante de 18 colunas** — conferido no dado, sem `Cliente` nem `Cliente CNPJ`. Fica fora do V2.1 (o de-para dela geraria erro de leitura em 8 arquivos) e entra no V2.3 com o leitor da variante. Ver `docs/V2_PLANO.md`, "Diagnóstico de partida". |
 | `GUIAS_SAIDA`, `CORTES_PRODUTOS`, `ESTOQUE_POR_LOTE`, `PALLETS_EXCEDENTES` | Outras perguntas de negócio. `GUIAS_SAIDA` vira produtividade depois. |
 
 ---

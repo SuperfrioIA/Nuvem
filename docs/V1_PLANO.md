@@ -1196,6 +1196,13 @@ com a `ANTHROPIC_API_KEY` configurada no `.env` da VM.
 
 ## Próximo bloco autorizado
 
-**Nenhum.** A V1 está fechada e implantada; próximo passo é decisão da Maria
-(destino externo do backup, identidade por pessoa, ou novo trabalho fora do
-escopo da V1).
+**Nenhum — a V1 está encerrada.** Em 06/ago/2026 o projeto entrou na **construção
+da V2** (volumetria integrada e cockpit visual). Deste ponto em diante:
+
+- o status do que está sendo construído vive em **`docs/V2_PLANO.md`**;
+- este documento continua sendo a fonte do que a V1 entregou e das limitações que
+  ela declarou — consultar, não atualizar;
+- as pendências da V1 que nunca fecharam (destino externo do backup, identidade
+  por pessoa, sem HTTPS, e as pendências humanas das fontes) seguem válidas e
+  estão listadas em `docs/V1_RELATORIO_VERIFICACAO.md`, seção "Conclusão da V1";
+  a V2 não as resolve por conta própria.

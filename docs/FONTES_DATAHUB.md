@@ -102,6 +102,15 @@ cabeçalho antes de aplicar o catálogo.
 variante não existe — enquanto a RJ não tiver de-para, os arquivos dela param na
 pendência sem serem baixados.
 
+> **Reconferido no dado em 06/ago/2026** (somente leitura, arquivo por arquivo, na
+> abertura do lote V2.1): confirmado. `CWB3/001` e `SANCA/025` batem com as 20 colunas
+> esperadas rótulo a rótulo; `RJ/004-003` tem 18, aba `SLIN`, cabeçalho na linha 1. Os
+> 8 arquivos da RJ (2601–2608) são todos `004-003` — os códigos `004-001` e `005-001`
+> não aparecem nesta família. Por isso o de-para da RJ ficou fora do V2.1 e a variante
+> de 18 colunas virou item do V2.3 (`docs/V2_PLANO.md`). Também confirmado que a fonte
+> tem **competência 2608** e que os arquivos da SANCA de 2601 a 2605 têm ~30 KB (poucas
+> linhas — é a fonte, não defeito).
+
 ### 2.2. Inventário de 29/jul/2026 (o galho `RMSPII` de hoje)
 
 **228 arquivos, 711 MB** na época. É o recorte que as seções 3 a 6 descrevem.

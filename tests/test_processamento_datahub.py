@@ -408,15 +408,21 @@ def test_processar_todos_ignora_outras_familias(cursor, monkeypatch):
 
 
 def _depara_extra(cur, codigo_origem: str, sigla: str) -> int:
-    """Acrescenta um de-para do conector do DataHub apontando uma origem
-    qualificada pra um armazem do cadastro. Devolve o armazem_id."""
+    """Garante que uma origem qualificada aponte pra um armazem do cadastro, no
+    conector do DataHub. Devolve o armazem_id.
+
+    `DO UPDATE` e nao `DO NOTHING`: desde o V2.1 origens como `CWB3/001` ja vem
+    semeadas, e um teste precisa apontar essa origem pro armazem ERRADO de
+    proposito (pra acionar a guarda de colisao). Com DO NOTHING o de-para
+    semeado venceria em silencio e o teste passaria por engano."""
     cur.execute("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")
     conector_id = cur.fetchone()[0]
     cur.execute("SELECT id FROM armazens WHERE sigla = %s", (sigla,))
     armazem_id = cur.fetchone()[0]
     cur.execute(
         "INSERT INTO depara_armazem (conector_id, armazem_na_fonte, armazem_id) "
-        "VALUES (%s, %s, %s)",
+        "VALUES (%s, %s, %s) "
+        "ON CONFLICT (conector_id, armazem_na_fonte) DO UPDATE SET armazem_id = EXCLUDED.armazem_id",
         (conector_id, codigo_origem, armazem_id),
     )
     return armazem_id
@@ -441,8 +447,13 @@ def _medidas_por_armazem(cur, metrica: str):
 def test_homonimos_de_unidades_diferentes_tem_registros_distintos(cursor, monkeypatch):
     """O caso real: ENTRADA_MERCADORIAS_001_2601.xlsx existe em RMSPII e em
     CWB3. Com a chave antiga (nome) os dois disputavam o mesmo registro; agora
-    cada item_id tem o seu, e a CWB3 -- que nao tem de-para -- para na
-    pendencia sem contaminar a RMSPII."""
+    cada item_id tem o seu.
+
+    Desde o V2.1 a CWB3 tem de-para, entao os dois homonimos processam -- que e
+    o caso mais exigente pro registro por item_id, porque os dois escrevem. O
+    lado "homonimo sem de-para para na pendencia" continua coberto pelos testes
+    de pendencia (RJ e RMSPII/002 abaixo), que e o mesmo mecanismo: o de-para e
+    resolvido por arquivo, antes de qualquer gravacao."""
     rmspii = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-rmspii")
     cwb3 = _arquivo("ENTRADA_MERCADORIAS_001_2601.xlsx", "item-cwb3", unidade="CWB3")
     _preparar(monkeypatch, [(rmspii, _xlsx([_linha()])), (cwb3, _xlsx([_linha()]))])
@@ -450,21 +461,20 @@ def test_homonimos_de_unidades_diferentes_tem_registros_distintos(cursor, monkey
     relatorio = processamento_datahub.processar_todos(cursor)
 
     assert relatorio["total_familia"] == 2
-    por_status = {p["status"] for p in relatorio["processados"]}
-    assert por_status == {"ok", "pendencia_depara"}
+    assert {p["status"] for p in relatorio["processados"]} == {"ok"}
 
     cursor.execute(
         "SELECT item_id, unidade, status FROM processamentos_datahub ORDER BY item_id"
     )
     assert cursor.fetchall() == [
-        ("item-cwb3", "CWB3", "pendencia_depara"),
+        ("item-cwb3", "CWB3", "ok"),
         ("item-rmspii", "RMSPII", "ok"),
     ]
-    # so a RMSPII virou celula canonica
-    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [("RMSPII", 100.0)]
-    assert [
-        p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
-    ] == ["CWB3/001"]
+    # cada unidade na sua celula, e a CWB3 deixou de ser pendencia (V2.1)
+    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [
+        ("CWBIII", 100.0), ("RMSPII", 100.0),
+    ]
+    assert processamento_datahub.listar_pendencias_filial(cursor) == []
 
 
 def test_pula_inalterado_mesmo_com_homonimo_de_outra_unidade(cursor, monkeypatch):
@@ -524,10 +534,15 @@ def test_origem_sem_depara_nao_baixa_o_arquivo(cursor, monkeypatch):
 def test_filial_com_hifen_da_rj_vira_pendencia_visivel(cursor, monkeypatch):
     """Antes o padrao de nome exigia so digitos: os arquivos da RJ nao casavam
     e sumiam do processamento sem virar nem pendencia -- "nao casou no regex"
-    virava "nao existe"."""
+    virava "nao existe".
+
+    As duas origens que seguem sem de-para depois do V2.1: a RJ (layout de 18
+    colunas, leitor da variante e do V2.3) e a `RMSPII/002` (a Maria manteve
+    pendente em 02/ago/2026). A SANCA saiu daqui porque ganhou de-para no
+    V2.1 -- se voltasse, este teste passaria a afirmar o contrario do lote."""
     rj = _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx", "item-rj", unidade="RJ")
-    sanca = _arquivo("ENTRADA_MERCADORIAS_025_2601.xlsx", "item-sanca", unidade="SANCA")
-    _preparar(monkeypatch, [(rj, _xlsx([_linha()])), (sanca, _xlsx([_linha()]))])
+    filial_002 = _arquivo("ENTRADA_MERCADORIAS_002_2601.xlsx", "item-002")
+    _preparar(monkeypatch, [(rj, _xlsx([_linha()])), (filial_002, _xlsx([_linha()]))])
 
     relatorio = processamento_datahub.processar_todos(cursor)
 
@@ -535,7 +550,7 @@ def test_filial_com_hifen_da_rj_vira_pendencia_visivel(cursor, monkeypatch):
     assert {p["status"] for p in relatorio["processados"]} == {"pendencia_depara"}
     assert sorted(
         p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
-    ) == ["RJ/004-003", "SANCA/025"]
+    ) == ["RJ/004-003", "RMSPII/002"]
     cursor.execute("SELECT COUNT(*) FROM medidas")
     assert cursor.fetchone()[0] == 0
 

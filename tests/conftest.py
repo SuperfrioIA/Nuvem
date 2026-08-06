@@ -31,12 +31,18 @@ import psycopg2
 import pytest
 
 from backend import migracao
-from backend.database import init_db
+from backend.database import fechar_pool, init_db
 
 
 @pytest.fixture
 def banco_vazio():
-    """Schema public zerado (drop cascade + create)."""
+    """Schema public zerado (drop cascade + create).
+
+    Fecha o pool antes de derrubar o schema (V2.1): conexao pooled de um teste
+    anterior fica ociosa no processo, e teste que zera o banco nao pode depender
+    do estado dela. Sem isto a isolacao entre testes passaria a ter uma variavel
+    escondida que nao existia no tempo do connect-por-request."""
+    fechar_pool()
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
     with conn.cursor() as cur:

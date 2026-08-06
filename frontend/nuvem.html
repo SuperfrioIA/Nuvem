@@ -271,7 +271,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
     <div class="legend" aria-hidden="true">
       <span class="legendItem"><span class="legendDot dominio"></span>Domínio</span>
       <span class="legendItem"><span class="legendDot integrada"></span>Integrada</span>
-      <span class="legendItem"><span class="legendDot mapeada"></span>Não mapeada</span>
+      <span class="legendItem"><span class="legendDot mapeada"></span>Não integrada</span>
       <span class="legendItem"><span class="legendLine"></span>Junção de dados (chave conferida)</span>
     </div>
 
@@ -365,7 +365,7 @@ const DOMINIOS = [
   {
     id: "VOLUMETRIA", titulo: "Volumetria", x: 280, y: 190, anguloBase: 200,
     descricao: "Peso, volume e valor movimentado -- entrada, expedição e ruptura de atendimento.",
-    familias: ["ENTRADA_MERCADORIAS", "SAIDA_MERCADORIAS", "CORTES_PRODUTOS"],
+    familias: ["ENTRADA_MERCADORIAS", "ENTRADA_MERCADORIAS (UA)", "SAIDA_MERCADORIAS", "CORTES_PRODUTOS"],
   },
   {
     id: "OCUPACAO", titulo: "Ocupação de estoque", x: 720, y: 190, anguloBase: -20,
@@ -411,7 +411,12 @@ const JUNCOES = [
   },
 ];
 // Posicao de familia sem dominio calculavel (ex.: PALLETS_EXCEDENTES, so PDF).
+// ESPACADAS: mais de uma orfa (PALLETS_EXCEDENTES + "Outros") caia no MESMO
+// ponto fixo, sobrepondo circulo e rotulo, e so a ultima desenhada ficava
+// clicavel. Uma familia nova detectada na fonte e exatamente o caso em que
+// aparece uma segunda orfa -- ou seja, sumia justo quando importava (V2.1).
 const POSICAO_ORFA = { x: 930, y: 300 };
+const ESPACO_ENTRE_ORFAS = 78;
 
 let nodes = [];
 let edges = [];
@@ -430,17 +435,21 @@ async function carregarNuvem() {
 }
 
 function criarNodeFamilia(b, hubX, hubY, anguloGraus, raio, orfa) {
-  const integrada = b.familia === "ENTRADA_MERCADORIAS";
-  let nota;
-  if (integrada) nota = "Dados lidos, validados e usados nos indicadores desta tela.";
-  else if (orfa) nota = "Não se encaixa em nenhum domínio calculável hoje.";
-  else if (b.estado === "só_pdf") nota = "Arquivos em PDF -- sem extração de dados estruturados por enquanto.";
-  else nota = "Conhecida e inventariada, ainda não lida pela aplicação.";
+  // estado, tag e nota vêm do backend (V2.1). Antes a tela decidia "integrada"
+  // pelo NOME da família, e a `ENTRADA_MERCADORIAS (UA)` — que não é lida —
+  // casava com esse nome e aparecia como integrada.
+  const integrada = b.estado === "integrada";
+  // as duas afirmações coexistem: "sem domínio" fala de domínio calculável,
+  // estado_tag/estado_nota falam de cobertura. Antes a de órfã sobrescrevia a
+  // de cobertura, e a família nova nunca mostrava o rótulo novo (V2.1).
+  const nota = [orfa ? "Não se encaixa em nenhum domínio calculável hoje." : "", b.estado_nota || ""]
+    .filter(Boolean).join(" ");
+  const tag = b.estado_tag || b.estado;
 
   const angulo = anguloGraus * Math.PI / 180;
   return {
     id: b.familia, tipo: integrada ? "typeIntegrada" : "typeMapeada", label: b.familia, primary: false,
-    tag: integrada ? "Integrada" : (orfa ? "Sem domínio" : "Não mapeada"), titulo: b.familia,
+    tag: tag, titulo: b.familia,
     descricao: `Área ${b.area} (pasta física) · ${b.total_arquivos} arquivo(s) · ${b.tamanho_total_mb} MB. ${nota}`,
     x: orfa ? hubX : hubX + raio * Math.cos(angulo),
     y: orfa ? hubY : hubY + raio * Math.sin(angulo),
@@ -480,9 +489,12 @@ function montarGrafo(bolinhas) {
     }
   });
 
+  let orfasColocadas = 0;
   bolinhas.forEach(b => {
     if (familiasColocadas.has(b.familia)) return;
-    nodesLocais.push(criarNodeFamilia(b, POSICAO_ORFA.x, POSICAO_ORFA.y, 0, 0, true));
+    const y = POSICAO_ORFA.y + orfasColocadas * ESPACO_ENTRE_ORFAS;
+    orfasColocadas += 1;
+    nodesLocais.push(criarNodeFamilia(b, POSICAO_ORFA.x, y, 0, 0, true));
   });
 
   // Juncoes por ultimo: as duas pontas precisam ja estar no mapa. Familia que
@@ -851,7 +863,9 @@ function formatarTamanho(bytes) {
 }
 
 function desenharTabelaArquivos(bolinha) {
-  const rotulo = bolinha.familia === "ENTRADA_MERCADORIAS" ? "Integrada" : "Não mapeada";
+  // V2.1: rótulo do backend, igual ao do nó -- antes esta função decidia pelo
+  // NOME e dizia "Não mapeada" onde o nó já dizia "Não integrada"/"Só PDF"
+  const rotulo = bolinha.estado_tag || bolinha.estado;
   document.getElementById("dataTitle").textContent = bolinha.familia;
   document.getElementById("dataFonte").textContent =
     `Área ${bolinha.area} · ${rotulo} · ${bolinha.tamanho_total_mb} MB`;
@@ -884,11 +898,13 @@ function desenharLinhasArquivos(bolinha) {
 
   const tabela = document.getElementById("dataTable");
   tabela.innerHTML = `
-    <thead><tr><th>Arquivo</th><th>Caminho</th><th>Filial</th><th>Competência</th><th class="num">Tamanho</th><th>Modificado em</th></tr></thead>
+    <thead><tr><th>Arquivo</th><th>Caminho</th><th>Filial</th><th>Competência</th><th class="num">Tamanho</th><th>Modificado em</th><th>Cobertura</th></tr></thead>
     <tbody>${linhas.map(a => {
       const nome = escaparHtml(a.nome);
       const linkSeguro = typeof a.web_url === "string" && /^https?:\/\//i.test(a.web_url);
       const celulaNome = linkSeguro ? `<a href="${escaparHtml(a.web_url)}" target="_blank" rel="noopener">${nome}</a>` : nome;
+      // V2.1: arquivo dentro da família integrada que a nuvem não lê precisa
+      // dizer por quê -- dentro da bolinha "Integrada" ele se lia como processado
       return `<tr>
         <td>${celulaNome}</td>
         <td>${escaparHtml(a.caminho)}</td>
@@ -896,8 +912,9 @@ function desenharLinhasArquivos(bolinha) {
         <td>${escaparHtml(a.competencia || "—")}</td>
         <td class="num">${formatarTamanho(a.tamanho)}</td>
         <td>${a.modificado_em ? new Date(a.modificado_em).toLocaleString("pt-BR") : "-"}</td>
+        <td>${a.cobertura ? escaparHtml(a.cobertura) : "—"}</td>
       </tr>`;
-    }).join("") || `<tr><td colspan="6" class="tblEmpty">Nenhum arquivo para este filtro.</td></tr>`}</tbody>`;
+    }).join("") || `<tr><td colspan="7" class="tblEmpty">Nenhum arquivo para este filtro.</td></tr>`}</tbody>`;
 
   document.getElementById("dataCount").textContent =
     _filtroFilial ? `${linhas.length} de ${todos.length} arquivo(s) (${_filtroFilial})` : `${todos.length} arquivo(s)`;

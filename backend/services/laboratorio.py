@@ -94,6 +94,11 @@ def fontes_disponiveis() -> dict:
                 "familia": bolinha["familia"],
                 "area": bolinha["area"],
                 "estado": bolinha["estado"],
+                # o rotulo legivel vem junto (V2.1): a tela do Laboratorio
+                # renderizava `estado` cru no chip, entao a renomeacao do
+                # vocabulario colocaria `nao_integrada` na cara do usuario
+                "estado_tag": bolinha["estado_tag"],
+                "estado_nota": bolinha["estado_nota"],
                 "total_arquivos": bolinha["total_arquivos"],
                 "linha_cabecalho": nuvem_datahub.definicao_do_arquivo(
                     bolinha["arquivos"][0]["nome"] if bolinha["arquivos"] else ""
@@ -104,18 +109,45 @@ def fontes_disponiveis() -> dict:
     return {"familias": familias, "limites": limites()}
 
 
+# Familia sem semantica cujos ROTULOS coincidem com os de uma familia catalogada.
+# Dizer so "não tem mapeamento semântico" nesses casos e verdade insuficiente: o
+# perfil vai mostrar `Cliente`, `Peso Bruto`, `Vlr. Total` -- os mesmos nomes da
+# familia integrada -- e quem le conclui que e a mesma coisa com outro nome de
+# arquivo. Nao e: o grao e outro, e e por isso que o catalogo (que casa campo por
+# POSICAO) nao pode ser herdado.
+#
+# Este aviso existia por acidente de classificacao: antes do V2.1 a `(UA)` caia no
+# galho de "variante pelo sufixo", que dizia "estrutura nao conferida com o
+# negocio". Ao virar familia propria ela passou a receber a mensagem genérica, e a
+# informacao mais forte se perdeu.
+_RISCO_DE_ROTULO_COINCIDENTE = {
+    "ENTRADA_MERCADORIAS (UA)": (
+        " ATENÇÃO: os rótulos de coluna coincidem com os da ENTRADA_MERCADORIAS "
+        "integrada, mas o grão é UNIDADE DE ARMAZENAGEM (UA), não item — tratar "
+        "estes números como os da família integrada dobraria ou dividiria "
+        "quantidade sem aviso."
+    ),
+}
+
+
 def _campos_da_familia(cur, familia: str, arquivo: str) -> tuple[list[dict], str | None]:
     """(campos semanticos da familia, aviso). Devolve [] quando a familia nao
     tem mapeamento aprovado -- e o perfil declara que nao ha semantica.
 
-    A familia e derivada do PREFIXO do nome. Isso significa que
-    `ENTRADA_MERCADORIAS (UA)_016_2607.xlsx` (familia nova, nao catalogada,
-    aparecida na reestruturacao de 31/jul/2026) tambem casa com o prefixo da
-    familia integrada. Como o catalogo casa campo por POSICAO, herdar o
-    catalogo da familia integrada seria arriscar conceito e unidade errados
-    numa familia cuja estrutura ninguem conferiu. Entao o catalogo so e
-    considerado quando o nome segue exatamente `FAMILIA_...` -- variante com
-    sufixo fica sem semantica, e isso e dito em voz alta.
+    A familia e derivada do PREFIXO do nome, entao um nome com sufixo
+    (`ENTRADA_MERCADORIAS-2025_016_2607.xlsx`) casa com o prefixo de uma familia
+    catalogada sem ser ela. Como o catalogo casa campo por POSICAO, herdar o
+    catalogo seria arriscar conceito e unidade errados numa estrutura que
+    ninguem conferiu. Entao o catalogo so e considerado quando o nome segue
+    exatamente `FAMILIA_...` -- variante com sufixo fica sem semantica, e isso e
+    dito em voz alta.
+
+    Familia sem entrada nenhuma no catalogo tambem declara (V2.1). Antes ela
+    devolvia aviso None e a razao aparecia so coluna por coluna; no nivel da
+    sessao ficava silencio, que se le como "nada a declarar". E o caso das 8
+    familias nao integradas e da `ENTRADA_MERCADORIAS (UA)`, que desde o V2.1 e
+    familia propria (antes ela caia no galho de variante acima e por isso era a
+    unica sem semantica que avisava).
     """
     if not arquivo.startswith(familia + "_"):
         return [], (
@@ -129,7 +161,12 @@ def _campos_da_familia(cur, familia: str, arquivo: str) -> tuple[list[dict], str
     )
     row = cur.fetchone()
     if row is None:
-        return [], None
+        return [], (
+            f"A família {familia} não tem mapeamento semântico no catálogo: o perfil "
+            "sai estrutural e nenhuma soma foi liberada — não é erro de leitura, "
+            "é ausência de conceito conferido com o negócio."
+            + _RISCO_DE_ROTULO_COINCIDENTE.get(familia, "")
+        )
     return catalogo_semantico.listar_campos(cur, row[0]), None
 
 

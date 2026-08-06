@@ -196,17 +196,41 @@ def test_variante_da_familia_com_outra_estrutura_nao_usa_o_catalogo(monkeypatch,
     assert all(c["conceito"] is None for c in perfil["colunas"])
 
 
-def test_variante_pelo_nome_nao_herda_o_catalogo_da_familia_integrada(monkeypatch, cursor):
-    """`ENTRADA_MERCADORIAS (UA)` (familia nova da reestruturacao) casa com o
-    PREFIXO da familia integrada. Mesmo que os rotulos coincidam, o catalogo
-    nao pode ser herdado: e outra familia, de grao nao conferido."""
+def test_ua_nao_herda_o_catalogo_da_familia_integrada(monkeypatch, cursor):
+    """`ENTRADA_MERCADORIAS (UA)` casa com o PREFIXO da familia integrada. Mesmo
+    que os rotulos coincidam, o catalogo nao pode ser herdado: e outra familia,
+    de grao nao conferido (UA, nao item).
+
+    Desde o V2.1 ela e familia PROPRIA em nuvem_datahub._FAMILIAS -- entao nao
+    cai mais no galho de "variante pelo sufixo" e sim no de "familia sem
+    mapeamento semantico". O desfecho protegido e o mesmo (nenhum conceito,
+    nenhuma soma) e continua declarado em voz alta."""
     arquivo = _arquivo("ENTRADA_MERCADORIAS (UA)_016_2607.xlsx", "item-ua")
     _preparar(monkeypatch, [(arquivo, _xlsx(_COLUNAS_INTEGRADA, [_linha_integrada()]))])
 
     sessao = laboratorio.perfilar_selecao(cursor, ["item-ua"])
     perfil = sessao["perfil"]["arquivos"][0]
 
-    assert any("VARIANTE da família" in a for a in sessao["perfil"]["avisos"])
+    assert any(
+        "ENTRADA_MERCADORIAS (UA) não tem mapeamento semântico" in a
+        for a in sessao["perfil"]["avisos"]
+    )
+    assert all(c["soma_permitida"] is False for c in perfil["colunas"])
+    assert all(c["conceito"] is None for c in perfil["colunas"])
+
+
+def test_variante_pelo_sufixo_nao_herda_o_catalogo_da_familia_integrada(monkeypatch, cursor):
+    """O galho de variante continua vivo e precisa continuar testado: nome que
+    casa com o prefixo da familia catalogada SEM ser ela (sufixo antes do `_`).
+    O catalogo casa campo por POSICAO, entao herda-lo daria conceito e unidade
+    trocados numa estrutura que ninguem conferiu."""
+    arquivo = _arquivo("ENTRADA_MERCADORIAS-2025_016_2607.xlsx", "item-variante")
+    _preparar(monkeypatch, [(arquivo, _xlsx(_COLUNAS_INTEGRADA, [_linha_integrada()]))])
+
+    sessao = laboratorio.perfilar_selecao(cursor, ["item-variante"])
+    perfil = sessao["perfil"]["arquivos"][0]
+
+    assert any("VARIANTE da família ENTRADA_MERCADORIAS" in a for a in sessao["perfil"]["avisos"])
     assert all(c["soma_permitida"] is False for c in perfil["colunas"])
     assert all(c["conceito"] is None for c in perfil["colunas"])
 

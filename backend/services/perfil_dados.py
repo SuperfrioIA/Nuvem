@@ -21,7 +21,7 @@ soma vive num lugar so no projeto.
 
 from datetime import date, datetime
 
-from . import compatibilidade_medidas
+from . import compatibilidade_medidas, nuvem_datahub
 
 # Categorias que NUNCA somam numa coluna so: percentual (regra fixa da secao 7)
 # e as que dependem da unidade declarada linha a linha (embalagem/desconhecida
@@ -481,7 +481,7 @@ def _limitacoes(leitura: dict, colunas_perfil: list[dict], campos_por_posicao: d
             "coluna isolada nem pelos pares testados — risco de dupla contagem em "
             "qualquer junção."
         )
-    if leitura.get("estado_familia") == "só_pdf":
+    if leitura.get("estado_familia") == nuvem_datahub.ESTADO_SO_PDF:
         limitacoes.append("Família publicada só em PDF — não há planilha para perfilar.")
     return limitacoes
 

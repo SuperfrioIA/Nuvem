@@ -384,7 +384,8 @@ function renderizarFamilias(familias) {
       <div class="familiaHead" data-familia="${i}" role="button" tabindex="0"
            aria-expanded="false" aria-controls="arquivos-${i}">
         <span class="familiaNome">${escaparHtml(f.familia)}</span>
-        <span class="chip ${f.estado === "integrada" ? "integrada" : ""}">${escaparHtml(f.estado)}</span>
+        <span class="chip ${f.estado === "integrada" ? "integrada" : ""}"
+              title="${escaparHtml(f.estado_nota || "")}">${escaparHtml(f.estado_tag || f.estado)}</span>
         <span class="familiaMeta">${f.total_arquivos} arquivo(s) · ${escaparHtml(cabecalho)}</span>
       </div>
       <div class="arquivos" id="arquivos-${i}">${arquivos}</div>
