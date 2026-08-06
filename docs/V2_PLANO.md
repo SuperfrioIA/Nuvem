@@ -373,7 +373,9 @@ pendência visível e não some; total por competência antes e depois do lote �
 mesmo — confirmado por teste (soma agregada, não célula por célula) e por
 validação manual da migration nos dois sentidos via `alembic` CLI direto contra
 o banco de teste (upgrade → dado real → downgrade → reprocessar upgrade),
-independente da suíte.
+independente da suíte. **Deployado na VM em 06/ago/2026**: migration `0014`
+aplicada no startup, "Reprocessar tudo" processou os 46 arquivos da família (0
+pulados, 0 erros) e `scripts/verificar_v2.py` rodou sem falhas.
 
 ### Verificação independente (agente separado, antes do commit): aprovado com uma ressalva
 
@@ -411,12 +413,10 @@ conciliação com o Power BI (V2.6).
 
 ## Próximo lote autorizado
 
-**Nenhum.** O V2.1 foi deployado e validado na VM em 06/ago/2026
-(`scripts/verificar_v2.py` sem falhas; 23 arquivos processados, CWB3 e SANCA fora
-de pendência). O V2.1.1 corrige o único achado dessa rodada e **ainda não subiu
-pra VM** — precisa de `git pull` + `up -d --build` (a migration `0013` roda no
-startup) e de um "Processar arquivos" pra os 5 arquivos da SANCA saírem de `erro`
-e virarem `sem movimento`. O V2.2 fica no mesmo estado: fechado localmente,
-migration `0014` e reprocesso com FORÇAR ainda não aplicados na VM.
+**Nenhum.** V2.1, V2.1.1 e V2.2 foram deployados e validados juntos na VM em
+06/ago/2026: `git pull` + `up -d --build` (migrations `0012`, `0013` e `0014`
+rodaram no startup), "Reprocessar tudo" (forçar) processou os 46 arquivos da
+família ENTRADA_MERCADORIAS (0 pulados, 0 erros — todos gravaram no grão novo,
+com `tipo_estoque`), e `scripts/verificar_v2.py` rodou **sem falhas**.
 
 O V2.3 (saída) só começa com autorização explícita.
