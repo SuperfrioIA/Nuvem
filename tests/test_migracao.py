@@ -636,6 +636,65 @@ def test_migracao_0012_aplica_depara_em_banco_existente_e_apaga_a_pendencia(banc
     ) == [("RJ/004-003",)]
 
 
+def test_migracao_0013_alarga_o_check_do_status_e_o_downgrade_reaperta(banco_vazio):
+    """V2.1.1: `status` tem CHECK inline (0006) -- gravar 'sem_dado' sem alargar
+    estoura em producao na primeira SANCA vazia. O downgrade tem que reapertar, e
+    pra isso precisa tirar as linhas do estado antes: elas voltam a 'erro', que e
+    exatamente o que o codigo anterior gravaria pro mesmo arquivo."""
+    from alembic import command
+
+    migracao.migrar()
+
+    _executar(
+        "INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub')"
+    )
+    conector_id = consultar("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")[0][0]
+    _executar(
+        "INSERT INTO execucoes (conector_id, origem, status) "
+        f"VALUES ({conector_id}, 'datahub', 'ok')"
+    )
+    execucao_id = consultar("SELECT id FROM execucoes")[0][0]
+    _executar(
+        "INSERT INTO processamentos_datahub "
+        "(arquivo, item_id, caminho, unidade, filial, competencia, execucao_id, status) "
+        "VALUES ('ENTRADA_MERCADORIAS_025_2601.xlsx', 'item-vazio', "
+        "'SANCA/ENTRADA/ENTRADA_MERCADORIAS_025_2601.xlsx', 'SANCA', '025', "
+        f"'2026-01-01', {execucao_id}, 'sem_dado')"
+    )
+    assert consultar("SELECT status FROM processamentos_datahub") == [("sem_dado",)]
+
+    command.downgrade(migracao._config(), "0012_depara_cwb3_sanca")
+
+    # a linha nao pode ter sido apagada nem impedido o downgrade
+    assert consultar("SELECT status FROM processamentos_datahub") == [("erro",)]
+
+    command.upgrade(migracao._config(), "head")
+    _executar("UPDATE processamentos_datahub SET status = 'sem_dado'")
+    assert consultar("SELECT status FROM processamentos_datahub") == [("sem_dado",)]
+
+
+def test_check_do_status_recusa_valor_desconhecido(banco_vazio):
+    """A guarda continua guardando: alargar o CHECK nao pode ter virado
+    `status TEXT` livre."""
+    migracao.migrar()
+    _executar(
+        "INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub')"
+    )
+    conector_id = consultar("SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub'")[0][0]
+    _executar(
+        "INSERT INTO execucoes (conector_id, origem, status) "
+        f"VALUES ({conector_id}, 'datahub', 'ok')"
+    )
+    execucao_id = consultar("SELECT id FROM execucoes")[0][0]
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        _executar(
+            "INSERT INTO processamentos_datahub "
+            "(arquivo, item_id, filial, competencia, execucao_id, status) "
+            "VALUES ('x.xlsx', 'item-x', '016', '2026-01-01', "
+            f"{execucao_id}, 'status_inventado')"
+        )
+
+
 def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     """Guarda de consistencia interna: toda tabela/coluna que a validacao de
     legado exige precisa existir na baseline (senao a validacao mentiria)."""

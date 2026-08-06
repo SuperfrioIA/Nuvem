@@ -322,21 +322,31 @@ def processar_arquivo(cur, item_id: str) -> dict:
             )
             gravadas += 1
 
+    # Decisao da Maria em 06/ago/2026, opcao (a): arquivo republicado vazio APAGA
+    # as celulas que ele gravou antes -- a serie e espelho fiel do ultimo estado
+    # da fonte, coerente com o que a V1 ja faz quando todas as linhas sao
+    # invalidas. Sai de graca: com `agregados` vazio, o prune remove todas as
+    # celulas daquele (metrica, armazem, competencia).
     removidas = _remover_celulas_orfas(
         cur, list(metrica_ids.values()), armazem_id, competencia, set(agregados)
     )
+
+    # `sem_dado`: cabecalho valido e zero linha. Status TERMINAL, nao erro -- ver
+    # migration 0013 e o comentario de `sem_dado` em entrada_mercadorias.ler.
+    status = "sem_dado" if resultado["sem_dado"] else "ok"
+    detalhe = "competencia sem movimento (arquivo so com cabecalho)" if resultado["sem_dado"] else None
 
     ingestao.finalizar_execucao(
         cur, execucao_id, "ok",
         linhas_lidas=resultado["linhas_lidas"], linhas_gravadas=gravadas,
     )
     _registrar_processamento(
-        cur, origem, "ok", execucao_id=execucao_id,
+        cur, origem, status, detalhe=detalhe, execucao_id=execucao_id,
         linhas_validas=resultado["linhas_validas"], medidas_gravadas=gravadas,
     )
     return {
         "arquivo": origem["arquivo"],
-        "status": "ok",
+        "status": status,
         "unidade": origem["unidade"],
         "filial": origem["filial"],
         "competencia": origem["competencia"],
@@ -347,6 +357,13 @@ def processar_arquivo(cur, item_id: str) -> dict:
         "medidas_gravadas": gravadas,
         "celulas_removidas": removidas,
     }
+
+
+# Status em que o arquivo NAO precisa ser reprocessado enquanto o `modificado_em`
+# nao mudar. `sem_dado` entra aqui (V2.1.1) porque competencia sem movimento e um
+# desfecho terminal, nao uma falha a repetir: sem isto os 5 arquivos vazios da
+# SANCA eram baixados de novo em toda rodada, pra sempre.
+_STATUS_TERMINAIS = ("ok", "sem_dado")
 
 
 def _ja_processado(cur, item_id: str, modificado_em) -> bool:
@@ -362,7 +379,7 @@ def _ja_processado(cur, item_id: str, modificado_em) -> bool:
         (item_id,),
     )
     row = cur.fetchone()
-    return row is not None and row[1] == "ok" and row[0] == modificado_em
+    return row is not None and row[1] in _STATUS_TERMINAIS and row[0] == modificado_em
 
 
 def _abortar_se_origens_colidem(candidatos: list[dict]) -> None:
@@ -430,7 +447,10 @@ def processar_todos(cur, forcar: bool = False) -> dict:
             continue
 
         processados.append(relatorio)
-        if relatorio["status"] != "ok":
+        # `sem_dado` entra na guarda junto do `ok` (V2.1.1): ele nao grava celula,
+        # mas PODA o escopo (armazem, competencia) -- num cenario de colisao, o
+        # arquivo vazio apagaria as celulas do irmao sem a rodada abortar.
+        if relatorio["status"] not in _STATUS_TERMINAIS:
             continue
         chave = (relatorio["armazem_id"], relatorio["competencia"])
         anterior = emitidos.get(chave)

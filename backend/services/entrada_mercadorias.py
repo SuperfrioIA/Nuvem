@@ -253,8 +253,6 @@ def ler(item_id: str) -> dict:
             else:
                 descartadas += 1
 
-        if lidas == 0:
-            raise EntradaMercadoriasError("arquivo sem linhas de dado (so cabecalho)")
     finally:
         wb.close()
 
@@ -275,5 +273,17 @@ def ler(item_id: str) -> dict:
         "linhas_validas": total_validas,
         "linhas_descartadas": descartadas,
         "qualidade_pct": qualidade_pct,
+        # Cabecalho valido e ZERO linhas de dado: competencia sem movimento, um
+        # estado legitimo da fonte (a SANCA comecou a operar em 2606, os arquivos
+        # dela de 2601 a 2605 sao so cabecalho). Ate o V2.1.1 isto levantava
+        # excecao e o processamento marcava `erro`, com dois efeitos ruins: cinco
+        # erros permanentes no painel que ninguem pode resolver, e re-download em
+        # toda rodada (o "pula inalterado" exige status `ok`).
+        #
+        # Quem decide o que fazer com isso e o CHAMADOR, nao o leitor: o
+        # processamento grava status `sem_dado`; os endpoints que exibem UM
+        # arquivo recusam com mensagem clara, pra tela executiva nunca renderizar
+        # zero como se fosse medicao.
+        "sem_dado": lidas == 0,
         "linhas": linhas_validas,
     }

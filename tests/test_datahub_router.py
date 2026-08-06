@@ -156,6 +156,18 @@ def _xlsx_entrada_mercadorias():
     return buffer.getvalue()
 
 
+def _xlsx_so_cabecalho():
+    """Arquivo estruturalmente valido e sem nenhuma linha de dado -- o caso real
+    dos arquivos 2601-2605 da SANCA."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "SLIN"
+    ws.append(list(entrada_mercadorias._COLUNAS_ESPERADAS))
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    return buffer.getvalue()
+
+
 def _sincronizar_com_arquivo_em(cliente, monkeypatch):
     """Simula uma sincronizacao ja feita, com o arquivo padrao no inventario.
 
@@ -406,3 +418,31 @@ def test_nuvem_sucesso(cliente, monkeypatch):
     assert bolinha["total_arquivos"] == 1
     assert bolinha["arquivos"][0]["nome"] == _ARQUIVO_EM["nome"]
     assert bolinha["arquivos"][0]["web_url"] == _ARQUIVO_EM["web_url"]
+
+
+def test_kpis_de_arquivo_sem_movimento_recusa_em_vez_de_mostrar_zero(cliente, monkeypatch):
+    """V2.1.1: o leitor deixou de levantar excecao pra competencia sem movimento
+    (o processamento grava `sem_dado`), mas a tela executiva mostra UM arquivo
+    como se fosse a leitura da operacao. Renderizar zero ali, sem declarar, seria
+    apresentar ausencia de medicao como medicao."""
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_so_cabecalho()
+    )
+
+    resposta = cliente.get("/api/admin/datahub/kpis")
+
+    assert resposta.status_code == 400
+    assert "sem linhas de dado" in resposta.json()["detail"]
+
+
+def test_ler_arquivo_sem_movimento_recusa_com_mensagem_clara(cliente, monkeypatch):
+    _sincronizar_com_arquivo_em(cliente, monkeypatch)
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_so_cabecalho()
+    )
+
+    resposta = cliente.post("/api/admin/datahub/ler", json={"item_id": _ARQUIVO_EM["id"]})
+
+    assert resposta.status_code == 400
+    assert "sem linhas de dado" in resposta.json()["detail"]

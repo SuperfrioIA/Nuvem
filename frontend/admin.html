@@ -711,6 +711,17 @@ async function carregarProcessamentos() {
   }
 }
 
+// Rótulo legível do status por arquivo. `sem_dado` (V2.1.1) é competência sem
+// movimento — estado terminal e esperado, não falha: os arquivos 2601–2605 da
+// SANCA são só cabeçalho porque a unidade começou a operar em 2606. Exibir o
+// identificador cru faria isso ser lido como defeito.
+const ROTULO_STATUS_PROC = {
+  ok: "ok",
+  erro: "erro",
+  pendencia_depara: "pendência de de-para",
+  sem_dado: "sem movimento",
+};
+
 function renderizarProcessamentos(dados) {
   const body = document.querySelector("#tabelaProcessamentos tbody");
   body.innerHTML = dados.processamentos.map(p => `
@@ -719,7 +730,7 @@ function renderizarProcessamentos(dados) {
       <td>${escaparHtml(p.unidade || "-")}</td>
       <td>${escaparHtml(p.filial)}</td>
       <td>${escaparHtml((p.competencia || "").slice(0, 7))}</td>
-      <td>${escaparHtml(p.status)}${p.detalhe ? " — " + escaparHtml(p.detalhe) : ""}</td>
+      <td>${escaparHtml(ROTULO_STATUS_PROC[p.status] || p.status)}${p.detalhe ? " — " + escaparHtml(p.detalhe) : ""}</td>
       <td>${p.linhas_validas == null ? "-" : p.linhas_validas}</td>
       <td>${p.medidas_gravadas == null ? "-" : p.medidas_gravadas}</td>
       <td>${p.processado_em ? new Date(p.processado_em).toLocaleString("pt-BR") : "-"}</td>

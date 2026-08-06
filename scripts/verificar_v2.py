@@ -36,11 +36,18 @@ SERVICO_DB = os.environ.get("SERVICO_DB", "nuvem-db")
 USUARIO_DB = os.environ.get("POSTGRES_USER", "nuvem")
 NOME_DB = os.environ.get("POSTGRES_DB", "nuvem")
 
-# Origens que seguem SEM de-para por decisao, nao por esquecimento (V2.1):
-# RJ/004-003 espera o leitor da variante de 18 colunas (V2.3); RMSPII/002 espera
-# a decisao da Maria sobre qual armazem e. Aparecer como pendencia aqui e o
+# Origens que seguem SEM de-para por decisao, nao por esquecimento: a RJ espera o
+# leitor da variante de 18 colunas (V2.3). Aparecer como pendencia aqui e o
 # comportamento correto -- o que seria defeito e sumir.
-PENDENCIAS_ESPERADAS = {"RJ/004-003", "RMSPII/002"}
+#
+# `RMSPII/002` NAO entra: o de-para dela segue pendente por decisao da Maria, mas
+# o codigo 002 so aparece em DADOS_GERAIS e OCORRENCIAS_ENTREGAS, que nao sao
+# familias integradas -- nao existe arquivo de ENTRADA_MERCADORIAS da 002, entao
+# ela nunca pode virar pendencia de PROCESSAMENTO. Estava na lista e o script
+# avisava "pendencia esperada ausente" pra sempre, pedindo uma coisa impossivel
+# (achado da primeira rodada real na VM, 06/ago/2026). Aviso que nunca sai treina
+# quem le a ignorar a saida inteira.
+PENDENCIAS_ESPERADAS = {"RJ/004-003"}
 
 # De-para do conector sharepoint_datahub depois do V2.1
 DEPARA_ESPERADO = {
@@ -200,10 +207,18 @@ def verificar_banco() -> None:
         "SELECT COALESCE(unidade, '(raiz)'), status, COUNT(*) "
         "FROM processamentos_datahub GROUP BY 1, 2 ORDER BY 1, 2"
     )
+    erros = [(u, q) for u, s, q in por_unidade if s == "erro"]
     print("\n      processamentos por unidade e status:")
     for unidade, status, quantos in por_unidade:
         print(f"        {unidade:<8} {status:<18} {quantos}")
-    unidades_ok = {u for u, s, _ in por_unidade if s == "ok"}
+    # `sem_dado` conta como processado: competencia sem movimento e desfecho
+    # terminal esperado (SANCA 2601-2605), nao pendencia de acao
+    _checar(
+        "nenhum arquivo com status erro",
+        not erros,
+        f"{erros} -- ver o detalhe no painel do DataHub",
+    )
+    unidades_ok = {u for u, s, _ in por_unidade if s in ("ok", "sem_dado")}
     for esperada in ("RMSPII", "CWB3", "SANCA"):
         if esperada in unidades_ok:
             _checar(f"{esperada} tem arquivo processado com status ok", True)

@@ -639,3 +639,82 @@ def test_colisao_de_armazem_aborta_a_rodada(cursor, monkeypatch):
 
     with pytest.raises(processamento_datahub.ProcessamentoDatahubError, match="colisao de armazem"):
         processamento_datahub.processar_todos(cursor)
+
+
+# --- V2.1.1: competencia sem movimento e status terminal, nao erro ------------
+#
+# Achado na primeira rodada real de processamento na VM (06/ago/2026): os
+# arquivos 2601-2605 da SANCA tem cabecalho valido e zero linha (a unidade
+# comecou a operar em 2606). O leitor levantava excecao e virava `erro`.
+
+
+def test_arquivo_so_com_cabecalho_vira_sem_dado_e_nao_erro(cursor, monkeypatch):
+    vazio = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-vazio")
+    _preparar(monkeypatch, [(vazio, _xlsx([]))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-vazio")
+
+    assert relatorio["status"] == "sem_dado"
+    cursor.execute("SELECT status, detalhe FROM processamentos_datahub WHERE item_id = 'item-vazio'")
+    status, detalhe = cursor.fetchone()
+    assert status == "sem_dado"
+    assert "sem movimento" in detalhe
+    # nenhuma celula inventada
+    cursor.execute("SELECT COUNT(*) FROM medidas")
+    assert cursor.fetchone()[0] == 0
+
+
+def test_sem_dado_nao_e_baixado_de_novo_na_rodada_seguinte(cursor, monkeypatch):
+    """O motivo pratico do lote: com status `erro`, o "pula inalterado" (que
+    exige status terminal) nunca pulava -- os 5 arquivos vazios da SANCA eram
+    baixados de novo em TODA rodada, pra sempre."""
+    vazio = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-vazio")
+    _preparar(monkeypatch, [(vazio, _xlsx([]))])
+    processamento_datahub.processar_todos(cursor)
+
+    baixados = []
+    monkeypatch.setattr(
+        graph_datahub, "baixar_item",
+        lambda item_id, limite_bytes: baixados.append(item_id) or _xlsx([]),
+    )
+    segunda = processamento_datahub.processar_todos(cursor)
+
+    assert segunda["pulados"] == 1
+    assert baixados == [], "arquivo sem movimento foi baixado de novo"
+
+
+def test_arquivo_republicado_vazio_apaga_as_celulas_que_tinha_gravado(cursor, monkeypatch):
+    """Decisao da Maria em 06/ago/2026, opcao (a): a serie e espelho fiel do
+    ultimo estado da fonte -- coerente com o que a V1 ja faz quando todas as
+    linhas de um arquivo republicado sao invalidas."""
+    com_dado = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016")
+    _preparar(monkeypatch, [(com_dado, _xlsx([_linha()]))])
+    processamento_datahub.processar_todos(cursor)
+    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [("RMSPIV", 100.0)]
+
+    republicado = _arquivo(
+        "ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016",
+        modificado_em="2026-08-06T00:00:00Z",
+    )
+    _preparar(monkeypatch, [(republicado, _xlsx([]))])
+    processamento_datahub.processar_todos(cursor)
+
+    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == []
+    cursor.execute("SELECT status FROM processamentos_datahub WHERE item_id = 'item-016'")
+    assert cursor.fetchone()[0] == "sem_dado"
+
+
+def test_arquivo_com_linhas_todas_invalidas_continua_erro_e_nao_sem_dado(cursor, monkeypatch):
+    """`sem_dado` e ZERO linha. Arquivo COM linha que nao passa na validacao e
+    outra coisa -- ali ha dado, e ele esta ruim; misturar os dois esconderia
+    export quebrado atras de "sem movimento"."""
+    linha_ruim = _linha()
+    linha_ruim[13] = "nao e numero"  # Peso Bruto
+    ruim = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-ruim")
+    _preparar(monkeypatch, [(ruim, _xlsx([linha_ruim]))])
+
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-ruim")
+
+    assert relatorio["status"] == "ok"
+    cursor.execute("SELECT linhas_validas FROM processamentos_datahub WHERE item_id = 'item-ruim'")
+    assert cursor.fetchone()[0] == 0

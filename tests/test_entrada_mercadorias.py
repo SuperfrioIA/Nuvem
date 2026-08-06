@@ -269,10 +269,26 @@ def test_valor_invalido_descarta_linha(monkeypatch):
     assert resultado["qualidade_pct"] == 50.0
 
 
-def test_arquivo_vazio_sem_linha_de_dado_falha(monkeypatch):
+def test_arquivo_vazio_sem_linha_de_dado_e_leitura_valida_marcada_sem_dado(monkeypatch):
+    """Ate o V2.1.1 isto levantava excecao. Competencia sem movimento e estado
+    legitimo da fonte (a SANCA comecou a operar em 2606) -- quem decide o que
+    fazer e o chamador: o processamento grava `sem_dado`, os endpoints que exibem
+    UM arquivo recusam com mensagem clara."""
     _mockar_download(monkeypatch, _xlsx([]))
-    with pytest.raises(entrada_mercadorias.EntradaMercadoriasError, match="sem linhas de dado"):
-        entrada_mercadorias.ler(_ITEM_ID)
+    resultado = entrada_mercadorias.ler(_ITEM_ID)
+
+    assert resultado["sem_dado"] is True
+    assert resultado["linhas_lidas"] == 0
+    assert resultado["linhas"] == []
+    assert resultado["qualidade_pct"] == 0.0
+    # estrutura foi validada normalmente -- nao e leitura pela metade
+    assert resultado["filial"] == "001"
+    assert resultado["competencia"] == "2026-07"
+
+
+def test_arquivo_com_linha_de_dado_nao_e_sem_dado(monkeypatch):
+    _mockar_download(monkeypatch, _xlsx([_linha_valida()]))
+    assert entrada_mercadorias.ler(_ITEM_ID)["sem_dado"] is False
 
 
 def test_arquivo_sem_cabecalho_falha(monkeypatch):

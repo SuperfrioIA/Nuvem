@@ -42,7 +42,8 @@ o Laboratório explorando em cima dessa base já governada.
 
 | Lote | O quê | Status |
 |---|---|---|
-| **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **em construção** (aberto em 06/ago/2026) |
+| **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **feito** (06/ago/2026, deployado na VM) |
+| **V2.1.1** | `sem_dado`: competência sem movimento não é erro | **feito** (06/ago/2026) — achado na primeira rodada real |
 | **V2.2** | Tipo de estoque como dimensão | não autorizado |
 | **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | não autorizado |
 | **V2.4** | Consultas de volumetria sob `/cockpit/` | não autorizado |
@@ -244,14 +245,78 @@ Sintaxe das quatro telas conferida com `node --check`.
 
 ---
 
+## Lote V2.1.1 — `sem_dado`: competência sem movimento não é erro (feito, 06/ago/2026)
+
+Achado na **primeira rodada real de processamento na VM**, depois do V2.1: dos 46
+arquivos da família, 23 processados, 18 pulados e **5 erros** — todos
+`ENTRADA_MERCADORIAS_025_2601..2605` da SANCA, com "arquivo sem linhas de dado
+(so cabecalho)". A unidade começou a operar em 2606; aqueles arquivos são só
+cabeçalho e sempre serão.
+
+O erro era nosso, não da fonte, e tinha duas consequências:
+
+1. **Cinco erros permanentes no painel**, para algo que nunca seria corrigido.
+   Erro que não se resolve treina quem olha a ignorar a lista — e aí o erro de
+   verdade passa batido.
+2. **Re-download em toda rodada, para sempre**: `_ja_processado` exigia status
+   `ok`, então nenhum dos cinco era pulado. É a mesma classe de problema que o
+   lote de identidade de 02/ago corrigiu (o flip-flop do reprocessamento),
+   reaparecendo por outra causa.
+
+O que o lote entregou:
+
+- **Migration `0013_status_sem_dado`**: alarga o `CHECK` de
+  `processamentos_datahub.status` para aceitar `sem_dado`. Era obrigatório — o
+  CHECK inline da `0006` só admitia `ok`/`erro`/`pendencia_depara`, e gravar sem
+  alargar estouraria em produção na primeira SANCA vazia. O downgrade converte
+  `sem_dado` de volta para `erro` **antes** de reapertar o CHECK (o valor que o
+  código anterior gravaria para o mesmo arquivo — não inventa estado).
+- **`entrada_mercadorias.ler()` deixa de levantar exceção** e devolve
+  `sem_dado: True`. Quem decide o que fazer é o chamador — o leitor não sabe se
+  quem pergunta vai persistir ou exibir.
+- **Processamento grava `sem_dado`** como status **terminal**: `_STATUS_TERMINAIS
+  = ("ok", "sem_dado")` no "pula inalterado", então os arquivos param de ser
+  rebaixados. Se a SANCA republicar o `2601` com dado, o `modificado_em` muda e
+  ele reprocessa sozinho — a chave de frescor continua a mesma.
+- **`sem_dado` entra na guarda de colisão** junto do `ok`: ele não grava célula,
+  mas **poda** o escopo (armazém, competência); fora da guarda, um arquivo vazio
+  apagaria as células do irmão numa colisão sem a rodada abortar.
+- **Decisão (a) da Maria** (06/ago/2026): arquivo republicado vazio **apaga** as
+  células que havia gravado — a série é espelho fiel do último estado da fonte,
+  coerente com o que a V1 já faz quando todas as linhas são inválidas. Saiu de
+  graça: com nenhum agregado, o prune de órfãs já remove tudo daquele recorte.
+- **A tela executiva continua recusando**: `/kpis` e `/ler` declaram
+  "arquivo sem linhas de dado" com a mesma mensagem de antes. Ela mostra UM
+  arquivo como se fosse a leitura da operação — renderizar zero ali, sem
+  declarar, seria apresentar ausência de medição como medição.
+- **Painel com rótulo legível** ("sem movimento"), não o identificador cru — a
+  mesma correção que a verificação do V2.1 exigiu para o vocabulário de estado.
+- **`scripts/verificar_v2.py`**: conta `sem_dado` como processado, ganhou um
+  check de "nenhum arquivo com status erro", e **`RMSPII/002` saiu de
+  `PENDENCIAS_ESPERADAS`** — o `002` só existe em `DADOS_GERAIS` e
+  `OCORRENCIAS_ENTREGAS`, famílias não integradas, então nunca pode virar
+  pendência de processamento. O script avisava "pendência esperada ausente" para
+  sempre, pedindo uma coisa impossível.
+
+**Distinção que o lote preserva de propósito:** `sem_dado` é **zero linha**.
+Arquivo com linhas que falham na validação continua `ok` com `linhas_validas = 0`
+— ali existe dado, e ele está ruim. Misturar os dois esconderia export quebrado
+atrás de "sem movimento" (coberto por teste).
+
+**Suíte**: **471 passed** (462 do V2.1 + 9 novos: 4 do `sem_dado` no
+processamento, 2 do ciclo/guarda do CHECK da `0013`, 2 da recusa nos endpoints de
+exibição e 1 do leitor; nenhum removido — o teste que exigia exceção no arquivo
+vazio passou a exigir a leitura marcada, que é o comportamento novo).
+
+---
+
 ## Próximo lote autorizado
 
-**Nenhum.** O V2.1 está construído e verificado, faltando duas ações da Maria:
+**Nenhum.** O V2.1 foi deployado e validado na VM em 06/ago/2026
+(`scripts/verificar_v2.py` sem falhas; 23 arquivos processados, CWB3 e SANCA fora
+de pendência). O V2.1.1 corrige o único achado dessa rodada e **ainda não subiu
+pra VM** — precisa de `git pull` + `up -d --build` (a migration `0013` roda no
+startup) e de um "Processar arquivos" pra os 5 arquivos da SANCA saírem de `erro`
+e virarem `sem movimento`.
 
-1. **Commit** — não commitado ainda.
-2. **Sincronizar e processar na VM**, incluindo a competência 2608 (item 6 do
-   lote). Depois disso, rodar `scripts/verificar_v2.py` na VM: os avisos de
-   "sem arquivo processado com status ok" devem virar OK, e CWB3/SANCA devem
-   aparecer no ranking de unidades.
-
-O V2.2 (tipo de estoque) só começa com autorização explícita.
+O V2.2 (tipo de estoque como dimensão) só começa com autorização explícita.

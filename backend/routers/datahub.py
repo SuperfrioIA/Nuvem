@@ -42,6 +42,23 @@ def _serializar(estado: dict) -> dict:
     }
 
 
+_SEM_DADO = "arquivo sem linhas de dado (so cabecalho)"
+
+
+def _recusar_se_sem_dado(resultado: dict) -> None:
+    """Endpoint que exibe UM arquivo recusa competencia sem movimento.
+
+    O leitor deixou de levantar excecao nesse caso no V2.1.1 (competencia sem
+    movimento e estado legitimo da fonte, e o processamento agora grava
+    `sem_dado`). Mas a tela executiva mostra UM arquivo como se fosse a leitura
+    da operacao: renderizar zero ali, sem declarar, e apresentar ausencia de
+    medicao como medicao -- exatamente o que este projeto nao faz. Entao aqui a
+    mensagem clara continua, identica a de antes.
+    """
+    if resultado.get("sem_dado"):
+        raise HTTPException(status_code=400, detail=_SEM_DADO)
+
+
 @router.get("/status")
 def status():
     return _serializar(inventario_datahub.status())
@@ -82,6 +99,7 @@ def ler(item_id: str = Body(..., embed=True)):
     """
     with _erros_como_http():
         resultado = entrada_mercadorias.ler(item_id)
+    _recusar_se_sem_dado(resultado)
 
     linhas = resultado.pop("linhas")
     resultado["linhas_amostra"] = linhas[:_MAX_LINHAS_RESPOSTA]
@@ -100,6 +118,7 @@ def kpis():
     with _erros_como_http():
         item_id = entrada_mercadorias.item_mais_recente()
         resultado = entrada_mercadorias.ler(item_id)
+    _recusar_se_sem_dado(resultado)
 
     linhas = resultado.pop("linhas")
     fonte = f"{resultado['arquivo']} (filial {resultado['filial']}, competência {resultado['competencia']})"
