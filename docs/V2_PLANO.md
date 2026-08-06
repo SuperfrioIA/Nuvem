@@ -155,7 +155,7 @@ foi tocado; a limpeza é decisão da Maria, pelo SharePoint.
 
 ---
 
-## Lote V2.1 — Cobertura e base (em construção)
+## Lote V2.1 — Cobertura e base (feito, 06/ago/2026)
 
 Autorizado pela Maria em 06/ago/2026, com plano apresentado em texto e duas
 respostas dela: conferir o layout da RJ antes de decidir o de-para (feito, ver
