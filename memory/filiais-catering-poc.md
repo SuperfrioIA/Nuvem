@@ -49,6 +49,13 @@ não houve coluna nova — mudou a semântica e o dado. Só essas três estão s
 foi coberta nesta confirmação — de-para dela continua em aberto. Decisão da Maria em
 02/ago/2026: **fica pendente por enquanto**, exibindo só o código `002`.
 
+**Resolvido em 06/ago/2026** (Maria), para as famílias de volumetria: `CWB3/001 → CWBIII`,
+`SANCA/025 → RMSPV` (008009, CNPJ 06.975.242/0009-34) e `RJ/004-003 → RMRJ`. As três
+siglas já existiam ativas em `backend/seed_depara.py:97,106,136` — é só cadastro, sem
+código. Continuam pendentes **`RMSPII/002`, `RJ/004-001` e `RJ/005-001`**, que só
+aparecem em `DADOS_GERAIS`/`OCORRENCIAS_ENTREGAS` (famílias não integradas). Ver
+[[volumetria-v2-decisoes]] e [[historico-datahub-por-familia]].
+
 ## Conferência do cadastro de Curitiba/Ribeirão (03/ago/2026)
 
 A Maria conferiu contra o cadastro oficial e três coisas do Lote 7 estavam erradas:

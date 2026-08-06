@@ -18,3 +18,8 @@ Thumbs.db
 # dados reais (cliente/operacao) e analise a parte dos relatorios do dw (17/jul/2026)
 # -- exports brutos + saidas (excel, mapa) nao vao pro historico do git
 docs/[Aa]nalise/
+
+# snapshots do playwright mcp (06/ago/2026) -- os page-*.yml sao capturas das telas
+# autenticadas e carregam nome de cliente com contagem de linhas ("SAPORE -- 6.032
+# linha(s)"). Mesma razao do docs/Analise/: dado real de operacao nao vai pro git.
+.playwright-mcp/

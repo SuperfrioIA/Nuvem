@@ -17,8 +17,9 @@ e em `CWB3/` — 7 colisões, mesmo nome e mesmo código de filial `001`, armaz�
 diferentes. Como `processamentos_datahub` tinha `UNIQUE(arquivo)`, os dois disputavam o
 registro, o "pula inalterados" flip-flopava, `_remover_celulas_orfas` fazia um apagar as
 células do outro, e `medidas_recebidas` (append-only) ficaria com dado da CWB3 sob o
-`armazem_id` da RMSPII, de forma permanente. **Nunca chegou a acontecer em produção**: a
-VM está em `0004_catalogo_metricas` e o processamento do histórico nunca rodou lá — era
+`armazem_id` da RMSPII, de forma permanente. **Nunca chegou a acontecer em produção**: na
+época a VM estava em `0004_catalogo_metricas` (hoje está em `0011`, depois do deploy do
+Bloco G em 05/ago/2026) e o processamento do histórico nunca rodou lá — era
 risco a prevenir, não dano a compensar. Foi essa constatação que dispensou invalidação
 de linhagem, incidente corretivo e máquina de eventos.
 
