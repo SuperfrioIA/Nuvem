@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.1/dist/css/tabulator.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tabulator-tables@6.3.1/dist/js/tabulator.min.js"></script>
 <style>
 :root {
   --brand-azul-institucional: #071A3A;
@@ -29,24 +31,69 @@
   --radius-pill: 999px;
   --shadow-sm: 0 2px 8px rgba(7,26,58,.12);
   --shadow-md: 0 6px 20px rgba(7,26,58,.18);
+}
 
+/* Tema claro e escuro (V2.5). O atributo data-tema e escrito por um script
+ * inline no <head>, ANTES do primeiro paint -- sem isso a tela pisca branca
+ * antes de virar escura. Escolha explicita da pessoa (localStorage) vence o
+ * prefers-color-scheme do sistema nos dois sentidos.
+ *
+ * Cor de serie vive aqui, nao no JS: os graficos leem --c-entrada/--c-saida/
+ * --c-saldo do tema atual, entao trocar o tema nao exige uma segunda tabela de
+ * cores em JavaScript pra manter sincronizada. */
+:root[data-tema="claro"] {
+  --fundo:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
+    #FBFCFE;
   --card:   #FFFFFF;
   --card-2: #F0F4FA;
   --card-3: #F7F9FC;
   --texto:  #071A3A;
+  --titulo: #071A3A;
   --muted:  #5A6B85;
   --line:        rgba(30, 111, 217, 0.16);
   --line-strong: rgba(30, 111, 217, 0.30);
+  --c-entrada: #1E6FD9;
+  --c-saida:   #3FA9F5;
+  --c-saldo:   #E8A400;
+  --c-negativo: #b3261e;
+  --c-grid:    #C7D2E3;
+  --heat-rgb:  30, 111, 217;
+  --heat-neg-rgb: 179, 38, 30;
+  --erro-bg: #fbe1df;
+  --erro-fg: #b3261e;
+}
+
+:root[data-tema="escuro"] {
+  --fundo:
+    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.16), transparent 42%),
+    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.18), transparent 45%),
+    #050F24;
+  --card:   #0C1E42;
+  --card-2: #12294F;
+  --card-3: #0A1836;
+  --texto:  #E8EEF9;
+  --titulo: #FFFFFF;
+  --muted:  #9DB0D0;
+  --line:        rgba(63, 169, 245, 0.20);
+  --line-strong: rgba(63, 169, 245, 0.38);
+  --c-entrada: #3FA9F5;
+  --c-saida:   #8FD0FF;
+  --c-saldo:   #FFC400;
+  --c-negativo: #FF8A80;
+  --c-grid:    #2A4372;
+  --heat-rgb:  63, 169, 245;
+  --heat-neg-rgb: 255, 138, 128;
+  --erro-bg: #4A1A17;
+  --erro-fg: #FFB4AB;
 }
 
 * { box-sizing: border-box; }
 
 html, body {
   margin: 0;
-  background:
-    radial-gradient(circle at 12% 8%, rgba(63, 169, 245, 0.10), transparent 42%),
-    radial-gradient(circle at 90% 92%, rgba(30, 111, 217, 0.08), transparent 45%),
-    #FBFCFE;
+  background: var(--fundo);
   color: var(--texto);
   font-family: var(--font-primary);
   -webkit-font-smoothing: antialiased;
@@ -56,86 +103,139 @@ html, body {
 
 #login { max-width: 320px; margin: 100px auto; background: var(--card); padding: 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-md); text-align: center; }
 #login img { height: 34px; margin-bottom: 18px; }
-#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--brand-azul-institucional); }
-#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; }
+#login h2 { margin: 0 0 16px; font-size: 15px; color: var(--titulo); }
+#login input { width: 100%; padding: 9px; margin: 6px 0 14px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); font-family: var(--font-primary); font-size: 14px; background: var(--card-3); color: var(--texto); }
 #login button { width: 100%; padding: 10px; background: var(--brand-amarelo); color: var(--brand-azul-institucional); border: none; border-radius: var(--radius-pill); font-weight: 700; cursor: pointer; font-family: var(--font-primary); }
-#loginErro { color: #b3261e; font-size: 13px; min-height: 18px; margin-top: 8px; }
+#loginErro { color: var(--erro-fg); font-size: 13px; min-height: 18px; margin-top: 8px; }
 
 .section { padding: 32px 0 64px; width: min(1180px, calc(100% - 40px)); margin-inline: auto; }
 
-.appHeader { display: flex; justify-content: flex-end; padding: 0 min(90px, calc((100% - 1180px)/2 + 20px)) 0; padding-top: 16px; }
+.appHeader { display: flex; justify-content: flex-end; gap: 10px; padding: 0 min(90px, calc((100% - 1180px)/2 + 20px)) 0; padding-top: 16px; }
 .appHeader button {
-  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  background: transparent; border: 1px solid var(--line-strong); color: var(--texto);
   border-radius: var(--radius-pill); padding: 7px 16px; cursor: pointer; font-family: var(--font-primary);
   font-weight: 600; font-size: 13px;
 }
+.appHeader button:hover { border-color: var(--brand-azul-conexao); }
 
 .brandBar { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
 .brandLogo { height: 40px; width: auto; display: block; }
-.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--brand-cinza-claro), transparent); }
+/* O asset do logo e azul-escuro sobre transparente -- no tema escuro ele fica
+ * invisivel. Sem uma versao branca do arquivo, a silhueta branca e o fallback
+ * legivel (a marca aparece; perde a cor, nao a identidade). */
+:root[data-tema="escuro"] .brandLogo,
+:root[data-tema="escuro"] #login img { filter: brightness(0) invert(1); }
+.brandRule { flex: 1; height: 2px; border: 0; background: linear-gradient(90deg, var(--line-strong), transparent); }
 
 .eyebrow {
-  display: inline-block; color: var(--brand-azul-principal); background: rgba(30, 111, 217, 0.08);
+  display: inline-block; color: var(--brand-azul-conexao); background: rgba(63, 169, 245, 0.10);
   border: 1px solid var(--line); border-radius: var(--radius-pill); padding: 7px 13px;
   font-size: 0.82rem; font-weight: 700;
 }
 h1.titulo {
-  font-size: clamp(1.6rem, 3.4vw, 2.4rem); color: var(--brand-azul-institucional); letter-spacing: -0.02em;
+  font-size: clamp(1.6rem, 3.4vw, 2.4rem); color: var(--titulo); letter-spacing: -0.02em;
   line-height: 1.1; margin: 14px 0 10px; font-weight: 700;
 }
 p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1.5; margin: 0; }
 
 .msg { padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; margin-top: 14px; }
-.msg-erro { background: #fbe1df; color: #b3261e; }
-.msg-info { background: var(--card-3); color: var(--muted); font-size: 12px; margin-top: 8px; }
+.msg-erro { background: var(--erro-bg); color: var(--erro-fg); }
+.msg-info { background: var(--card-3); color: var(--muted); font-size: 12px; margin-top: 8px; border-left: 3px solid var(--line-strong); }
 
 /* Filtros globais -- secao 11.2 do direcionamento: todos os cards/graficos/
- * tabelas obedecem a estes tres campos. Representados na URL (?de=&ate=&
- * filial=&cliente=) pra permitir link direto de fora (Hub SuperFrio). */
+ * tabelas obedecem a estes campos. Representados na URL (?de=&ate=&filial=&
+ * cliente=&tipo_estoque=&grandeza=&direcao=) pra permitir link direto de fora
+ * (Hub SuperFrio). A segunda linha ("visao") nao filtra dado: escolhe O QUE
+ * esta sendo olhado -- fica junto porque tambem muda tudo o que aparece
+ * abaixo, e tambem viaja na URL. */
 .filtros {
-  display: flex; flex-wrap: wrap; align-items: end; gap: 14px; margin: 22px 0;
+  display: flex; flex-direction: column; gap: 14px; margin: 22px 0;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
   padding: 16px 20px; box-shadow: var(--shadow-sm);
 }
+.filtrosLinha { display: flex; flex-wrap: wrap; align-items: end; gap: 14px; }
+.filtrosLinha + .filtrosLinha { border-top: 1px dashed var(--line); padding-top: 14px; }
 .filtroCampo { display: flex; flex-direction: column; gap: 5px; }
-.filtroCampo label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--brand-azul-principal); }
+.filtroCampo label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.07em; color: var(--brand-azul-conexao); }
 .filtroCampo input, .filtroCampo select {
-  font-family: var(--font-primary); font-size: 0.86rem; font-weight: 600; color: var(--brand-azul-institucional);
+  font-family: var(--font-primary); font-size: 0.86rem; font-weight: 600; color: var(--texto);
   background: var(--card-3); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 7px 10px;
 }
 .filtroLimpar {
-  background: transparent; border: 1px solid var(--line-strong); color: var(--brand-azul-institucional);
+  background: transparent; border: 1px solid var(--line-strong); color: var(--texto);
   border-radius: var(--radius-pill); padding: 8px 16px; cursor: pointer; font-family: var(--font-primary);
   font-weight: 600; font-size: 0.8rem; margin-left: auto;
 }
+.filtroNota { font-size: 11px; color: var(--muted); align-self: end; max-width: 340px; line-height: 1.35; }
 
 .kpis-cards { display: flex; gap: 12px; flex-wrap: wrap; margin: 14px 0; }
-.kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 190px; flex: 1; }
-.kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
-.kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
-.kpi-card .kpi-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
-.kpi-card.vazio { color: var(--muted); font-size: 13px; display: flex; align-items: center; }
-.participacao {
-  background: var(--card-2); border-radius: var(--radius-md); padding: 12px 16px; margin: 4px 0 18px; font-size: 13px;
+.kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 210px; flex: 1; border: 1px solid var(--line); }
+.kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-conexao); }
+.kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; font-weight: 600; }
+.kpi-card .kpi-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+.kpi-card .kpi-tag {
+  display: inline-block; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--brand-azul-institucional); background: var(--brand-amarelo-suave);
+  border-radius: var(--radius-pill); padding: 3px 9px; margin-bottom: 8px;
 }
-.participacao strong { color: var(--brand-azul-institucional); }
+.kpi-card.vazio { color: var(--muted); font-size: 13px; display: flex; align-items: center; }
+.kpi-linha { display: block; font-size: 12px; color: var(--texto); margin-top: 5px; }
+.kpi-linha b { font-weight: 700; }
+.participacao {
+  background: var(--card-2); border: 1px solid var(--line); border-radius: var(--radius-md);
+  padding: 12px 16px; margin: 4px 0 18px; font-size: 13px;
+}
+.participacao strong { color: var(--titulo); }
 
 .subLabel { color: var(--muted); font-size: 12px; margin: 22px 0 4px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.subNota { color: var(--muted); font-size: 11px; margin: 0 0 8px; line-height: 1.4; }
 
 .painelBloco {
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm); padding: 18px 20px; margin-top: 10px;
 }
-.metricaFoco { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
-.metricaFoco label { font-size: 0.76rem; font-weight: 700; color: var(--muted); }
-.metricaFoco select {
-  font-family: var(--font-primary); font-size: 0.82rem; font-weight: 600; color: var(--brand-azul-institucional);
-  background: var(--card-3); border: 1px solid var(--line-strong); border-radius: var(--radius-pill); padding: 5px 12px;
-}
-.chart { width: 100%; height: 320px; }
+.chart { width: 100%; height: 340px; }
 .chart.chartCurto { height: 260px; }
 .chartsGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 10px; }
 @media (max-width: 900px) { .chartsGrid { grid-template-columns: 1fr; } }
+
+/* Unidade que nao aparece no ranking (V2.5): zero medido, encerrou operacao e
+ * "nao medimos" sao tres coisas diferentes -- e ate o V2.4 as tres eram a
+ * mesma ausencia silenciosa na tela. */
+.estadosLista { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.estadosLista li { background: var(--card-3); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 12px; border-left: 3px solid var(--line-strong); }
+.estadosLista li.estado-fora_de_operacao { border-left-color: var(--muted); }
+.estadosLista li.estado-sem_movimento_no_periodo { border-left-color: var(--brand-azul-conexao); }
+.estadosLista li.estado-sem_dado_ingerido { border-left-style: dashed; border-left-color: var(--brand-amarelo); }
+.estadoTag { font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; font-size: 10px; color: var(--brand-azul-conexao); margin-left: 8px; }
+.estadoNota { display: block; color: var(--muted); margin-top: 3px; line-height: 1.4; }
+
+.matrizBarra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.matrizBarra button {
+  background: transparent; border: 1px solid var(--line-strong); color: var(--texto);
+  border-radius: var(--radius-pill); padding: 6px 14px; cursor: pointer; font-family: var(--font-primary);
+  font-weight: 600; font-size: 0.78rem;
+}
+.matrizBarra button[disabled] { opacity: 0.45; cursor: default; }
+.matrizBarra .matrizPos { font-size: 12px; color: var(--muted); }
+.matrizBarra .matrizExportar { margin-left: auto; border-color: var(--brand-amarelo); }
+.celulaVazia { color: var(--muted); }
+
+/* Tabulator vem do CDN com tema claro fixo -- estas regras religam a tabela
+ * nas variaveis do tema pra ela nao ficar branca no escuro. */
+.tabulator { background: transparent; border: 1px solid var(--line); border-radius: var(--radius-md); font-family: var(--font-primary); font-size: 12px; }
+.tabulator .tabulator-header { background: var(--card-2); color: var(--texto); border-bottom: 1px solid var(--line-strong); }
+.tabulator .tabulator-header .tabulator-col { background: var(--card-2); border-right: 1px solid var(--line); }
+.tabulator .tabulator-header .tabulator-col .tabulator-col-title { font-weight: 700; font-size: 11px; }
+.tabulator .tabulator-row { background: var(--card); color: var(--texto); border-bottom: 1px solid var(--line); }
+.tabulator .tabulator-row.tabulator-row-even { background: var(--card-3); }
+.tabulator .tabulator-row:hover { background: var(--card-2); }
+.tabulator .tabulator-row .tabulator-cell { border-right: 1px solid var(--line); }
+.tabulator .tabulator-row .tabulator-cell.tabulator-row-header { background: transparent; }
+.tabulator .tabulator-row .tabulator-cell .tabulator-data-tree-control { border-color: var(--brand-azul-conexao); }
+.tabulator .tabulator-row .tabulator-cell .tabulator-data-tree-control .tabulator-data-tree-control-collapse:after,
+.tabulator .tabulator-row .tabulator-cell .tabulator-data-tree-control .tabulator-data-tree-control-expand,
+.tabulator .tabulator-row .tabulator-cell .tabulator-data-tree-control .tabulator-data-tree-control-expand:after { background: var(--brand-azul-conexao); }
 
 .dados-tecnicos { border: 1px solid var(--line); border-radius: var(--radius-md); padding: 14px 16px; margin: 14px 0 0; font-size: 12px; color: var(--muted); }
 .dados-tecnicos div { margin-bottom: 4px; }
@@ -144,10 +244,11 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 
 .linhagemLink {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; font-size: 0.84rem; font-weight: 700;
-  color: var(--brand-azul-institucional); background: var(--card-2); border: 1px solid var(--line);
+  color: var(--texto); background: var(--card-2); border: 1px solid var(--line);
   border-radius: var(--radius-pill); padding: 9px 16px; text-decoration: none;
 }
 .linhagemLink:hover { border-color: var(--line-strong); }
+.labLink { display: inline-block; margin-top: 8px; font-size: 11px; font-weight: 700; color: var(--brand-azul-conexao); }
 
 @media (max-width: 640px) {
   .section { padding: 22px 0 40px; width: min(1180px, calc(100% - 24px)); }
@@ -155,6 +256,16 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
   .kpi-card { width: 100%; }
 }
 </style>
+<script>
+// Tema aplicado antes do primeiro paint (ver comentario no CSS).
+(function () {
+  var salvo = null;
+  try { salvo = localStorage.getItem("nuvem-tema"); } catch (e) { salvo = null; }
+  var escuro = salvo ? salvo === "escuro"
+    : (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  document.documentElement.dataset.tema = escuro ? "escuro" : "claro";
+})();
+</script>
 </head>
 <body>
 
@@ -167,7 +278,10 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 </div>
 
 <div id="app" class="oculto">
-  <div class="appHeader"><button id="btnSair">Sair</button></div>
+  <div class="appHeader">
+    <button id="btnTema" type="button" aria-live="polite">Tema escuro</button>
+    <button id="btnSair">Sair</button>
+  </div>
 
   <main class="section" aria-labelledby="cockpit-titulo">
     <div class="brandBar">
@@ -176,60 +290,98 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
     </div>
     <span class="eyebrow">Visão oficial · DataHub persistido</span>
     <h1 class="titulo" id="cockpit-titulo">Cockpit executivo</h1>
-    <p class="intro">Consolidado, série histórica, comparações e qualidade dos indicadores publicados. Os filtros abaixo valem para toda a tela.</p>
+    <p class="intro">Volumetria integrada: quanto entrou, quanto saiu, total movimentado e saldo — por período, unidade, cliente e tipo de estoque. Os filtros abaixo valem para toda a tela.</p>
 
     <div id="cockpitMsg"></div>
 
     <form class="filtros" id="formFiltros">
-      <div class="filtroCampo">
-        <label for="filtroDe">Período · de</label>
-        <input type="month" id="filtroDe">
+      <div class="filtrosLinha">
+        <div class="filtroCampo">
+          <label for="filtroDe">Período · de</label>
+          <input type="month" id="filtroDe">
+        </div>
+        <div class="filtroCampo">
+          <label for="filtroAte">Período · até</label>
+          <input type="month" id="filtroAte">
+        </div>
+        <div class="filtroCampo">
+          <label for="filtroFilial">Filial</label>
+          <select id="filtroFilial"><option value="">Todas</option></select>
+        </div>
+        <div class="filtroCampo">
+          <label for="filtroCliente">Cliente</label>
+          <select id="filtroCliente"><option value="">Todos</option></select>
+        </div>
+        <div class="filtroCampo">
+          <label for="filtroTipoEstoque">Tipo de estoque</label>
+          <select id="filtroTipoEstoque"><option value="">Todos</option></select>
+        </div>
+        <button type="button" class="filtroLimpar" id="btnLimparFiltros">Limpar filtros</button>
       </div>
-      <div class="filtroCampo">
-        <label for="filtroAte">Período · até</label>
-        <input type="month" id="filtroAte">
+      <div class="filtrosLinha">
+        <div class="filtroCampo">
+          <label for="filtroGrandeza">Grandeza</label>
+          <select id="filtroGrandeza">
+            <option value="peso">Peso bruto</option>
+            <option value="registros">Registros</option>
+            <option value="valor">Valor da mercadoria</option>
+          </select>
+        </div>
+        <div class="filtroCampo">
+          <label for="filtroDirecao">Direção em foco</label>
+          <select id="filtroDirecao">
+            <option value="entrada">Entrada</option>
+            <option value="saida">Saída</option>
+            <option value="total">Total movimentado</option>
+            <option value="saldo">Saldo (entrada − saída)</option>
+          </select>
+        </div>
+        <p class="filtroNota" id="notaVisao"></p>
       </div>
-      <div class="filtroCampo">
-        <label for="filtroFilial">Filial</label>
-        <select id="filtroFilial"><option value="">Todas</option></select>
-      </div>
-      <div class="filtroCampo">
-        <label for="filtroCliente">Cliente</label>
-        <select id="filtroCliente"><option value="">Todos</option></select>
-      </div>
-      <button type="button" class="filtroLimpar" id="btnLimparFiltros">Limpar filtros</button>
     </form>
 
     <div class="kpis-cards" id="cockpitCards"></div>
     <div id="cockpitParticipacao"></div>
+    <div id="cockpitRecorteParcial"></div>
     <div id="cockpitLimitacoes"></div>
 
     <div class="painelBloco">
-      <div class="metricaFoco">
-        <label for="metricaFoco">Métrica em foco</label>
-        <select id="metricaFoco">
-          <option value="peso_bruto_entrada">Peso bruto de entrada</option>
-          <option value="valor_mercadoria_entrada">Valor da mercadoria de entrada</option>
-        </select>
-      </div>
-      <p class="subLabel">Série histórica e acumulado</p>
-      <div class="chart" id="chartSerie"></div>
-      <p class="subLabel">Variação mensal</p>
+      <p class="subLabel">Evolução mensal · entrada, saída e saldo</p>
+      <p class="subNota" id="notaEvolucao"></p>
+      <div class="chart" id="chartEvolucao"></div>
+      <p class="subLabel" id="tituloVariacao">Variação mensal</p>
       <div class="chart chartCurto" id="chartVariacao"></div>
     </div>
 
     <div class="chartsGrid">
       <div class="painelBloco">
-        <p class="subLabel">Comparação de filiais · participação no total</p>
-        <div class="chart chartCurto" id="chartFiliais"></div>
+        <p class="subLabel">Ranking de unidades</p>
+        <p class="subNota" id="notaRankUnidades"></p>
+        <div class="chart chartCurto" id="chartRankUnidades"></div>
+        <div id="unidadesFora"></div>
       </div>
       <div class="painelBloco">
-        <p class="subLabel">Comparação de clientes · top 10 + participação</p>
-        <div class="chart chartCurto" id="chartClientes"></div>
+        <p class="subLabel" id="tituloRankClientes">Ranking de clientes</p>
+        <p class="subNota" id="notaRankClientes"></p>
+        <div class="chart chartCurto" id="chartRankClientes"></div>
       </div>
     </div>
 
+    <div class="painelBloco">
+      <p class="subLabel" id="matrizTitulo">Matriz · unidade por competência</p>
+      <p class="subNota" id="notaMatriz"></p>
+      <div class="matrizBarra">
+        <button type="button" id="btnMatrizAnterior">← anterior</button>
+        <span class="matrizPos" id="matrizPos"></span>
+        <button type="button" id="btnMatrizProxima">próxima →</button>
+        <button type="button" class="matrizExportar" id="btnExportarCsv">Exportar CSV</button>
+      </div>
+      <div id="matrizMsg"></div>
+      <div id="matriz"></div>
+    </div>
+
     <p class="subLabel">Indicadores aprovados no Laboratório</p>
+    <p class="subNota">Aprovar um insight gera <strong>especificação técnica</strong> para implementação humana — não publica indicador. Por isso estes cartões não trazem número.</p>
     <div class="kpis-cards" id="cockpitLaboratorio"></div>
 
     <p class="subLabel">Qualidade e origem dos dados</p>
@@ -243,12 +395,48 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 <script>
 iniciarLoginPadrao(carregarCockpit);
 
-const CORES = {
-  principal: "#1E6FD9", conexao: "#3FA9F5", amarelo: "#FFC400",
-  institucional: "#071A3A", muted: "#5A6B85", grid: "#C7D2E3",
-};
 const FONTE = "'Montserrat', sans-serif";
+const CAMPOS_DADOS = ["de", "ate", "filial", "cliente", "tipo_estoque"];
+const CAMPOS_VISAO = ["grandeza", "direcao"];
+const MATRIZ_TAMANHO_PAGINA = 12;
+// top N do ranking de clientes, pedido ao backend: o resto vem somado numa
+// linha "Outros (N)", nunca descartado (V2.7)
+const RANKING_TOP_CLIENTES = 12;
+// teto da exportacao: a matriz inteira num CSV, mas com limite -- e se o limite
+// cortar, o arquivo e a tela DIZEM quanto ficou de fora (corte silencioso se
+// leria como "exportei tudo")
+const MATRIZ_TETO_EXPORTACAO = 2000;
 
+const ROTULO_DIRECAO = {
+  entrada: "Entrada", saida: "Saída", total: "Total movimentado", saldo: "Saldo (entrada − saída)",
+};
+const NOTA_CELULA_FORA_DE_ESCOPO =
+  "Fora do escopo de medição: a saída é medida a partir de jan/2026 (decisão D3). " +
+  "Vazio não é zero.";
+
+/* ---- tema ------------------------------------------------------------------ */
+function temaAtual() { return document.documentElement.dataset.tema === "escuro" ? "escuro" : "claro"; }
+
+function aplicarTema(tema) {
+  document.documentElement.dataset.tema = tema;
+  try { localStorage.setItem("nuvem-tema", tema); } catch (e) { /* modo privado: só não persiste */ }
+  document.getElementById("btnTema").textContent = tema === "escuro" ? "Tema claro" : "Tema escuro";
+  // ECharts guarda as cores no option, nao no CSS -- trocar o tema exige
+  // redesenhar. Tabulator idem (o heatmap e cor calculada em JS).
+  redesenharTudo();
+}
+
+function cor(nome) {
+  return getComputedStyle(document.documentElement).getPropertyValue(nome).trim();
+}
+function corDeSerie() {
+  return {
+    entrada: cor("--c-entrada"), saida: cor("--c-saida"), saldo: cor("--c-saldo"),
+    negativo: cor("--c-negativo"), grid: cor("--c-grid"), texto: cor("--texto"), muted: cor("--muted"),
+  };
+}
+
+/* ---- graficos -------------------------------------------------------------- */
 let graficos = {};
 function grafico(id) {
   if (!graficos[id]) graficos[id] = echarts.init(document.getElementById(id), null, { renderer: "svg" });
@@ -256,18 +444,34 @@ function grafico(id) {
 }
 window.addEventListener("resize", () => Object.values(graficos).forEach(g => g.resize()));
 
-// kg vira toneladas (unidade executiva de peso, direcionamento V1 secao
-// 11.5); demais unidades usam o formato padrao do KPI. Sem isto, o peso bruto
-// -- a metrica default do seletor -- apareceria em kg cru nos graficos.
+// kg vira toneladas (unidade executiva de peso, direcionamento V1 secao 11.5);
+// demais unidades usam o formato padrao do KPI. Sem isto o peso apareceria em
+// kg cru nos graficos.
 function formatarValorPorUnidade(valor, unidade) {
+  if (valor === null || valor === undefined) return "—";
   if (unidade === "kg") return formatarPesoExecutivo(valor);
   if (unidade === "R$") return `R$ ${formatarMilhoesExec(valor)} mi`;
   return formatarNumeroKpi(valor, unidade === "registros" ? "" : unidade);
 }
 
+// Escala compacta pra eixo de grafico e celula de matriz. "mil t" e a unidade
+// executiva dos CARDS (decisao de 30/jul/2026) e continua sendo la; mas num
+// drill de cliente pequeno TUDO virava "0,0 mil t" -- resolucao insuficiente
+// pra tabela, e "-0,0 mil t" ainda por cima. Abaixo de mil toneladas a mesma
+// medida aparece em toneladas, com a unidade escrita ao lado (nunca um numero
+// sem unidade).
+function formatarValorCompacto(valor, unidade) {
+  if (valor === null || valor === undefined) return "—";
+  if (unidade === "kg" && Math.abs(valor) < 1000000) {
+    return `${(valor / 1000).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} t`;
+  }
+  return formatarValorPorUnidade(valor, unidade);
+}
+
 function baseOption(extra) {
+  const c = corDeSerie();
   return Object.assign({
-    textStyle: { fontFamily: FONTE, color: CORES.institucional },
+    textStyle: { fontFamily: FONTE, color: c.texto },
     grid: { left: 90, right: 24, top: 20, bottom: 30 },
     tooltip: { trigger: "axis", textStyle: { fontFamily: FONTE } },
   }, extra);
@@ -276,7 +480,9 @@ function baseOption(extra) {
 /* ---- filtros (lidos/gravados na URL, pra permitir link direto do Hub) ---- */
 function lerFiltrosDaUrl() {
   const p = new URLSearchParams(location.search);
-  return { de: p.get("de") || "", ate: p.get("ate") || "", filial: p.get("filial") || "", cliente: p.get("cliente") || "" };
+  const lidos = {};
+  CAMPOS_DADOS.concat(CAMPOS_VISAO).forEach(k => { lidos[k] = p.get(k) || ""; });
+  return lidos;
 }
 function filtrosAtuais() {
   return {
@@ -284,25 +490,26 @@ function filtrosAtuais() {
     ate: document.getElementById("filtroAte").value,
     filial: document.getElementById("filtroFilial").value,
     cliente: document.getElementById("filtroCliente").value,
+    tipo_estoque: document.getElementById("filtroTipoEstoque").value,
+    grandeza: document.getElementById("filtroGrandeza").value,
+    direcao: document.getElementById("filtroDirecao").value,
   };
 }
 function aplicarFiltrosNaUrl(f) {
   const p = new URLSearchParams();
-  if (f.de) p.set("de", f.de);
-  if (f.ate) p.set("ate", f.ate);
-  if (f.filial) p.set("filial", f.filial);
-  if (f.cliente) p.set("cliente", f.cliente);
+  CAMPOS_DADOS.concat(CAMPOS_VISAO).forEach(k => { if (f[k]) p.set(k, f[k]); });
   const query = p.toString();
   history.replaceState(null, "", query ? `?${query}` : location.pathname);
 }
-function query(f, extra) {
+// `omitir` existe por causa da convencao dos rankings/matriz: rankear unidades
+// nao aceita filtro de filial (seria rankear uma unidade sozinha) e rankear
+// clientes nao aceita filtro de cliente -- o backend recusa com 400. A tela
+// omite o campo E declara que omitiu, em vez de esconder a diferenca.
+function paramsDados(f, omitir) {
+  const fora = omitir || [];
   const p = new URLSearchParams();
-  if (f.de) p.set("de", f.de);
-  if (f.ate) p.set("ate", f.ate);
-  if (f.filial) p.set("filial", f.filial);
-  if (f.cliente) p.set("cliente", f.cliente);
-  Object.entries(extra || {}).forEach(([k, v]) => { if (v) p.set(k, v); });
-  return p.toString();
+  CAMPOS_DADOS.forEach(k => { if (f[k] && fora.indexOf(k) === -1) p.set(k, f[k]); });
+  return p;
 }
 
 async function carregarCockpit() {
@@ -310,27 +517,65 @@ async function carregarCockpit() {
   msgDiv.innerHTML = "";
   try {
     const [filiais, clientes] = await Promise.all([api("/armazens"), api("/clientes")]);
-    preencherSelect("filtroFilial", filiais.map(a => ({ value: a.sigla, texto: a.nome })), "Todas");
+    // sigla ANTES do nome: RMSPII, RMSPIII e RMSPV se chamam todas "Barueri/SP"
+    // no cadastro -- listar so o nome deixava tres unidades diferentes com o
+    // mesmo rotulo no seletor, e a pessoa nao tinha como saber qual escolheu
+    // (mesma armadilha do codigo de filial nu que a migration 0008 tirou do
+    // de-para). O valor enviado ao backend continua sendo a sigla.
+    preencherSelect(
+      "filtroFilial",
+      filiais.map(a => ({ value: a.sigla, texto: `${a.sigla} · ${a.nome}` })),
+      "Todas",
+    );
     preencherSelect("filtroCliente", clientes.map(c => ({ value: c.nk_erp, texto: c.nome })), "Todos");
+    preencherSelect(
+      "filtroTipoEstoque",
+      Object.keys(ROTULO_TIPO_ESTOQUE).map(t => ({ value: t, texto: ROTULO_TIPO_ESTOQUE[t] })),
+      "Todos",
+    );
 
     const iniciais = lerFiltrosDaUrl();
     document.getElementById("filtroDe").value = iniciais.de;
     document.getElementById("filtroAte").value = iniciais.ate;
     document.getElementById("filtroFilial").value = iniciais.filial;
     document.getElementById("filtroCliente").value = iniciais.cliente;
+    document.getElementById("filtroTipoEstoque").value = iniciais.tipo_estoque;
+    if (iniciais.grandeza) document.getElementById("filtroGrandeza").value = iniciais.grandeza;
+    if (iniciais.direcao) document.getElementById("filtroDirecao").value = iniciais.direcao;
 
-    ["filtroDe", "filtroAte", "filtroFilial", "filtroCliente"].forEach(id =>
-      document.getElementById(id).addEventListener("change", atualizarTudo));
-    document.getElementById("metricaFoco").addEventListener("change", atualizarSecaoMetrica);
+    CAMPOS_DADOS.concat(["grandeza"]).forEach(k => {
+      document.getElementById(idDoCampo(k)).addEventListener("change", atualizarTudo);
+    });
+    // direcao nao mexe em card nem em qualidade -- so na secao da grandeza. Mas
+    // volta pra pagina 1: a ordenacao das linhas da matriz e pelo total DA
+    // direcao, entao a pagina 3 de "entrada" nao e a pagina 3 de "saldo".
+    document.getElementById("filtroDirecao").addEventListener("change", () => {
+      matrizPagina = 1;
+      atualizarSecaoGrandeza();
+    });
     document.getElementById("btnLimparFiltros").addEventListener("click", () => {
-      ["filtroDe", "filtroAte", "filtroFilial", "filtroCliente"].forEach(id => document.getElementById(id).value = "");
+      CAMPOS_DADOS.forEach(k => { document.getElementById(idDoCampo(k)).value = ""; });
       atualizarTudo();
     });
+    document.getElementById("btnTema").addEventListener("click", () =>
+      aplicarTema(temaAtual() === "escuro" ? "claro" : "escuro"));
+    document.getElementById("btnTema").textContent =
+      temaAtual() === "escuro" ? "Tema claro" : "Tema escuro";
+    document.getElementById("btnMatrizAnterior").addEventListener("click", () => irParaPagina(-1));
+    document.getElementById("btnMatrizProxima").addEventListener("click", () => irParaPagina(1));
+    document.getElementById("btnExportarCsv").addEventListener("click", exportarMatrizCsv);
 
     await atualizarTudo();
   } catch (e) {
     msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
   }
+}
+
+function idDoCampo(chave) {
+  return {
+    de: "filtroDe", ate: "filtroAte", filial: "filtroFilial", cliente: "filtroCliente",
+    tipo_estoque: "filtroTipoEstoque", grandeza: "filtroGrandeza", direcao: "filtroDirecao",
+  }[chave];
 }
 
 function preencherSelect(id, opcoes, rotuloTodos) {
@@ -341,82 +586,691 @@ function preencherSelect(id, opcoes, rotuloTodos) {
   sel.value = atual;
 }
 
+// `valor` nao tem par de saida na fonte (decisao D1 do V2.3): as direcoes que
+// dependem da saida sao DESLIGADAS no seletor e o motivo aparece na tela --
+// deixa-las clicaveis daria 400 do backend (matriz) ou coluna vazia (ranking),
+// que se leria como "nao houve saida".
+function sincronizarDirecaoComGrandeza() {
+  const grandeza = document.getElementById("filtroGrandeza").value;
+  const seletor = document.getElementById("filtroDirecao");
+  const semPar = grandeza === "valor";
+  Array.from(seletor.options).forEach(o => { o.disabled = semPar && o.value !== "entrada"; });
+  if (semPar) seletor.value = "entrada";
+  document.getElementById("notaVisao").textContent = semPar
+    ? "A grandeza “valor” não tem par de saída na fonte (nenhuma unidade publica valor na saída), "
+      + "então só a direção Entrada se aplica."
+    : "Direção em foco governa a variação mensal, os dois rankings e a matriz.";
+}
+
 async function atualizarTudo() {
   const f = filtrosAtuais();
-  aplicarFiltrosNaUrl(f);
+  sincronizarDirecaoComGrandeza();
+  aplicarFiltrosNaUrl(filtrosAtuais());
   const msgDiv = document.getElementById("cockpitMsg");
   msgDiv.innerHTML = "";
+  matrizPagina = 1;
   try {
-    const [resumo, qualidade] = await Promise.all([
-      api(`/cockpit/resumo?${query(f)}`),
-      api(`/cockpit/qualidade?${query(f)}`),
+    const [volResumo, participacao, qualidade, aprovados] = await Promise.all([
+      api(`/cockpit/volumetria/resumo?${paramsDados(f)}`),
+      api(`/cockpit/resumo?${paramsDados(f, ["tipo_estoque"])}`),
+      api(`/cockpit/qualidade?${paramsDados(f, ["cliente", "tipo_estoque"])}`),
+      api("/laboratorio/aprovados"),
     ]);
-    renderizarCards(resumo);
-    const pesoKpi = resumo.kpis.find(k => k.chave === "peso_bruto_entrada");
-    renderizarQualidade(qualidade, pesoKpi ? pesoKpi.valor : null);
+    renderizarCards(volResumo);
+    renderizarParticipacao(participacao);
+    renderizarRecorteParcial(f);
+    renderizarQualidade(qualidade, volResumo.grandezas.peso);
+    renderizarAprovados(aprovados.aprovados || []);
     renderizarLinkLinhagem(f);
-    await atualizarSecaoMetrica();
+    await atualizarSecaoGrandeza();
   } catch (e) {
     msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
   }
 }
 
-function renderizarLinkLinhagem(f) {
-  const metrica = document.getElementById("metricaFoco").value;
-  document.getElementById("linkLinhagem").href = `/linhagem?${query(f, { metrica })}`;
+// redesenho puro (troca de tema): reusa o ultimo payload, sem novo request
+let ultimoPayload = {};
+function redesenharTudo() {
+  if (!ultimoPayload.evolucao) return;
+  renderizarEvolucao(ultimoPayload.evolucao);
+  renderizarVariacao(ultimoPayload.evolucao, ultimoPayload.direcao);
+  renderizarRanking("chartRankUnidades", ultimoPayload.rankUnidades, ultimoPayload.direcao);
+  renderizarRanking("chartRankClientes", ultimoPayload.rankClientes, ultimoPayload.direcao);
+  if (ultimoPayload.matriz) montarMatriz(ultimoPayload.matriz, ultimoPayload.matrizDimensao);
 }
 
-const KPI_FORMATO = {
-  peso_bruto_entrada: v => formatarPesoExecutivo(v),
-  valor_mercadoria_entrada: v => `R$ ${formatarMilhoesExec(v)} mi`,
-  clientes_atendidos: v => `${Math.round(v)} ${Math.round(v) === 1 ? "cliente" : "clientes"}`,
-};
+/* ---- cards ----------------------------------------------------------------- */
+const CARDS_GRANDEZA = [
+  { chave: "peso", titulo: "Peso bruto" },
+  { chave: "registros", titulo: "Registros" },
+  { chave: "valor", titulo: "Valor da mercadoria" },
+];
 
-// D5.1 (V2.3): volume do balde "sem cliente identificado" abaixo do card de
-// clientes atendidos, separado por causa -- cliente nao cadastrado
-// (resolvivel, cadastro pendente) x unidade sem coluna de cliente na fonte
-// (nao resolvivel, RMRJ). Nunca soma os dois num numero so: mandaria a Maria
-// caçar um cadastro que nao existe pra RMRJ.
-function formatarBaldeSemCliente(balde) {
+function linhaDeDirecoes(g) {
+  const u = g.unidade;
+  const partes = [`Entrada <b>${escaparHtml(formatarValorPorUnidade(g.entrada, u))}</b>`];
+  if (g.saida === null) {
+    partes.push("sem par de saída na fonte");
+  } else {
+    partes.push(`Saída <b>${escaparHtml(formatarValorPorUnidade(g.saida, u))}</b>`);
+    partes.push(`Saldo <b>${escaparHtml(formatarValorPorUnidade(g.saldo, u))}</b>`);
+  }
+  return `<span class="kpi-linha">${partes.join(" · ")}</span>`;
+}
+
+// D5.1 (V2.3): o balde "sem cliente identificado" e exibido como NUMERO,
+// separado por causa -- cliente nao cadastrado (resolvivel) x unidade sem
+// coluna de cliente na fonte (nao resolvivel). Nunca soma os dois num numero
+// so: mandaria caçar um cadastro que nao existe pra RMRJ/RMSPV.
+function formatarBaldePorDirecao(balde, rotulo) {
   if (!balde) return "";
-  const nc = balde.nao_cadastrado;
-  const sc = balde.sem_coluna_na_fonte;
+  const nc = balde.nao_cadastrado || {};
+  const sc = balde.sem_coluna_na_fonte || {};
   const pesoTotalKg = (nc.peso_kg || 0) + (sc.peso_kg || 0);
   if (pesoTotalKg <= 0) return "";
   const partes = [];
-  if (nc.peso_kg > 0) {
-    partes.push(`${escaparHtml(formatarNumeroKpi(nc.percentual_do_peso_total, "%"))} não cadastrado`);
+  if (nc.peso_kg > 0) partes.push(`${escaparHtml(formatarNumeroKpi(nc.percentual_do_peso_total, "%"))} não cadastrado`);
+  if (sc.peso_kg > 0) partes.push(`${escaparHtml(formatarNumeroKpi(sc.percentual_do_peso_total, "%"))} sem coluna de cliente na fonte`);
+  return `<span class="kpi-sub">${escaparHtml(rotulo)}: ${escaparHtml(formatarToneladasDetalhado(pesoTotalKg))} `
+    + `sem cliente identificado (${partes.join(", ")}).</span>`;
+}
+
+function cardClientes(resumo) {
+  const c = resumo.clientes_atendidos;
+  if (!c) {
+    return `<div class="kpi-card vazio">Contagem de clientes não se aplica ao recorte filtrado (ver limitações).</div>`;
   }
-  if (sc.peso_kg > 0) {
-    partes.push(`${escaparHtml(formatarNumeroKpi(sc.percentual_do_peso_total, "%"))} sem coluna de cliente na fonte`);
-  }
-  return `<div class="kpi-sub">${escaparHtml(formatarToneladasDetalhado(pesoTotalKg))} sem cliente identificado no período (${partes.join(", ")}).</div>`;
+  const balde = resumo.balde_sem_cliente || {};
+  return `
+    <div class="kpi-card">
+      <span class="kpi-valor">${escaparHtml(`${c.uniao} ${c.uniao === 1 ? "cliente" : "clientes"}`)}</span>
+      <span class="kpi-nome">Clientes atendidos (entrada + saída)</span>
+      <span class="kpi-sub">Somente entrada: ${escaparHtml(String(c.entrada))} — é a leitura que a V1 publicava; as duas ficam à vista, nenhuma substitui a outra.</span>
+      ${formatarBaldePorDirecao(balde.entrada, "Entrada")}
+      ${formatarBaldePorDirecao(balde.saida, "Saída")}
+    </div>`;
 }
 
 function renderizarCards(resumo) {
-  document.getElementById("cockpitCards").innerHTML = resumo.kpis.map(k => `
-    <div class="kpi-card">
-      <span class="kpi-valor">${escaparHtml((KPI_FORMATO[k.chave] || (v => formatarNumeroKpi(v, k.unidade)))(k.valor))}</span>
-      <span class="kpi-nome">${escaparHtml(k.nome_executivo)}</span>
-      ${k.chave === "clientes_atendidos" ? formatarBaldeSemCliente(resumo.balde_sem_cliente) : ""}
-    </div>`).join("");
+  const cards = CARDS_GRANDEZA.map(def => {
+    const g = resumo.grandezas[def.chave];
+    if (!g) return "";
+    // headline = total movimentado (throughput). Na grandeza sem par de saida o
+    // total E a entrada -- exibir "total" ali sem dizer isso sugeriria que a
+    // saida entrou na conta e deu zero.
+    const semPar = g.saida === null;
+    const headline = semPar ? g.entrada : g.total;
+    return `
+      <div class="kpi-card">
+        <span class="kpi-valor">${escaparHtml(formatarValorPorUnidade(headline, g.unidade))}</span>
+        <span class="kpi-nome">${escaparHtml(def.titulo)}${semPar ? " · só entrada" : " · total movimentado"}</span>
+        ${linhaDeDirecoes(g)}
+      </div>`;
+  }).join("");
 
-  const p = resumo.participacao_maior_cliente;
-  document.getElementById("cockpitParticipacao").innerHTML = p
-    ? `<div class="participacao">Cliente com maior participação (${escaparHtml(p.metrica === "valor_mercadoria_entrada" ? "valor" : p.metrica)}): <strong>${escaparHtml(p.cliente)}</strong> — ${escaparHtml(formatarNumeroKpi(p.percentual, "%"))} do total.</div>`
-    : "";
-
+  document.getElementById("cockpitCards").innerHTML = cards + cardClientes(resumo);
   document.getElementById("cockpitLimitacoes").innerHTML = (resumo.limitacoes || []).map(l =>
     `<div class="msg msg-info">${escaparHtml(l)}</div>`).join("");
-
-  document.getElementById("cockpitLaboratorio").innerHTML =
-    `<div class="kpi-card vazio">Nenhum indicador aprovado no Laboratório ainda.</div>`;
 }
 
-function renderizarQualidade(q, pesoBrutoKg) {
+function renderizarParticipacao(resumo) {
+  const p = resumo.participacao_maior_cliente;
+  document.getElementById("cockpitParticipacao").innerHTML = p
+    ? `<div class="participacao">Cliente com maior participação (${escaparHtml(p.metrica === "valor_mercadoria_entrada" ? "valor de entrada" : p.metrica)}): <strong>${escaparHtml(p.cliente)}</strong> — ${escaparHtml(formatarNumeroKpi(p.percentual, "%"))} do total.</div>`
+    : "";
+}
+
+// Dois blocos desta tela vem de endpoints da V1.7 que NAO aceitam todos os
+// filtros: `/cockpit/resumo` (participacao do maior cliente) nao aceita
+// tipo_estoque, e `/cockpit/qualidade` nao aceita nem cliente nem tipo_estoque.
+// A tela ja nao enviava esses parametros; o que faltava era DIZER isso (achado
+// da revisao independente). O aceite do lote e "filtros globais afetam todos os
+// visuais" -- onde nao afetam, a excecao aparece escrita, nunca em silencio.
+function renderizarRecorteParcial(f) {
+  const avisos = [];
+  if (f.tipo_estoque) {
+    avisos.push("A participação do maior cliente e o bloco “Qualidade e origem dos dados” não "
+      + `aceitam filtro de tipo de estoque — os dois ignoram “${ROTULO_TIPO_ESTOQUE[f.tipo_estoque] || f.tipo_estoque}”.`);
+  }
+  if (f.cliente) {
+    avisos.push("O bloco “Qualidade e origem dos dados” não aceita filtro de cliente — ele "
+      + "conta arquivos processados, não medidas de um cliente.");
+  }
+  document.getElementById("cockpitRecorteParcial").innerHTML = avisos
+    .map(a => `<div class="msg msg-info">${escaparHtml(a)}</div>`).join("");
+}
+
+function renderizarAprovados(lista) {
+  const el = document.getElementById("cockpitLaboratorio");
+  if (!lista.length) {
+    el.innerHTML = `<div class="kpi-card vazio">Nenhum insight aprovado no Laboratório ainda.</div>`;
+    return;
+  }
+  el.innerHTML = lista.map(a => `
+    <div class="kpi-card">
+      <span class="kpi-tag">Especificação aprovada</span>
+      <span class="kpi-nome">${escaparHtml(a.nome || a.titulo || `Sessão ${a.sessao_id}`)}</span>
+      ${a.pergunta_negocio ? `<span class="kpi-sub">${escaparHtml(a.pergunta_negocio)}</span>` : ""}
+      <span class="kpi-sub">${a.decidido_em ? "Aprovada em " + escaparHtml(a.decidido_em.slice(0, 10)) : "Sem data de decisão registrada"} · indicador ainda não publicado.</span>
+      <a class="labLink" href="/laboratorio" target="_blank" rel="noopener">Abrir o Laboratório →</a>
+    </div>`).join("");
+}
+
+function renderizarLinkLinhagem(f) {
+  // /linhagem trabalha com UMA metrica; total e saldo nao sao metricas
+  // persistidas (sao derivadas), entao a linhagem cai na entrada e o rotulo diz.
+  const metrica = metricaDaDirecao(f.grandeza, f.direcao);
+  const p = paramsDados(f);
+  p.set("metrica", metrica.nome);
+  const link = document.getElementById("linkLinhagem");
+  link.href = `/linhagem?${p}`;
+  link.textContent = `Ver linhagem completa (grão mínimo) — ${metrica.rotulo} →`;
+}
+
+const METRICA_POR_GRANDEZA = {
+  peso: { entrada: "peso_bruto_entrada", saida: "peso_bruto_saida" },
+  registros: { entrada: "registros_entrada", saida: "registros_saida" },
+  valor: { entrada: "valor_mercadoria_entrada", saida: null },
+};
+
+function metricaDaDirecao(grandeza, direcao) {
+  const par = METRICA_POR_GRANDEZA[grandeza] || METRICA_POR_GRANDEZA.peso;
+  if (direcao === "saida" && par.saida) return { nome: par.saida, rotulo: "saída" };
+  if (direcao === "entrada") return { nome: par.entrada, rotulo: "entrada" };
+  return { nome: par.entrada, rotulo: "entrada (total e saldo são derivados, não têm célula própria)" };
+}
+
+/* ---- secao da grandeza (evolucao + rankings + matriz) ---------------------- */
+let matrizPagina = 1;
+
+async function atualizarSecaoGrandeza() {
+  const f = filtrosAtuais();
+  aplicarFiltrosNaUrl(f);
+  renderizarLinkLinhagem(f);
+  const msgDiv = document.getElementById("cockpitMsg");
+  const dimensaoMatriz = f.filial ? "cliente" : "unidade";
+  try {
+    const [evolucao, rankUnidades, rankClientes, matriz] = await Promise.all([
+      api(`/cockpit/volumetria/evolucao?grandeza=${encodeURIComponent(f.grandeza)}&${paramsDados(f)}`),
+      api(`/cockpit/volumetria/ranking?grandeza=${encodeURIComponent(f.grandeza)}&dimensao=unidade&${paramsDados(f, ["filial"])}`),
+      api(`/cockpit/volumetria/ranking?grandeza=${encodeURIComponent(f.grandeza)}&dimensao=cliente`
+        + `&limite=${RANKING_TOP_CLIENTES}&${paramsDados(f, ["cliente"])}`),
+      api(`/cockpit/volumetria/matriz?grandeza=${encodeURIComponent(f.grandeza)}&direcao=${encodeURIComponent(f.direcao)}`
+        + `&dimensao=${dimensaoMatriz}&pagina=${matrizPagina}&tamanho_pagina=${MATRIZ_TAMANHO_PAGINA}`
+        + `&${paramsDados(f, dimensaoMatriz === "unidade" ? ["filial"] : ["cliente"])}`),
+    ]);
+    ultimoPayload = {
+      evolucao, rankUnidades, rankClientes, matriz,
+      direcao: f.direcao, matrizDimensao: dimensaoMatriz,
+    };
+    renderizarEvolucao(evolucao);
+    renderizarVariacao(evolucao, f.direcao);
+    renderizarRanking("chartRankUnidades", rankUnidades, f.direcao);
+    renderizarRanking("chartRankClientes", rankClientes, f.direcao);
+    renderizarUnidadesFora(rankUnidades.unidades_fora_do_ranking);
+    renderizarNotasDeRecorte(f);
+    montarMatriz(matriz, dimensaoMatriz);
+  } catch (e) {
+    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  }
+}
+
+function renderizarNotasDeRecorte(f) {
+  document.getElementById("notaRankUnidades").textContent = f.filial
+    ? `Direção: ${ROTULO_DIRECAO[f.direcao]}. O filtro de filial (${f.filial}) NÃO se aplica aqui — este é o ranking entre as unidades.`
+    : `Direção: ${ROTULO_DIRECAO[f.direcao]}.`;
+  const rankClientes = ultimoPayload.rankClientes;
+  document.getElementById("tituloRankClientes").textContent =
+    rankClientes && rankClientes.total_linhas > RANKING_TOP_CLIENTES
+      ? `Ranking de clientes · top ${RANKING_TOP_CLIENTES} de ${rankClientes.total_linhas}`
+      : "Ranking de clientes";
+  document.getElementById("notaRankClientes").textContent = f.cliente
+    ? `Direção: ${ROTULO_DIRECAO[f.direcao]}. O filtro de cliente NÃO se aplica aqui — este é o ranking entre os clientes.`
+    : `Direção: ${ROTULO_DIRECAO[f.direcao]}.`;
+}
+
+function renderizarEvolucao(evolucao) {
+  const c = corDeSerie();
+  const pontos = evolucao.mensal || [];
+  const unidade = evolucao.unidade;
+  const temSaida = pontos.some(p => p.saida !== null);
+
+  document.getElementById("notaEvolucao").innerHTML = (evolucao.limitacoes || [])
+    .map(l => escaparHtml(l)).join(" · ");
+
+  const series = [
+    {
+      name: "Entrada", type: "bar", data: pontos.map(p => p.entrada),
+      itemStyle: { color: c.entrada }, barMaxWidth: 26,
+    },
+  ];
+  if (temSaida) {
+    series.push({
+      name: "Saída", type: "bar", data: pontos.map(p => p.saida),
+      itemStyle: { color: c.saida }, barMaxWidth: 26,
+    });
+    series.push({
+      name: "Saldo", type: "line", data: pontos.map(p => p.saldo),
+      // connectNulls FALSO de proposito: mes anterior a jan/2026 nao tem saida
+      // medida, e ligar a linha por cima do buraco desenharia um saldo que
+      // ninguem apurou.
+      connectNulls: false, symbolSize: 7, smooth: false,
+      lineStyle: { color: c.saldo, width: 3 }, itemStyle: { color: c.saldo },
+    });
+  }
+
+  grafico("chartEvolucao").setOption(baseOption({
+    legend: { data: series.map(s => s.name), textStyle: { color: c.texto, fontFamily: FONTE }, top: 0 },
+    grid: { left: 90, right: 24, top: 40, bottom: 30 },
+    xAxis: {
+      type: "category", data: pontos.map(p => competenciaCurta(p.competencia)),
+      axisLine: { lineStyle: { color: c.grid } }, axisLabel: { color: c.muted },
+    },
+    yAxis: {
+      type: "value", axisLabel: { formatter: v => formatarValorCompacto(v, unidade), color: c.muted },
+      splitLine: { lineStyle: { color: c.grid, opacity: 0.4 } },
+    },
+    series: series,
+    tooltip: {
+      trigger: "axis", textStyle: { fontFamily: FONTE },
+      valueFormatter: v => (v === null || v === undefined ? "não medido" : formatarValorCompacto(v, unidade)),
+    },
+  }), true);
+}
+
+// Variacao percentual NAO se aplica a saldo: de -10 pra +5 nao e "+150%", e
+// troca de sinal. Nessa direcao o grafico passa a mostrar a variacao ABSOLUTA
+// e o titulo declara a troca.
+function renderizarVariacao(evolucao, direcao) {
+  const c = corDeSerie();
+  const pontos = evolucao.mensal || [];
+  const unidade = evolucao.unidade;
+  const percentual = direcao !== "saldo";
+  const serieDirecao = pontos.map(p => p[direcao]);
+
+  document.getElementById("tituloVariacao").textContent = percentual
+    ? `Variação mensal · ${ROTULO_DIRECAO[direcao]} (%)`
+    : `Variação mensal · Saldo (absoluta — percentual não se aplica a valor que troca de sinal)`;
+
+  const variacoes = pontos.slice(1).map((p, i) => {
+    const anterior = serieDirecao[i];
+    const atual = serieDirecao[i + 1];
+    if (atual === null || anterior === null) {
+      return { competencia: p.competencia, valor: null, motivo: "não medido" };
+    }
+    if (!percentual) return { competencia: p.competencia, valor: atual - anterior };
+    // base zero: a variacao percentual e indefinida, nao "nao medida" (achado da
+    // revisao independente -- 0 t em janeiro para 500 t em fevereiro mostrava
+    // "nao medido", que e outra coisa)
+    if (!anterior) {
+      return { competencia: p.competencia, valor: null, motivo: "não calculável (base zero)" };
+    }
+    return { competencia: p.competencia, valor: ((atual - anterior) / anterior) * 100 };
+  });
+
+  grafico("chartVariacao").setOption(baseOption({
+    xAxis: {
+      type: "category", data: variacoes.map(v => competenciaCurta(v.competencia)),
+      axisLine: { lineStyle: { color: c.grid } }, axisLabel: { color: c.muted },
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: {
+        color: c.muted,
+        formatter: v => (percentual ? `${v}%` : formatarValorCompacto(v, unidade)),
+      },
+      splitLine: { lineStyle: { color: c.grid, opacity: 0.4 } },
+    },
+    series: [{
+      type: "bar",
+      data: variacoes.map(v => (v.valor === null ? null
+        : Number(percentual ? v.valor.toFixed(1) : v.valor))),
+      itemStyle: { color: p => (p.value >= 0 ? c.entrada : c.negativo) },
+      barMaxWidth: 28,
+    }],
+    tooltip: {
+      trigger: "axis", textStyle: { fontFamily: FONTE },
+      formatter: params => {
+        const ponto = params[0];
+        const v = variacoes[ponto.dataIndex];
+        const texto = v.valor === null
+          ? (v.motivo || "não disponível")
+          : (percentual ? `${v.valor.toFixed(1)}%` : formatarValorCompacto(v.valor, unidade));
+        return `${escaparHtml(ponto.axisValue)}<br>${escaparHtml(texto)}`;
+      },
+    },
+  }), true);
+}
+
+// Barra = a DIRECAO em foco; o tooltip sempre mostra as quatro leituras. O
+// rotulo de participacao so aparece na direcao `total`, porque
+// `participacao_pct` e calculado sobre o total movimentado -- estampar esse
+// percentual ao lado de uma barra de saldo diria uma coisa medindo outra.
+function renderizarRanking(elId, dados, direcao) {
+  const c = corDeSerie();
+  // V2.7: o recorte de top N e do BACKEND agora (com a linha "Outros (N)"
+  // somando o resto). Antes a tela cortava com slice() e o resto simplesmente
+  // desaparecia do grafico -- a diferenca aparecia como se nao existisse. E era
+  // aqui tambem que morava o bug apontado na proposta: `dados.ranking.length`
+  // avaliado sem protecao quando `limite` era falsy.
+  const linhas = (dados && dados.linhas) || [];
+  const unidade = dados ? dados.unidade : "";
+  const maiorPrimeiro = [...linhas].reverse(); // ECharts desenha de baixo pra cima
+
+  grafico(elId).setOption(baseOption({
+    grid: { left: 175, right: 70, top: 10, bottom: 24 },
+    xAxis: {
+      type: "value", axisLabel: { formatter: v => formatarValorCompacto(v, unidade), color: c.muted },
+      splitLine: { lineStyle: { color: c.grid, opacity: 0.4 } },
+    },
+    yAxis: {
+      type: "category", data: maiorPrimeiro.map(r => r.chave),
+      axisLine: { lineStyle: { color: c.grid } },
+      // truncate com reticencia: sem largura declarada o ECharts CORTA o
+      // rotulo no meio da palavra, e "Sem cliente identificado" aparecia como
+      // "m cliente identificado" -- outro nome, nao um nome abreviado
+      axisLabel: { color: c.texto, width: 160, overflow: "truncate" },
+    },
+    series: [{
+      type: "bar",
+      data: maiorPrimeiro.map((r, i) => {
+        const valor = r[direcao];
+        const destaque = i === maiorPrimeiro.length - 1;
+        let cor = destaque ? c.saldo : c.entrada;
+        if (r.bucket) cor = c.muted;           // agrupamento, nao uma linha real
+        if (valor !== null && valor < 0) cor = c.negativo;
+        // null vira barra AUSENTE, nao barra em zero (achado da revisao
+        // independente): o label da mesma barra ja mostrava "—", e desenhar
+        // altura zero ao lado dele apresentaria "nao medido" como medida
+        return { value: valor === null ? null : valor, itemStyle: { color: cor } };
+      }),
+      label: {
+        show: true, position: "right", color: c.texto,
+        formatter: p => {
+          const linha = maiorPrimeiro[p.dataIndex];
+          if (direcao === "total") return `${linha.participacao_pct.toFixed(1)}%`;
+          return formatarValorCompacto(linha[direcao], unidade);
+        },
+      },
+      barMaxWidth: 20,
+    }],
+    tooltip: {
+      trigger: "item", textStyle: { fontFamily: FONTE },
+      formatter: p => {
+        const l = maiorPrimeiro[p.dataIndex];
+        return `<b>${escaparHtml(l.chave)}</b>${l.bucket ? " (soma das linhas fora do top)" : ""}<br>`
+          + `Entrada: ${formatarValorCompacto(l.entrada, unidade)}<br>`
+          + `Saída: ${formatarValorCompacto(l.saida, unidade)}<br>`
+          + `Total: ${formatarValorCompacto(l.total, unidade)}<br>`
+          + `Saldo: ${formatarValorCompacto(l.saldo, unidade)}<br>`
+          + `Participação no total movimentado: ${l.participacao_pct.toFixed(1)}%`;
+      },
+    },
+  }), true);
+}
+
+function renderizarUnidadesFora(lista) {
+  const el = document.getElementById("unidadesFora");
+  if (!lista || !lista.length) { el.innerHTML = ""; return; }
+  el.innerHTML = `<ul class="estadosLista">` + lista.map(u => `
+    <li class="estado-${escaparHtml(u.estado)}">
+      <strong>${escaparHtml(u.chave)}</strong> — ${escaparHtml(u.nome)}
+      <span class="estadoTag">${escaparHtml(u.estado_tag)}</span>
+      <span class="estadoNota">${escaparHtml(u.estado_nota)}</span>
+    </li>`).join("") + `</ul>`;
+}
+
+/* ---- matriz (Tabulator) ---------------------------------------------------- */
+let tabelaMatriz = null;
+let unidadeMatriz = "";
+let maiorAbsMatriz = 0;
+
+function irParaPagina(delta) {
+  const dados = ultimoPayload.matriz;
+  if (!dados) return;
+  const ultima = Math.max(1, Math.ceil(dados.total_linhas / MATRIZ_TAMANHO_PAGINA));
+  const nova = Math.min(ultima, Math.max(1, matrizPagina + delta));
+  if (nova === matrizPagina) return;
+  matrizPagina = nova;
+  atualizarSecaoGrandeza();
+}
+
+// Heatmap leve: intensidade relativa ao maior valor ABSOLUTO da pagina. Na
+// direcao saldo a escala e divergente (negativo puxa a cor de alerta), porque
+// ali o sinal e a informacao principal.
+function fundoDaCelula(valor) {
+  if (!maiorAbsMatriz || valor === 0) return "transparent";
+  const intensidade = Math.min(1, Math.abs(valor) / maiorAbsMatriz);
+  const alfa = (0.06 + 0.45 * intensidade).toFixed(3);
+  const rgb = valor < 0 ? cor("--heat-neg-rgb") : cor("--heat-rgb");
+  return `rgba(${rgb}, ${alfa})`;
+}
+
+function celulaMatriz(cell) {
+  const linha = cell.getRow().getData();
+  const el = cell.getElement();
+  if (linha._nota) { el.style.background = "transparent"; return ""; }
+  const valor = cell.getValue();
+  if (valor === null || valor === undefined) {
+    el.style.background = "transparent";
+    el.setAttribute("title", NOTA_CELULA_FORA_DE_ESCOPO);
+    return `<span class="celulaVazia">—</span>`;
+  }
+  el.style.background = fundoDaCelula(valor);
+  el.removeAttribute("title");
+  return escaparHtml(formatarValorCompacto(valor, unidadeMatriz));
+}
+
+function linhaParaTabulator(l, dimensao) {
+  const dados = { chave: l.chave };
+  Object.keys(l.valores).forEach(comp => { dados[comp] = l.valores[comp]; });
+  // um nivel de abertura (unidade -> clientes daquela unidade), carregado sob
+  // demanda no expandir: reaproveita o proprio endpoint da matriz com
+  // dimensao=cliente&filial=<sigla>, sem dimensao combinada nova no backend
+  if (dimensao === "unidade") {
+    dados._children = [{ chave: "abrindo clientes…", _nota: true }];
+  }
+  return dados;
+}
+
+function montarMatriz(dados, dimensao) {
+  const el = document.getElementById("matriz");
+  const msg = document.getElementById("matrizMsg");
+  const f = filtrosAtuais();
+  unidadeMatriz = ultimoPayload.evolucao ? ultimoPayload.evolucao.unidade : "";
+  maiorAbsMatriz = 0;
+  dados.linhas.forEach(l => Object.keys(l.valores).forEach(comp => {
+    const v = l.valores[comp];
+    if (v !== null && v !== undefined) maiorAbsMatriz = Math.max(maiorAbsMatriz, Math.abs(v));
+  }));
+
+  document.getElementById("matrizTitulo").textContent = dimensao === "unidade"
+    ? `Matriz · unidade por competência · ${ROTULO_DIRECAO[f.direcao]}`
+    : `Matriz · clientes da ${f.filial} por competência · ${ROTULO_DIRECAO[f.direcao]}`;
+  const notasMatriz = (dados.limitacoes || []).slice();
+  if (dimensao === "unidade") {
+    notasMatriz.push("Clique na seta da unidade para abrir os clientes dela.");
+  }
+  // mesma declaracao que o ranking ja fazia (achado da revisao independente): a
+  // matriz de clientes tambem descarta o filtro de cliente, inclusive na
+  // expansao de uma unidade
+  if (f.cliente) {
+    notasMatriz.push("O filtro de cliente NÃO se aplica a esta matriz — ela compara os clientes "
+      + "entre si.");
+  }
+  document.getElementById("notaMatriz").textContent = notasMatriz.join(" · ");
+
+  const ultima = Math.max(1, Math.ceil(dados.total_linhas / MATRIZ_TAMANHO_PAGINA));
+  document.getElementById("matrizPos").textContent =
+    `página ${dados.pagina} de ${ultima} · ${dados.total_linhas} linha(s)`;
+  document.getElementById("btnMatrizAnterior").disabled = dados.pagina <= 1;
+  document.getElementById("btnMatrizProxima").disabled = dados.pagina >= ultima;
+
+  if (typeof Tabulator === "undefined") {
+    // CDN indisponivel: falha declarada, nao caixa vazia. A exportacao CSV
+    // continua funcionando -- ela e montada do JSON, nao da tabela.
+    msg.innerHTML = `<div class="msg msg-erro">A biblioteca da matriz (Tabulator, via CDN) não carregou — `
+      + `a tabela não pode ser desenhada. Os demais visuais e a exportação CSV continuam válidos.</div>`;
+    el.innerHTML = "";
+    return;
+  }
+  msg.innerHTML = "";
+
+  const colunas = [{
+    title: dimensao === "unidade" ? "Unidade" : "Cliente", field: "chave",
+    frozen: true, minWidth: 200, headerSort: true,
+    formatter: c => (c.getRow().getData()._nota
+      ? `<span class="celulaVazia">${escaparHtml(c.getValue())}</span>`
+      : escaparHtml(c.getValue())),
+  }];
+  dados.colunas.forEach(comp => colunas.push({
+    title: competenciaCurta(comp), field: comp, hozAlign: "right",
+    minWidth: 110, headerSort: true, formatter: celulaMatriz,
+  }));
+
+  if (tabelaMatriz) { tabelaMatriz.destroy(); tabelaMatriz = null; }
+  el.innerHTML = "";
+  tabelaMatriz = new Tabulator(el, {
+    data: dados.linhas.map(l => linhaParaTabulator(l, dimensao)),
+    columns: colunas,
+    layout: "fitDataStretch",
+    height: Math.min(560, 78 + dados.linhas.length * 31),
+    dataTree: dimensao === "unidade",
+    dataTreeStartExpanded: false,
+    dataTreeChildField: "_children",
+    placeholder: "Nenhuma linha no recorte.",
+  });
+  if (dimensao === "unidade") {
+    tabelaMatriz.on("dataTreeRowExpanded", row => abrirClientesDaUnidade(row));
+  }
+}
+
+async function abrirClientesDaUnidade(row) {
+  const dados = row.getData();
+  if (dados._carregado) return;
+  const f = filtrosAtuais();
+  const p = paramsDados(f, ["filial", "cliente"]);
+  p.set("grandeza", f.grandeza);
+  p.set("direcao", f.direcao);
+  p.set("dimensao", "cliente");
+  p.set("filial", dados.chave);
+  p.set("pagina", "1");
+  p.set("tamanho_pagina", String(MATRIZ_TAMANHO_PAGINA));
+  try {
+    const filhos = await api(`/cockpit/volumetria/matriz?${p}`);
+    const linhas = filhos.linhas.map(l => linhaParaTabulator(l, "cliente"));
+    const restantes = filhos.total_linhas - linhas.length;
+    if (restantes > 0) {
+      // corte declarado, nunca silencioso
+      linhas.push({ chave: `+ ${restantes} cliente(s) além dos ${linhas.length} maiores`, _nota: true });
+    }
+    row.update({
+      _carregado: true,
+      _children: linhas.length ? linhas : [{ chave: "sem clientes no recorte", _nota: true }],
+    });
+  } catch (e) {
+    row.update({ _carregado: true, _children: [{ chave: `erro ao abrir: ${e.message}`, _nota: true }] });
+  }
+}
+
+/* ---- exportacao CSV -------------------------------------------------------- */
+// Montado do JSON da matriz, nao do DOM: o que sai no arquivo e o numero que o
+// backend devolveu, sem passar pelo formatador da tela. Celula fora de escopo
+// sai VAZIA, nunca 0 -- exportar zero ali transformaria "nao medimos" em
+// "mediu e deu zero", que e o defeito que este projeto mais persegue.
+function csvCampo(texto) {
+  const valor = String(texto === null || texto === undefined ? "" : texto);
+  return /[;"\n]/.test(valor) ? `"${valor.replace(/"/g, '""')}"` : valor;
+}
+
+function csvNumero(valor) {
+  if (valor === null || valor === undefined) return "";
+  return valor.toLocaleString("pt-BR", { maximumFractionDigits: 3, useGrouping: false });
+}
+
+async function exportarMatrizCsv() {
+  const f = filtrosAtuais();
+  const msg = document.getElementById("matrizMsg");
+  const dimensao = ultimoPayload.matrizDimensao || "unidade";
+  const botao = document.getElementById("btnExportarCsv");
+  botao.disabled = true;
+  try {
+    const p = paramsDados(f, dimensao === "unidade" ? ["filial"] : ["cliente"]);
+    p.set("grandeza", f.grandeza);
+    p.set("direcao", f.direcao);
+    p.set("dimensao", dimensao);
+    p.set("pagina", "1");
+    p.set("tamanho_pagina", String(MATRIZ_TETO_EXPORTACAO));
+    const dados = await api(`/cockpit/volumetria/matriz?${p}`);
+
+    const cabecalho = [dimensao === "unidade" ? "Unidade" : "Cliente"].concat(dados.colunas);
+    const linhas = [cabecalho.map(csvCampo).join(";")];
+    dados.linhas.forEach(l => {
+      linhas.push([csvCampo(l.chave)].concat(dados.colunas.map(c => csvNumero(l.valores[c]))).join(";"));
+    });
+
+    const cortadas = dados.total_linhas - dados.linhas.length;
+    // o rodape declara o que foi DE FATO enviado (achado da revisao
+    // independente): montado a partir de `f`, ele afirmava `cliente=SAPORE` num
+    // arquivo com todos os clientes do armazem, porque a dimensao cliente nao
+    // aceita esse filtro. O arquivo circula desacoplado da tela -- se ele mente
+    // sobre o recorte, quem abre nao tem como descobrir.
+    const ignorado = CAMPOS_DADOS.filter(k => f[k] && !p.has(k));
+    const rodape = [
+      "",
+      `# Nuvem IA · matriz de volumetria · grandeza=${f.grandeza} · direcao=${f.direcao} · dimensao=${dimensao}`,
+      `# filtros aplicados: ${CAMPOS_DADOS.map(k => `${k}=${p.get(k) || "todos"}`).join(" · ")}`,
+      `# unidade de medida: ${unidadeMatriz || "-"} (valores como o backend devolveu, sem arredondamento de tela)`,
+      "# celula vazia = fora do escopo de medicao (saida medida a partir de jan/2026), NAO zero",
+    ];
+    if (ignorado.length) {
+      rodape.push(`# ATENCAO: o filtro ${ignorado.join(", ")} NAO se aplica a dimensao `
+        + `${dimensao} e NAO foi aplicado neste arquivo`);
+    }
+    (dados.limitacoes || []).forEach(l => rodape.push(`# limitacao: ${l}`));
+    if (cortadas > 0) {
+      rodape.push(`# ATENCAO: exportadas ${dados.linhas.length} de ${dados.total_linhas} linhas `
+        + `(teto de ${MATRIZ_TETO_EXPORTACAO}); ${cortadas} linha(s) NAO estao neste arquivo`);
+      msg.innerHTML = `<div class="msg msg-info">CSV exportado com ${dados.linhas.length} de `
+        + `${dados.total_linhas} linhas (teto de ${MATRIZ_TETO_EXPORTACAO}). O arquivo declara o corte.</div>`;
+    } else {
+      msg.innerHTML = `<div class="msg msg-info">CSV exportado com as ${dados.linhas.length} linha(s) do recorte.</div>`;
+    }
+
+    // BOM: sem ele o Excel pt-BR abre os acentos errados
+    const conteudo = "﻿" + linhas.concat(rodape).join("\r\n");
+    const url = URL.createObjectURL(new Blob([conteudo], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `matriz_${f.grandeza}_${f.direcao}_${dimensao}`
+      + `${f.de ? "_de" + f.de : ""}${f.ate ? "_ate" + f.ate : ""}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    msg.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
+  } finally {
+    botao.disabled = false;
+  }
+}
+
+/* ---- qualidade ------------------------------------------------------------- */
+// Rotulo legivel do status de processamento -- a mesma correcao que o V2.1.1
+// fez no /nuvem ("sem movimento" em vez de `sem_dado`) e que o cockpit tinha
+// ficado sem (achado da revisao independente). Status desconhecido cai no
+// proprio identificador, nunca em branco.
+const ROTULO_STATUS_PROC = {
+  ok: "Processados",
+  erro: "Com erro",
+  sem_dado: "Sem movimento (arquivo só com cabeçalho)",
+  pendencia_depara: "Aguardando de-para de filial",
+};
+
+function renderizarQualidade(q, peso) {
   const status = q.por_status || {};
   const linhas = Object.entries(status).map(([nome, s]) =>
-    `<div><strong>${escaparHtml(nome)}:</strong> ${s.arquivos} arquivo(s), ${s.linhas_validas} linha(s) válida(s), ${s.medidas_gravadas} medida(s) gravada(s)</div>`
+    `<div><strong>${escaparHtml(ROTULO_STATUS_PROC[nome] || nome)}:</strong> ${s.arquivos} arquivo(s), ${s.linhas_validas} linha(s) válida(s), ${s.medidas_gravadas} medida(s) gravada(s)</div>`
   ).join("") || "<div>Nenhum processamento no recorte.</div>";
 
   const pendFilial = (q.pendencias_filial || []).map(p =>
@@ -426,103 +1280,21 @@ function renderizarQualidade(q, pesoBrutoKg) {
   const pendTipoEstoque = (q.pendencias_tipo_estoque || []).map(p =>
     `<li>Valor <strong>${escaparHtml(p.valor_na_fonte)}</strong> de "Nome Estoque" não classificado em nenhum tipo.</li>`).join("");
 
+  const pesoDetalhado = peso
+    ? `<div><strong>Peso bruto (detalhado):</strong> entrada ${escaparHtml(formatarToneladasDetalhado(peso.entrada))}`
+      + (peso.saida === null ? "" : ` · saída ${escaparHtml(formatarToneladasDetalhado(peso.saida))}`
+        + ` · saldo ${escaparHtml(formatarToneladasDetalhado(peso.saldo))}`)
+      + `</div>`
+    : "";
+
   document.getElementById("cockpitQualidade").innerHTML = `
-    ${pesoBrutoKg != null ? `<div><strong>Peso bruto (detalhado):</strong> ${escaparHtml(formatarToneladasDetalhado(pesoBrutoKg))}</div>` : ""}
+    ${pesoDetalhado}
     <div><strong>Total de arquivos processados no recorte:</strong> ${q.total_arquivos}</div>
     ${linhas}
     ${pendFilial ? `<ul class="pendenciasLista">${pendFilial}</ul>` : ""}
     ${pendCliente ? `<ul class="pendenciasLista">${pendCliente}</ul>` : ""}
     ${pendTipoEstoque ? `<ul class="pendenciasLista">${pendTipoEstoque}</ul>` : ""}
   `;
-}
-
-// V2.4: /datahub/serie foi substituido por /cockpit/volumetria/evolucao, que
-// recebe `grandeza` (par entrada/saida) em vez de `metrica` (uma so). O
-// grafico desta secao continua mostrando SO a entrada, igual antes -- mostrar
-// entrada x saida x saldo junto e desenho visual da V2.5, nao deste lote.
-const GRANDEZA_DA_METRICA_FOCO = {
-  peso_bruto_entrada: "peso",
-  valor_mercadoria_entrada: "valor",
-};
-
-async function atualizarSecaoMetrica() {
-  const f = filtrosAtuais();
-  const metrica = document.getElementById("metricaFoco").value;
-  const grandeza = GRANDEZA_DA_METRICA_FOCO[metrica] || "peso";
-  renderizarLinkLinhagem(f);
-  const msgDiv = document.getElementById("cockpitMsg");
-  try {
-    const [serie, filiais, clientes] = await Promise.all([
-      api(`/cockpit/volumetria/evolucao?grandeza=${grandeza}&${query(f)}`),
-      api(`/cockpit/comparacao/filiais?metrica=${metrica}&${query({ de: f.de, ate: f.ate, cliente: f.cliente })}`),
-      api(`/cockpit/comparacao/clientes?metrica=${metrica}&${query({ de: f.de, ate: f.ate, filial: f.filial })}`),
-    ]);
-    renderizarSerie(serie);
-    renderizarVariacao(serie);
-    renderizarRanking("chartFiliais", filiais, null);
-    renderizarRanking("chartClientes", clientes, 10);
-  } catch (e) {
-    msgDiv.innerHTML = `<div class="msg msg-erro">${escaparHtml(e.message)}</div>`;
-  }
-}
-
-function renderizarSerie(serie) {
-  const pontos = serie.mensal || [];
-  const unidade = serie.unidade;
-  grafico("chartSerie").setOption(baseOption({
-    xAxis: { type: "category", data: pontos.map(p => competenciaCurta(p.competencia)),
-      axisLine: { lineStyle: { color: CORES.grid } } },
-    yAxis: { type: "value", axisLabel: { formatter: v => formatarValorPorUnidade(v, unidade) }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
-    series: [{
-      type: "line", data: pontos.map(p => p.entrada), smooth: true, symbolSize: 7,
-      lineStyle: { color: CORES.principal, width: 3 }, itemStyle: { color: CORES.principal },
-      areaStyle: { color: "rgba(30,111,217,0.10)" },
-    }],
-    tooltip: { trigger: "axis", valueFormatter: v => formatarValorPorUnidade(v, unidade) },
-  }), true);
-}
-
-function renderizarVariacao(serie) {
-  const pontos = serie.mensal || [];
-  const variacoes = pontos.slice(1).map((p, i) => {
-    const anterior = pontos[i].entrada;
-    const percentual = anterior ? ((p.entrada - anterior) / anterior) * 100 : null;
-    return { competencia: p.competencia, percentual };
-  });
-  grafico("chartVariacao").setOption(baseOption({
-    xAxis: { type: "category", data: variacoes.map(v => competenciaCurta(v.competencia)),
-      axisLine: { lineStyle: { color: CORES.grid } } },
-    yAxis: { type: "value", axisLabel: { formatter: "{value}%" }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
-    series: [{
-      type: "bar", data: variacoes.map(v => v.percentual == null ? 0 : Number(v.percentual.toFixed(1))),
-      itemStyle: { color: p => (p.value >= 0 ? CORES.principal : "#b3261e") },
-      barMaxWidth: 28,
-    }],
-    tooltip: { trigger: "axis", valueFormatter: v => `${v}%` },
-  }), true);
-}
-
-function renderizarRanking(elId, dados, limite) {
-  const ranking = (dados.ranking || []).slice(0, limite || dados.ranking.length);
-  const maiorPrimeiro = [...ranking].reverse(); // ECharts horizontal bar desenha de baixo pra cima
-  const unidade = dados.metrica.unidade;
-  grafico(elId).setOption(baseOption({
-    grid: { left: 130, right: 50, top: 10, bottom: 10 },
-    xAxis: { type: "value", axisLabel: { formatter: v => formatarValorPorUnidade(v, unidade) }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
-    yAxis: { type: "category", data: maiorPrimeiro.map(r => r.rotulo), axisLine: { lineStyle: { color: CORES.grid } } },
-    series: [{
-      type: "bar", data: maiorPrimeiro.map((r, i) => ({
-        value: r.valor,
-        itemStyle: { color: i === maiorPrimeiro.length - 1 ? CORES.amarelo : CORES.conexao },
-      })),
-      label: { show: true, position: "right", formatter: p => `${maiorPrimeiro[p.dataIndex].percentual.toFixed(1)}%`, color: CORES.institucional },
-      barMaxWidth: 22,
-    }],
-    tooltip: {
-      trigger: "item",
-      formatter: p => `${escaparHtml(maiorPrimeiro[p.dataIndex].rotulo)}<br>${formatarValorPorUnidade(maiorPrimeiro[p.dataIndex].valor, unidade)} (${maiorPrimeiro[p.dataIndex].percentual.toFixed(1)}%)`,
-    },
-  }), true);
 }
 </script>
 </body>

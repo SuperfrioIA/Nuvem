@@ -29,6 +29,7 @@ entrada/saida (e contagem distinta) -- fica em `resumo`, junto com o balde
 empurraram essa uniao explicitamente pro V2.4).
 """
 
+from ..seed_datahub import TIPO_CONECTOR
 from . import serie_datahub
 from .processamento_datahub import COMPETENCIA_MINIMA_SAIDA
 
@@ -44,6 +45,52 @@ _LIMITACAO_SEM_PAR_SAIDA = (
     "grandeza 'valor' nao tem par de saida: a fonte SAIDA_MERCADORIAS nao tem "
     "coluna de valor em nenhuma unidade (decisao D1, V2.3)."
 )
+
+# Estado de unidade que NAO tem linha no ranking do recorte (V2.5). Nao
+# aparecer no ranking tem tres causas diferentes, e ate o V2.4 a tela nao
+# distinguia nenhuma delas -- a unidade simplesmente desaparecia, e "zero
+# medido" ficava indistinguivel de "encerrou operacao" e de "nao medimos"
+# (proposta_v3_volumetria.md, secao V2.5). Mesmo padrao de rotulo do
+# nuvem_datahub.ROTULO_ESTADO: tag curta + nota que explica a ausencia.
+ESTADO_FORA_DE_OPERACAO = "fora_de_operacao"
+ESTADO_SEM_MOVIMENTO_NO_PERIODO = "sem_movimento_no_periodo"
+ESTADO_SEM_DADO_INGERIDO = "sem_dado_ingerido"
+
+ROTULO_ESTADO_UNIDADE = {
+    ESTADO_FORA_DE_OPERACAO: {
+        "tag": "Fora de operação",
+        # Nao afirma que ha historico (a unidade pode estar inativa e nunca ter
+        # medido nada) NEM que o encerramento cobre o recorte pedido: `ativo` e
+        # estado de HOJE, sem data de encerramento no cadastro. Achado da
+        # revisao independente: "a ausencia E encerramento" era falso pra
+        # recorte anterior ao encerramento (a RMSPIII operou ate meados de
+        # 2026). O que a frase garante e o que o cadastro garante.
+        "nota": "Unidade inativa no cadastro hoje — a ausência pode ser encerramento "
+                "de operação, e não queda de volume. O cadastro não guarda a data de "
+                "encerramento, então confira o período.",
+    },
+    ESTADO_SEM_MOVIMENTO_NO_PERIODO: {
+        "tag": "Sem movimento no período",
+        # NAO diz "zero medido de verdade" (achado da revisao independente): o
+        # que o codigo sabe e que existe celula desta grandeza em ALGUMA
+        # competencia, nunca que o recorte pedido foi medido. Arquivo do periodo
+        # em `erro`/`pendencia_depara`, ou competencia ainda nao publicada,
+        # produzem exatamente esta ausencia -- e afirmar medicao ali seria
+        # apresentar "nao medimos" como "mediu e deu zero", que e a distincao
+        # que o V2.1.1 criou (`sem_dado` x `erro`) e que este estado apagaria.
+        # Melhoria registrada: derivar um quarto estado de
+        # `processamentos_datahub` (nenhum processamento terminal nas
+        # competencias do recorte) -- ver docs/V2_5_PLANO_EXECUCAO.md.
+        "nota": "Unidade ativa, com histórico na série e nenhuma medida gravada neste "
+                "recorte. Confira em “Qualidade e origem dos dados” se todos os "
+                "arquivos do período foram processados antes de ler isto como zero.",
+    },
+    ESTADO_SEM_DADO_INGERIDO: {
+        "tag": "Sem dado ingerido",
+        "nota": "Unidade ativa e sem nenhuma medida desta grandeza em toda a série "
+                "— não medimos, e isso não é o mesmo que zero.",
+    },
+}
 _LIMITACAO_ESCOPO_SAIDA = (
     "saida so cobre competencia a partir de 2026-01 (decisao D3, V2.3) -- "
     "periodos anteriores entram so com entrada nesta resposta."
@@ -104,6 +151,15 @@ def evolucao(cur, grandeza, de=None, ate=None, filial=None, cliente=None, tipo_e
 
     acumulado_entrada = serie_entrada["acumulado"]
     acumulado_saida = serie_saida["acumulado"] if serie_saida else None
+    # Achado da revisao independente: o mensal ja tratava mes fora de escopo
+    # como None, mas o acumulado nao -- `serie()` devolve 0.0 quando nao ha
+    # linha, e um intervalo INTEIRAMENTE anterior a 2026-01 publicava
+    # "saida 0 / saldo = entrada" num card rotulado "total movimentado". Saldo
+    # que ninguem apurou. Hoje o dado real nao alcanca esse caso (a entrada por
+    # item tambem so existe em 2026, decisao 7), mas alcanca no dia em que
+    # qualquer competencia anterior tiver entrada.
+    if acumulado_saida is not None and ate is not None and ate < _LIMITE_SAIDA:
+        acumulado_saida = None
     acumulado = {
         "entrada": acumulado_entrada,
         "saida": acumulado_saida,
@@ -158,7 +214,10 @@ def resumo(cur, de=None, ate=None, filial=None, cliente=None, tipo_estoque=None)
     limitacoes = []
     for grandeza in ("peso", "registros", "valor"):
         pontos = evolucao(cur, grandeza, de=de, ate=ate, filial=filial, cliente=cliente, tipo_estoque=tipo_estoque)
-        grandezas[grandeza] = pontos["acumulado"]
+        # `unidade` junto do acumulado (V2.5): sem ela o card teria que saber de
+        # cor que peso e kg e valor e R$ -- conhecimento do catalogo de metricas
+        # duplicado na tela, que e como o rotulo comeca a divergir do dado.
+        grandezas[grandeza] = {**pontos["acumulado"], "unidade": pontos["unidade"]}
         for limitacao in pontos["limitacoes"]:
             if limitacao not in limitacoes:
                 limitacoes.append(limitacao)
@@ -199,11 +258,16 @@ def resumo(cur, de=None, ate=None, filial=None, cliente=None, tipo_estoque=None)
     }
 
 
-def ranking(cur, grandeza, dimensao, de=None, ate=None, filial=None, cliente=None, tipo_estoque=None) -> dict:
+def ranking(cur, grandeza, dimensao, de=None, ate=None, filial=None, cliente=None,
+            tipo_estoque=None, limite=None) -> dict:
     """Ranking com entrada/saida/total/saldo/participacao por linha. Endpoint
     NOVO e ADICIONAL -- nao substitui `cockpit.comparar_filiais/clientes`
-    (que continuam servindo o grafico atual de uma metrica so; dois rankings
-    lado a lado na tela e V2.5)."""
+    (que continuam servindo `/cockpit/comparacao/*`, de uma metrica so).
+
+    Em `dimensao=unidade` a resposta tambem traz `unidades_fora_do_ranking`
+    (V2.5): quem esta cadastrado e nao tem linha no recorte, com o estado que
+    explica a ausencia. Em `dimensao=cliente` o campo vem `None` -- ver
+    `_unidades_fora_do_ranking`."""
     if dimensao not in ("unidade", "cliente"):
         raise VolumetriaError(f"dimensao desconhecida (use unidade ou cliente): {dimensao!r}")
     if dimensao == "unidade" and filial:
@@ -256,11 +320,54 @@ def ranking(cur, grandeza, dimensao, de=None, ate=None, filial=None, cliente=Non
         l["participacao_pct"] = round(l["total"] / total_geral * 100, 1) if total_geral else 0.0
     linhas.sort(key=lambda l: l["total"], reverse=True)
 
+    total_linhas = len(linhas)
+    linha_outros = None
+    if limite is not None and total_linhas > limite:
+        # Top N com BUCKET (V2.7), nao top N puro: o resto vira uma linha
+        # "Outros (N)" com a soma, entao a coluna de participacao continua
+        # fechando 100% e ninguem le o ranking cortado como se fosse o total.
+        # Cortar sem bucket e o defeito classico de ranking limitado -- a
+        # diferenca aparece como se nao existisse.
+        resto = linhas[limite:]
+        linhas = linhas[:limite]
+        somar = lambda campo: sum(l[campo] for l in resto if l[campo] is not None)  # noqa: E731
+        tem_saida = any(l["saida"] is not None for l in resto)
+        entrada_resto = somar("entrada")
+        saida_resto = somar("saida") if tem_saida else None
+        linha_outros = {
+            "chave": f"Outros ({len(resto)})",
+            "entrada": entrada_resto,
+            "saida": saida_resto,
+            "total": somar("total"),
+            "saldo": entrada_resto - saida_resto if saida_resto is not None else None,
+            "participacao_pct": round(somar("total") / total_geral * 100, 1) if total_geral else 0.0,
+            "bucket": True,
+            "linhas_agrupadas": len(resto),
+        }
+        linhas.append(linha_outros)
+
     limitacoes = []
+    if linha_outros is not None:
+        limitacoes.append(
+            f"ranking limitado as {limite} maiores linhas de um total de {total_linhas}: "
+            f"as demais estao somadas na linha {linha_outros['chave']!r} (nenhuma foi descartada)."
+        )
     if saida_info is None:
         limitacoes.append(_LIMITACAO_SEM_PAR_SAIDA)
     elif _inclui_periodo_fora_do_escopo_saida(de):
         limitacoes.append(_LIMITACAO_ESCOPO_SAIDA)
+
+    # so na dimensao unidade (V2.5): o conjunto de unidades e fechado e
+    # cadastrado (`armazens`), entao da pra dizer QUEM ficou fora e por que. O
+    # conjunto de clientes nao e fechado desse jeito -- listar "clientes sem
+    # movimento" seria despejar o cadastro inteiro na tela.
+    unidades_fora = None
+    if dimensao == "unidade":
+        ids = [entrada_info["id"]] + ([saida_info["id"]] if saida_info else [])
+        # `chaves_com_linha` vem do ranking COMPLETO, nao da pagina/top N: uma
+        # unidade que caiu no bucket "Outros" tem linha, so nao esta visivel --
+        # declara-la como "sem movimento no periodo" seria falso.
+        unidades_fora = _unidades_fora_do_ranking(cur, ids, chaves)
 
     return {
         "grandeza": grandeza,
@@ -268,8 +375,69 @@ def ranking(cur, grandeza, dimensao, de=None, ate=None, filial=None, cliente=Non
         "unidade": entrada_info["unidade"],
         "filtros": {"de": de, "ate": ate, "filial": filial, "cliente": cliente, "tipo_estoque": tipo_estoque_resolvido},
         "linhas": linhas,
+        "total_linhas": total_linhas,
+        "unidades_fora_do_ranking": unidades_fora,
         "limitacoes": limitacoes,
     }
+
+
+def _unidades_fora_do_ranking(cur, metrica_ids, siglas_no_ranking) -> list[dict]:
+    """Unidades do universo da volumetria SEM linha no ranking do recorte, cada
+    uma com o estado que explica a ausencia (ver ROTULO_ESTADO_UNIDADE).
+
+    O universo NAO e a tabela `armazens` inteira: o cadastro tem as ~28 filiais
+    da empresa (seed_depara.py), e listar Manaus como "sem dado ingerido" na
+    tela de volumetria do DataHub seria ruido, nao informacao. Universo = quem
+    tem de-para do conector do DataHub (as unidades que a fonte poderia medir)
+    UNIAO quem tem historico destas metricas (pega celula de armazem que perdeu
+    o de-para depois de ja ter serie).
+
+    "Tem historico" e proposital sem NENHUM filtro do recorte (nem periodo, nem
+    cliente, nem tipo de estoque): a pergunta e "esta unidade ja mediu esta
+    grandeza alguma vez?", nao "mediu dentro deste recorte" -- se tivesse medido
+    dentro do recorte, estaria no ranking. Com os filtros aplicados aqui, a nota
+    de `sem_dado_ingerido` ("sem nenhuma medida em toda a serie") viraria
+    mentira no primeiro filtro de cliente: a unidade poderia ter serie inteira e
+    nada daquele cliente."""
+    where, params = serie_datahub.filtros_sql(metrica_ids, None, None, None, None)
+    cur.execute(f"SELECT DISTINCT armazem_id FROM medidas WHERE {where}", params)
+    com_historico = {linha[0] for linha in cur.fetchall() if linha[0] is not None}
+
+    cur.execute(
+        """
+        SELECT DISTINCT d.armazem_id
+        FROM depara_armazem d
+        JOIN conectores c ON c.id = d.conector_id
+        WHERE c.tipo = %s
+        """,
+        (TIPO_CONECTOR,),
+    )
+    universo = com_historico | {linha[0] for linha in cur.fetchall()}
+    if not universo:
+        return []
+
+    cur.execute(
+        "SELECT id, sigla, nome, ativo FROM armazens WHERE id = ANY(%s) ORDER BY sigla",
+        (sorted(universo),),
+    )
+    fora = []
+    for armazem_id, sigla, nome, ativo in cur.fetchall():
+        if sigla in siglas_no_ranking:
+            continue
+        if not ativo:
+            estado = ESTADO_FORA_DE_OPERACAO
+        elif armazem_id in com_historico:
+            estado = ESTADO_SEM_MOVIMENTO_NO_PERIODO
+        else:
+            estado = ESTADO_SEM_DADO_INGERIDO
+        fora.append({
+            "chave": sigla,
+            "nome": nome,
+            "estado": estado,
+            "estado_tag": ROTULO_ESTADO_UNIDADE[estado]["tag"],
+            "estado_nota": ROTULO_ESTADO_UNIDADE[estado]["nota"],
+        })
+    return fora
 
 
 def _somar_por_dimensao(cur, dimensao, metrica_id, armazem_id, cliente_id, de_data, ate_data, tipo_estoque) -> dict:

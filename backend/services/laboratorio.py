@@ -436,6 +436,45 @@ def listar_sessoes(cur, limite: int = 20) -> list[dict]:
     ]
 
 
+def listar_aprovados(cur, limite: int = 6) -> list[dict]:
+    """Sessões aprovadas, pra faixa "indicadores aprovados no Laboratório" do
+    Cockpit (V2.5) -- até o V2.4 ela era HTML fixo dizendo que não havia nenhum.
+
+    Devolve nome, pergunta de negócio e data, e **nenhum valor**: o que a
+    aprovação gera é ESPECIFICAÇÃO TÉCNICA pra implementação humana, nunca KPI
+    publicado (ver o topo de `insight_aprovado.py` -- a IA não calcula nem
+    publica número). Exibir um número nessa faixa seria publicar indicador por
+    acidente, exatamente o que aquele módulo se recusa a fazer.
+
+    `especificacao` pode ser NULL numa sessão aprovada de banco antigo (a
+    coluna nasceu na migration 0010, depois do fluxo de aprovação): o `->>`
+    devolve None e a tela cai no título da sessão -- nunca derruba a lista."""
+    cur.execute(
+        """
+        SELECT id, titulo, decidido_em,
+               especificacao ->> 'nome' AS nome,
+               especificacao ->> 'pergunta_negocio' AS pergunta_negocio
+        FROM laboratorio_sessoes
+        WHERE status = 'aprovada'
+        -- id desempata pelo mesmo motivo de listar_sessoes: decidido_em e
+        -- now(), o relogio da TRANSACAO
+        ORDER BY decidido_em DESC NULLS LAST, id DESC
+        LIMIT %s
+        """,
+        (limite,),
+    )
+    return [
+        {
+            "sessao_id": linha[0],
+            "titulo": linha[1],
+            "decidido_em": linha[2].isoformat() if linha[2] else None,
+            "nome": linha[3],
+            "pergunta_negocio": linha[4],
+        }
+        for linha in cur.fetchall()
+    ]
+
+
 def obter_sessao(cur, sessao_id: int) -> dict | None:
     cur.execute(
         """

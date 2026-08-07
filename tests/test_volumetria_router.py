@@ -71,8 +71,9 @@ def test_volumetria_resumo_sucesso(cliente, cursor):
         params={"de": "2026-07", "ate": "2026-07"},
     )
     assert resposta.status_code == 200
+    # `unidade` entrou no acumulado no V2.5 (o card da tela nao adivinha kg/R$)
     assert resposta.json()["grandezas"]["peso"] == {
-        "entrada": 100.0, "saida": 40.0, "total": 140.0, "saldo": 60.0,
+        "entrada": 100.0, "saida": 40.0, "total": 140.0, "saldo": 60.0, "unidade": "kg",
     }
 
 

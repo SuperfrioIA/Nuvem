@@ -52,6 +52,20 @@ def sessoes(limite: int = Query(20, ge=1, le=100)):
             return {"sessoes": laboratorio.listar_sessoes(cur, limite=limite)}
 
 
+@router.get("/aprovados")
+def aprovados(limite: int = Query(6, ge=1, le=50)):
+    """Faixa "indicadores aprovados no Laboratório" do Cockpit (V2.5).
+
+    Sem número nenhum na resposta, de propósito: o que existe aqui é
+    especificação técnica aprovada, não KPI publicado (ver
+    `laboratorio.listar_aprovados`). Rota declarada ANTES de
+    `/sessoes/{sessao_id}` por clareza de leitura -- os dois caminhos não
+    colidem (prefixos diferentes)."""
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            return {"aprovados": laboratorio.listar_aprovados(cur, limite=limite)}
+
+
 @router.get("/sessoes/{sessao_id}")
 def sessao(sessao_id: int):
     with get_conn() as conn:

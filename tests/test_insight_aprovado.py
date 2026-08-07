@@ -165,6 +165,61 @@ def test_descartar_sessao_ja_decidida_falha(monkeypatch, cursor):
         insight_aprovado.descartar(cursor, sessao["id"])
 
 
+# --- listar_aprovados (faixa do Cockpit, V2.5) ---------------------------------
+
+
+def test_listar_aprovados_traz_nome_e_pergunta_e_nenhum_numero(monkeypatch, cursor):
+    """A faixa do Cockpit exibe ESPECIFICACAO aprovada, nao KPI publicado --
+    por isso a resposta nao pode carregar valor nenhum. Exibir numero ali
+    publicaria indicador por acidente, o oposto do que este modulo faz."""
+    sessao = _sessao_com_chat(monkeypatch, cursor)
+    monkeypatch.setattr(ia_client, "enviar_mensagem", lambda **kw: _resposta_estruturada())
+    insight_aprovado.aprovar(cursor, sessao["id"])
+
+    aprovados = laboratorio.listar_aprovados(cursor)
+
+    assert len(aprovados) == 1
+    assert aprovados[0]["nome"] == _RASCUNHO["nome"]
+    assert aprovados[0]["pergunta_negocio"] == _RASCUNHO["pergunta_negocio"]
+    assert aprovados[0]["sessao_id"] == sessao["id"]
+    assert aprovados[0]["decidido_em"] is not None
+    assert set(aprovados[0]) == {"sessao_id", "titulo", "decidido_em", "nome", "pergunta_negocio"}
+
+
+def test_listar_aprovados_ignora_sessao_nao_decidida_e_descartada(monkeypatch, cursor):
+    """Duas sessoes, uma em cada estado nao-aprovado -- com uma so, o caso "nao
+    decidida" nao era exercitado (achado da revisao independente: o nome do
+    teste afirmava dois casos e testava um)."""
+    perfilada = _sessao_com_chat(monkeypatch, cursor)
+    assert laboratorio.listar_aprovados(cursor) == []  # perfilada, nao decidida
+
+    descartada = _sessao_com_chat(monkeypatch, cursor)
+    insight_aprovado.descartar(cursor, descartada["id"])
+    assert laboratorio.listar_aprovados(cursor) == []  # descartada + perfilada
+
+    # e a primeira continua la, NAO DECIDIDA -- nao foi ela que saiu da lista.
+    # O status exato depende do fluxo (conversar move pra `em_analise`); o que
+    # importa aqui e nao ser terminal.
+    assert laboratorio.obter_sessao(cursor, perfilada["id"])["status"] not in ("aprovada", "descartada")
+
+
+def test_listar_aprovados_sobrevive_a_aprovada_sem_especificacao(monkeypatch, cursor):
+    """`especificacao` nasceu na migration 0010, depois do fluxo de aprovacao:
+    banco antigo pode ter sessao aprovada sem ela. O `->>` devolve None e a
+    tela cai no titulo -- nunca derruba a faixa inteira."""
+    sessao = _sessao_com_chat(monkeypatch, cursor)
+    cursor.execute(
+        "UPDATE laboratorio_sessoes SET status = 'aprovada', decidido_em = now() WHERE id = %s",
+        (sessao["id"],),
+    )
+
+    aprovados = laboratorio.listar_aprovados(cursor)
+    assert len(aprovados) == 1
+    assert aprovados[0]["nome"] is None
+    assert aprovados[0]["pergunta_negocio"] is None
+    assert aprovados[0]["titulo"] == sessao["titulo"]
+
+
 # --- endpoints -----------------------------------------------------------------
 
 
@@ -172,6 +227,14 @@ def test_endpoint_aprovar_e_descartar_sem_login_dao_401(banco_migrado):
     with TestClient(app) as c:
         assert c.post("/api/admin/laboratorio/sessoes/1/aprovar", json={}).status_code == 401
         assert c.post("/api/admin/laboratorio/sessoes/1/descartar", json={}).status_code == 401
+        assert c.get("/api/admin/laboratorio/aprovados").status_code == 401
+
+
+def test_endpoint_aprovados_via_http_com_limite_validado(cliente):
+    assert cliente.get("/api/admin/laboratorio/aprovados").json() == {"aprovados": []}
+    assert cliente.get("/api/admin/laboratorio/aprovados", params={"limite": 0}).status_code == 422
+    assert cliente.get("/api/admin/laboratorio/aprovados", params={"limite": 51}).status_code == 422
+    assert cliente.get("/api/admin/laboratorio/aprovados", params={"limite": 3}).status_code == 200
 
 
 def test_endpoint_aprovar_via_http(cliente, monkeypatch):

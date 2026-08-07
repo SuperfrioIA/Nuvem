@@ -93,6 +93,30 @@ def test_evolucao_acumulado_e_anual_batem_com_a_serie_de_cada_direcao(cursor):
     assert anual[2026] == {"ano": 2026, "entrada": 330.0, "saida": 130.0, "total": 460.0, "saldo": 200.0}
 
 
+def test_evolucao_acumulado_de_periodo_todo_fora_do_escopo_nao_inventa_saida_zero(cursor):
+    """Achado da revisao independente: o mensal ja tratava mes fora de escopo
+    como None, mas o ACUMULADO devolvia `saida=0.0` e `saldo=entrada` -- um
+    saldo que ninguem apurou, num card rotulado "total movimentado"."""
+    _semear_par(cursor)
+    resultado = volumetria.evolucao(cursor, "peso", filial="RMSPIV", ate="2025-12")
+
+    assert resultado["acumulado"]["entrada"] == 70.0
+    assert resultado["acumulado"]["saida"] is None
+    assert resultado["acumulado"]["saldo"] is None
+    assert resultado["acumulado"]["total"] == 70.0
+    assert any("decisao D3" in l for l in resultado["limitacoes"])
+
+
+def test_evolucao_acumulado_com_periodo_dentro_do_escopo_soma_a_saida(cursor):
+    """Contraprova do teste acima: dentro do escopo, saida 0 e zero DE VERDADE
+    (nao ha movimentacao), e o acumulado tem que somar normalmente."""
+    _semear_par(cursor)
+    resultado = volumetria.evolucao(cursor, "peso", filial="RMSPIV", de="2026-06", ate="2026-07")
+    assert resultado["acumulado"] == {
+        "entrada": 330.0, "saida": 130.0, "total": 460.0, "saldo": 200.0,
+    }
+
+
 def test_evolucao_grandeza_valor_nao_tem_par_de_saida(cursor):
     """valor nao tem par de saida (decisao D1, V2.3) -- nunca inventa: saida
     e saldo ficam None, total = entrada, limitacao declarada."""
@@ -159,10 +183,13 @@ def test_resumo_agrega_as_tres_grandezas_e_clientes_lado_a_lado(cursor):
 
     resultado = volumetria.resumo(cursor, filial="RMSPIV")
 
+    # unidade vem junto do acumulado (V2.5) -- o card nao adivinha kg/R$
     assert resultado["grandezas"]["peso"] == {
-        "entrada": 400.0, "saida": 130.0, "total": 530.0, "saldo": 270.0,
+        "entrada": 400.0, "saida": 130.0, "total": 530.0, "saldo": 270.0, "unidade": "kg",
     }
     assert resultado["grandezas"]["valor"]["saida"] is None
+    assert resultado["grandezas"]["valor"]["unidade"] == "R$"
+    assert resultado["grandezas"]["registros"]["unidade"] == "registros"
     # clientes_atendidos: entrada (driver atual, so sapore+gr) e uniao (V2.4,
     # soma Wyda que so aparece na saida) -- lado a lado, nunca uma trocando a outra
     assert resultado["clientes_atendidos"]["entrada"] == 2  # sapore + gr
@@ -255,6 +282,114 @@ def test_ranking_cliente_nao_aceita_filtro_de_cliente(cursor):
 def test_ranking_dimensao_desconhecida_e_recusada(cursor):
     with pytest.raises(volumetria.VolumetriaError, match="dimensao desconhecida"):
         volumetria.ranking(cursor, "peso", "regiao")
+
+
+def test_ranking_unidade_declara_quem_ficou_fora_e_por_que(cursor):
+    """V2.5: unidade sem linha no recorte deixa de simplesmente desaparecer.
+    Os tres estados sao distinguidos -- RMSPIII e inativa no cadastro
+    (encerrou operacao, seed_depara.py), RMSPII aqui tem historico fora do
+    recorte, e as outras do universo do DataHub nunca mediram peso."""
+    peso_e = _id(cursor, "SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
+    rmspiv = _id(cursor, "SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    rmspii = _id(cursor, "SELECT id FROM armazens WHERE sigla = 'RMSPII'")
+    for armazem_id, competencia, valor in (
+        (rmspiv, date(2026, 7, 1), 100.0),   # dentro do recorte -> entra no ranking
+        (rmspii, date(2025, 12, 1), 40.0),   # fora do recorte -> sem movimento no periodo
+    ):
+        cursor.execute(
+            "INSERT INTO medidas (metrica_id, armazem_id, competencia, cliente_id, valor) "
+            "VALUES (%s, %s, %s, NULL, %s)",
+            (peso_e, armazem_id, competencia, valor),
+        )
+
+    resultado = volumetria.ranking(cursor, "peso", "unidade", de="2026-01")
+
+    assert [l["chave"] for l in resultado["linhas"]] == ["RMSPIV"]
+    fora = {u["chave"]: u for u in resultado["unidades_fora_do_ranking"]}
+
+    assert fora["RMSPII"]["estado"] == volumetria.ESTADO_SEM_MOVIMENTO_NO_PERIODO
+    assert fora["RMSPIII"]["estado"] == volumetria.ESTADO_FORA_DE_OPERACAO
+    assert fora["CWBIII"]["estado"] == volumetria.ESTADO_SEM_DADO_INGERIDO
+    # rotulo legivel vem do backend (licao do V2.1: a tela nunca renderiza o
+    # identificador cru)
+    assert fora["RMSPIII"]["estado_tag"] == "Fora de operação"
+    assert "encerramento de operação" in fora["RMSPIII"]["estado_nota"]
+
+    # universo = de-para do DataHub + historico; o cadastro inteiro (28 filiais)
+    # nao entra -- listar Manaus na volumetria do DataHub seria ruido
+    assert "MAO" not in fora
+    assert set(fora) == {"RMSPII", "RMSPIII", "RMSPV", "CWBIII", "RMRJ"}
+
+
+def test_ranking_unidade_fora_ignora_filtro_de_cliente_no_historico(cursor):
+    """A pergunta do estado e "esta unidade ja mediu esta grandeza alguma
+    vez?", nao "mediu deste cliente" -- com o filtro aplicado no historico, a
+    nota de `sem_dado_ingerido` ("sem nenhuma medida em toda a serie") viraria
+    mentira para unidade com serie inteira de outro cliente."""
+    peso_e = _id(cursor, "SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
+    rmspii = _id(cursor, "SELECT id FROM armazens WHERE sigla = 'RMSPII'")
+    gr = _id(cursor, "SELECT id FROM clientes WHERE nk_erp = '02905110'")
+    cursor.execute(
+        "INSERT INTO medidas (metrica_id, armazem_id, competencia, cliente_id, valor) "
+        "VALUES (%s, %s, %s, %s, 40.0)",
+        (peso_e, rmspii, date(2026, 7, 1), gr),
+    )
+
+    # filtro de OUTRO cliente: a RMSPII nao tem linha no recorte, mas tem
+    # historico da grandeza -> sem movimento, nunca "sem dado ingerido"
+    resultado = volumetria.ranking(cursor, "peso", "unidade", cliente="67945071")
+    fora = {u["chave"]: u for u in resultado["unidades_fora_do_ranking"]}
+    assert fora["RMSPII"]["estado"] == volumetria.ESTADO_SEM_MOVIMENTO_NO_PERIODO
+
+
+def test_ranking_por_cliente_nao_traz_unidades_fora(cursor):
+    """O conjunto de clientes nao e fechado como o de unidades -- listar
+    "clientes sem movimento" despejaria o cadastro inteiro na tela."""
+    _semear_ranking(cursor)
+    resultado = volumetria.ranking(cursor, "peso", "cliente")
+    assert resultado["unidades_fora_do_ranking"] is None
+
+
+def test_ranking_com_limite_soma_o_resto_num_bucket_declarado(cursor):
+    """V2.7: top N com BUCKET, nao top N puro -- a participacao continua
+    fechando 100% e ninguem le o ranking cortado como se fosse o total."""
+    _semear_ranking(cursor)
+    resultado = volumetria.ranking(cursor, "peso", "cliente", limite=1)
+
+    assert resultado["total_linhas"] == 3  # sapore + gr + sem cliente
+    chaves = [l["chave"] for l in resultado["linhas"]]
+    assert chaves == ["Sapore", "Outros (2)"]
+
+    outros = resultado["linhas"][-1]
+    assert outros["bucket"] is True
+    assert outros["linhas_agrupadas"] == 2
+    assert outros["entrada"] == 80.0  # gr (50) + sem cliente (30)
+    assert outros["saida"] == 0.0
+    assert outros["total"] == 80.0
+    # participacao das linhas visiveis + bucket fecha 100%
+    assert round(sum(l["participacao_pct"] for l in resultado["linhas"]), 1) == 100.0
+    assert any("nenhuma foi descartada" in l for l in resultado["limitacoes"])
+
+
+def test_ranking_com_limite_maior_que_o_total_nao_cria_bucket(cursor):
+    _semear_ranking(cursor)
+    resultado = volumetria.ranking(cursor, "peso", "cliente", limite=50)
+    assert all("bucket" not in l for l in resultado["linhas"])
+    # a limitacao do escopo da saida (D3) continua ali -- o que nao pode existir
+    # e a limitacao DO CORTE, porque nao houve corte
+    assert not any("nenhuma foi descartada" in l for l in resultado["limitacoes"])
+
+
+def test_ranking_unidade_com_limite_nao_declara_bucket_como_sem_movimento(cursor):
+    """Unidade que caiu no bucket "Outros" TEM linha -- so nao esta visivel.
+    Declara-la como "sem movimento no periodo" seria falso, e e por isso que
+    `unidades_fora_do_ranking` usa o ranking completo, nao a pagina."""
+    _semear_ranking(cursor)
+    resultado = volumetria.ranking(cursor, "peso", "unidade", limite=1)
+
+    assert [l["chave"] for l in resultado["linhas"]] == ["RMSPIV", "Outros (1)"]
+    fora = {u["chave"] for u in resultado["unidades_fora_do_ranking"]}
+    assert "RMSPII" not in fora  # foi pro bucket, nao esta ausente
 
 
 def test_ranking_grandeza_sem_par_de_saida_fica_so_com_entrada(cursor):

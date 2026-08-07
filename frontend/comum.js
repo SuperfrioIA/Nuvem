@@ -128,6 +128,23 @@ const KPIS_EXECUTIVOS = [
   { chave: "clientes", titulo: "Quantidade de clientes", formatar: k => `${k.valor} ${k.valor === 1 ? "cliente" : "clientes"}` },
 ];
 
+// Rótulo legível do tipo de estoque (V2.2) -- nasceu no linhagem.html e veio
+// pra cá no V2.5, quando o cockpit ganhou o filtro por tipo: a mesma tabela de
+// rótulos em duas telas é exatamente o que este arquivo existe pra evitar.
+//
+// NULL (traço) é dimensão que não se aplica (célula anterior ao lote, upload
+// manual, medida derivada) — diferente de NAO_CLASSIFICADO, que é valor da
+// fonte que não casou com nenhuma palavra-chave (ver
+// backend/services/tipo_estoque.py). Confundir os dois esconderia qual dos
+// dois aconteceu.
+const ROTULO_TIPO_ESTOQUE = {
+  CONGELADO: "Congelado",
+  SECO: "Seco",
+  HORTIFRUTI: "Hortifruti",
+  UTENSILIOS: "Utensílios",
+  NAO_CLASSIFICADO: "Não classificado",
+};
+
 // Abrevia contagens pro card de volumes: mil/milhoes com 3 algarismos
 // significativos, inteiro abaixo de mil.
 function formatarContagemExec(valor) {
