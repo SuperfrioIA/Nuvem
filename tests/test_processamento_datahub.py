@@ -152,13 +152,13 @@ def test_processa_grava_celulas_por_cliente(cursor, monkeypatch):
     assert relatorio["medidas_gravadas"] == 9  # 3 metricas x 3 baldes
 
     # celulas canonicas no grao cliente; total da filial = soma das linhas
-    assert _medidas(cursor, "peso_bruto_movimentado") == [
+    assert _medidas(cursor, "peso_bruto_entrada") == [
         ("02905110", 50.0), ("67945071", 300.0), (None, 7.0),
     ]
-    assert _medidas(cursor, "valor_mercadoria_movimentada") == [
+    assert _medidas(cursor, "valor_mercadoria_entrada") == [
         ("02905110", 5.0), ("67945071", 30.0), (None, 3.0),
     ]
-    assert _medidas(cursor, "registros_movimentacao") == [
+    assert _medidas(cursor, "registros_entrada") == [
         ("02905110", 1.0), ("67945071", 2.0), (None, 1.0),
     ]
 
@@ -182,9 +182,9 @@ def test_processa_grava_celulas_por_cliente(cursor, monkeypatch):
         """
     )
     assert cursor.fetchall() == [
-        ("peso_bruto_movimentado", "kg", arquivo["nome"]),
-        ("registros_movimentacao", "un", arquivo["nome"]),
-        ("valor_mercadoria_movimentada", "brl", arquivo["nome"]),
+        ("peso_bruto_entrada", "kg", arquivo["nome"]),
+        ("registros_entrada", "un", arquivo["nome"]),
+        ("valor_mercadoria_entrada", "brl", arquivo["nome"]),
     ]
     cursor.execute("SELECT COUNT(*) FROM medidas_recebidas")
     assert cursor.fetchone()[0] == 9
@@ -214,7 +214,7 @@ def test_idempotente_processar_duas_vezes(cursor, monkeypatch):
     processamento_datahub.processar_arquivo(cursor, "item-016")
 
     # celulas canonicas: as MESMAS (upsert), valores inalterados
-    assert _medidas(cursor, "peso_bruto_movimentado") == [("67945071", 100.0)]
+    assert _medidas(cursor, "peso_bruto_entrada") == [("67945071", 100.0)]
     cursor.execute("SELECT COUNT(*) FROM medidas")
     assert cursor.fetchone()[0] == 3
     # auditoria acumula: 2 execucoes, 6 recebidas, 1 controle por arquivo
@@ -238,7 +238,7 @@ def test_reprocessar_apos_cadastro_move_do_balde_sem_cliente(cursor, monkeypatch
     _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
 
     processamento_datahub.processar_arquivo(cursor, "item-016")
-    assert _medidas(cursor, "peso_bruto_movimentado") == [
+    assert _medidas(cursor, "peso_bruto_entrada") == [
         ("67945071", 100.0), (None, 7.0),
     ]
 
@@ -248,7 +248,7 @@ def test_reprocessar_apos_cadastro_move_do_balde_sem_cliente(cursor, monkeypatch
     relatorio = processamento_datahub.processar_arquivo(cursor, "item-016")
 
     assert relatorio["celulas_removidas"] == 3  # balde NULL das 3 metricas
-    assert _medidas(cursor, "peso_bruto_movimentado") == [
+    assert _medidas(cursor, "peso_bruto_entrada") == [
         ("67945071", 100.0), ("99999999", 7.0),
     ]
     cursor.execute("SELECT COUNT(*) FROM medidas WHERE cliente_id IS NULL")
@@ -282,11 +282,11 @@ def test_conceito_sem_unidade_aprovada_bloqueia_processamento(cursor, monkeypatc
     arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
     _preparar(monkeypatch, [(arquivo, _xlsx([_linha()]))])
     cursor.execute(
-        "UPDATE conceitos_canonicos SET status = 'rascunho' WHERE chave = 'peso_bruto_movimentado'"
+        "UPDATE conceitos_canonicos SET status = 'rascunho' WHERE chave = 'peso_bruto_entrada'"
     )
 
     with pytest.raises(
-        processamento_datahub.ProcessamentoDatahubError, match="peso_bruto_movimentado"
+        processamento_datahub.ProcessamentoDatahubError, match="peso_bruto_entrada"
     ):
         processamento_datahub.processar_arquivo(cursor, "item-016")
     cursor.execute("SELECT COUNT(*) FROM medidas")
@@ -299,10 +299,10 @@ def test_metrica_fora_do_catalogo_e_erro_de_configuracao(cursor, monkeypatch):
     nada e gravado (a resolucao acontece antes de qualquer escrita)."""
     arquivo = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
     _preparar(monkeypatch, [(arquivo, _xlsx([_linha()]))])
-    cursor.execute("DELETE FROM metricas WHERE nome = 'registros_movimentacao'")
+    cursor.execute("DELETE FROM metricas WHERE nome = 'registros_entrada'")
 
     with pytest.raises(
-        processamento_datahub.ProcessamentoDatahubError, match="registros_movimentacao"
+        processamento_datahub.ProcessamentoDatahubError, match="registros_entrada"
     ):
         processamento_datahub.processar_arquivo(cursor, "item-016")
     cursor.execute("SELECT COUNT(*) FROM medidas")
@@ -472,7 +472,7 @@ def test_homonimos_de_unidades_diferentes_tem_registros_distintos(cursor, monkey
         ("item-rmspii", "RMSPII", "ok"),
     ]
     # cada unidade na sua celula, e a CWB3 deixou de ser pendencia (V2.1)
-    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [
+    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == [
         ("CWBIII", 100.0), ("RMSPII", 100.0),
     ]
     assert processamento_datahub.listar_pendencias_filial(cursor) == []
@@ -516,17 +516,20 @@ def test_renomear_no_sharepoint_nao_cria_entidade_nova(cursor, monkeypatch):
 
 
 def test_origem_sem_depara_nao_baixa_o_arquivo(cursor, monkeypatch):
-    """A RJ tem layout proprio (18 colunas): baixar so pra falhar na leitura
-    trocaria uma pendencia clara por um erro. O de-para e resolvido antes."""
+    """`RMSPII/002` segue sem de-para (decisao humana pendente da Maria desde
+    02/ago/2026 -- ver [[filiais-catering-poc]]): baixar so pra falhar na
+    leitura trocaria uma pendencia clara por um erro. O de-para e resolvido
+    antes. (Ate o V2.3 este teste usava a RJ como exemplo -- a migration 0016
+    do proprio lote deu de-para a ela, RMRJ, entao deixou de servir.)"""
     baixados = []
-    rj = _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx", "item-rj", unidade="RJ")
-    _preparar(monkeypatch, [(rj, _xlsx([_linha()]))])
+    filial_002 = _arquivo("ENTRADA_MERCADORIAS_002_2601.xlsx", "item-002")
+    _preparar(monkeypatch, [(filial_002, _xlsx([_linha()]))])
     monkeypatch.setattr(
         graph_datahub, "baixar_item",
         lambda item_id, limite_bytes: baixados.append(item_id) or b"",
     )
 
-    relatorio = processamento_datahub.processar_arquivo(cursor, "item-rj")
+    relatorio = processamento_datahub.processar_arquivo(cursor, "item-002")
 
     assert relatorio["status"] == "pendencia_depara"
     assert baixados == []
@@ -535,25 +538,27 @@ def test_origem_sem_depara_nao_baixa_o_arquivo(cursor, monkeypatch):
 def test_filial_com_hifen_da_rj_vira_pendencia_visivel(cursor, monkeypatch):
     """Antes o padrao de nome exigia so digitos: os arquivos da RJ nao casavam
     e sumiam do processamento sem virar nem pendencia -- "nao casou no regex"
-    virava "nao existe".
-
-    As duas origens que seguem sem de-para depois do V2.1: a RJ (layout de 18
-    colunas, leitor da variante e do V2.3) e a `RMSPII/002` (a Maria manteve
-    pendente em 02/ago/2026). A SANCA saiu daqui porque ganhou de-para no
-    V2.1 -- se voltasse, este teste passaria a afirmar o contrario do lote."""
+    virava "nao existe". O regex com hifen e o que este teste prova (a RJ
+    entra na lista de candidatos); a pendencia em si e provada com
+    `RMSPII/002` e `RMSPII/003` (nenhuma tem de-para) -- a RJ GANHOU de-para
+    na migration 0016 deste mesmo lote (RMRJ), entao deixou de servir como
+    exemplo de pendencia."""
     rj = _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx", "item-rj", unidade="RJ")
     filial_002 = _arquivo("ENTRADA_MERCADORIAS_002_2601.xlsx", "item-002")
-    _preparar(monkeypatch, [(rj, _xlsx([_linha()])), (filial_002, _xlsx([_linha()]))])
+    filial_003 = _arquivo("ENTRADA_MERCADORIAS_003_2601.xlsx", "item-003")
+    _preparar(
+        monkeypatch,
+        [(rj, _xlsx([_linha()])), (filial_002, _xlsx([_linha()])), (filial_003, _xlsx([_linha()]))],
+    )
 
     relatorio = processamento_datahub.processar_todos(cursor)
 
-    assert relatorio["total_familia"] == 2
-    assert {p["status"] for p in relatorio["processados"]} == {"pendencia_depara"}
+    assert relatorio["total_familia"] == 3
+    # a RJ tem de-para agora (RMRJ) -- processa "ok"; as outras duas seguem pendentes
+    assert {p["status"] for p in relatorio["processados"]} == {"ok", "pendencia_depara"}
     assert sorted(
         p["origem_na_fonte"] for p in processamento_datahub.listar_pendencias_filial(cursor)
-    ) == ["RJ/004-003", "RMSPII/002"]
-    cursor.execute("SELECT COUNT(*) FROM medidas")
-    assert cursor.fetchone()[0] == 0
+    ) == ["RMSPII/002", "RMSPII/003"]
 
 
 def test_arquivo_na_raiz_sem_unidade_cai_como_pendencia_nao_qualificada(cursor, monkeypatch):
@@ -589,7 +594,7 @@ def test_processamento_nao_apaga_celula_de_outra_unidade(cursor, monkeypatch):
 
     processamento_datahub.processar_todos(cursor)
 
-    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [
+    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == [
         ("CWBIII", 70.0), ("RMSPII", 100.0),
     ]
     # e a linhagem aponta pro armazem certo em cada recebida
@@ -600,7 +605,7 @@ def test_processamento_nao_apaga_celula_de_outra_unidade(cursor, monkeypatch):
         JOIN armazens a ON a.id = mr.armazem_id
         JOIN execucoes e ON e.id = mr.execucao_id
         JOIN metricas mt ON mt.id = mr.metrica_id
-        WHERE mt.nome = 'peso_bruto_movimentado'
+        WHERE mt.nome = 'peso_bruto_entrada'
         ORDER BY a.sigla
         """
     )
@@ -691,7 +696,7 @@ def test_arquivo_republicado_vazio_apaga_as_celulas_que_tinha_gravado(cursor, mo
     com_dado = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016")
     _preparar(monkeypatch, [(com_dado, _xlsx([_linha()]))])
     processamento_datahub.processar_todos(cursor)
-    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == [("RMSPIV", 100.0)]
+    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == [("RMSPIV", 100.0)]
 
     republicado = _arquivo(
         "ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016",
@@ -700,7 +705,7 @@ def test_arquivo_republicado_vazio_apaga_as_celulas_que_tinha_gravado(cursor, mo
     _preparar(monkeypatch, [(republicado, _xlsx([]))])
     processamento_datahub.processar_todos(cursor)
 
-    assert _medidas_por_armazem(cursor, "peso_bruto_movimentado") == []
+    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == []
     cursor.execute("SELECT status FROM processamentos_datahub WHERE item_id = 'item-016'")
     assert cursor.fetchone()[0] == "sem_dado"
 
@@ -747,7 +752,7 @@ def test_quatro_tipos_conhecidos_classificam_corretamente(cursor, monkeypatch):
         """
         SELECT tipo_estoque, valor::float FROM medidas m
         JOIN metricas mt ON mt.id = m.metrica_id
-        WHERE mt.nome = 'peso_bruto_movimentado' ORDER BY tipo_estoque
+        WHERE mt.nome = 'peso_bruto_entrada' ORDER BY tipo_estoque
         """
     )
     assert cursor.fetchall() == [
@@ -792,7 +797,7 @@ def test_valor_nao_classificado_de_nome_estoque_vira_pendencia_visivel(cursor, m
         """
         SELECT tipo_estoque, valor::float FROM medidas m
         JOIN metricas mt ON mt.id = m.metrica_id
-        WHERE mt.nome = 'peso_bruto_movimentado'
+        WHERE mt.nome = 'peso_bruto_entrada'
         """
     )
     assert cursor.fetchall() == [("NAO_CLASSIFICADO", 100.0)]
@@ -824,7 +829,7 @@ def test_prune_remove_celula_de_grao_antigo_apos_reprocesso_v22(cursor, monkeypa
 
     # simula o estado ANTES do lote: celula no grao antigo (sem tipo_estoque)
     # pro mesmo armazem/competencia/cliente
-    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     metrica_id = cursor.fetchone()[0]
     cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     armazem_id = cursor.fetchone()[0]
@@ -872,14 +877,14 @@ def test_reprocesso_forcado_preserva_total_por_competencia(cursor, monkeypatch):
     processamento_datahub.processar_todos(cursor)
     cursor.execute(
         "SELECT SUM(valor)::float, COUNT(*) FROM medidas m "
-        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_movimentado'"
+        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_entrada'"
     )
     total_antes, celulas_antes = cursor.fetchone()
 
     processamento_datahub.processar_todos(cursor, forcar=True)
     cursor.execute(
         "SELECT SUM(valor)::float, COUNT(*) FROM medidas m "
-        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_movimentado'"
+        "JOIN metricas mt ON mt.id = m.metrica_id WHERE mt.nome = 'peso_bruto_entrada'"
     )
     total_depois, celulas_depois = cursor.fetchone()
 
@@ -900,7 +905,7 @@ def test_arquivo_republicado_vazio_apaga_todos_os_tipos(cursor, monkeypatch):
     processamento_datahub.processar_todos(cursor)
     cursor.execute(
         "SELECT COUNT(*) FROM medidas m JOIN metricas mt ON mt.id = m.metrica_id "
-        "WHERE mt.nome = 'peso_bruto_movimentado'"
+        "WHERE mt.nome = 'peso_bruto_entrada'"
     )
     assert cursor.fetchone()[0] == 2  # SECO e CONGELADO
 
@@ -913,6 +918,6 @@ def test_arquivo_republicado_vazio_apaga_todos_os_tipos(cursor, monkeypatch):
 
     cursor.execute(
         "SELECT COUNT(*) FROM medidas m JOIN metricas mt ON mt.id = m.metrica_id "
-        "WHERE mt.nome = 'peso_bruto_movimentado'"
+        "WHERE mt.nome = 'peso_bruto_entrada'"
     )
     assert cursor.fetchone()[0] == 0

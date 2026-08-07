@@ -113,6 +113,7 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 .kpi-card { background: var(--card-2); border-radius: var(--radius-md); padding: 14px 16px; min-width: 190px; flex: 1; }
 .kpi-card .kpi-valor { display: block; font-size: 22px; font-weight: 700; color: var(--brand-azul-principal); }
 .kpi-card .kpi-nome { display: block; font-size: 12px; color: var(--texto); margin-top: 4px; }
+.kpi-card .kpi-sub { display: block; font-size: 11px; color: var(--muted); margin-top: 6px; }
 .kpi-card.vazio { color: var(--muted); font-size: 13px; display: flex; align-items: center; }
 .participacao {
   background: var(--card-2); border-radius: var(--radius-md); padding: 12px 16px; margin: 4px 0 18px; font-size: 13px;
@@ -207,8 +208,8 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
       <div class="metricaFoco">
         <label for="metricaFoco">Métrica em foco</label>
         <select id="metricaFoco">
-          <option value="peso_bruto_movimentado">Peso bruto movimentado</option>
-          <option value="valor_mercadoria_movimentada">Valor da mercadoria movimentada</option>
+          <option value="peso_bruto_entrada">Peso bruto de entrada</option>
+          <option value="valor_mercadoria_entrada">Valor da mercadoria de entrada</option>
         </select>
       </div>
       <p class="subLabel">Série histórica e acumulado</p>
@@ -351,7 +352,7 @@ async function atualizarTudo() {
       api(`/cockpit/qualidade?${query(f)}`),
     ]);
     renderizarCards(resumo);
-    const pesoKpi = resumo.kpis.find(k => k.chave === "peso_bruto_movimentado");
+    const pesoKpi = resumo.kpis.find(k => k.chave === "peso_bruto_entrada");
     renderizarQualidade(qualidade, pesoKpi ? pesoKpi.valor : null);
     renderizarLinkLinhagem(f);
     await atualizarSecaoMetrica();
@@ -366,21 +367,43 @@ function renderizarLinkLinhagem(f) {
 }
 
 const KPI_FORMATO = {
-  peso_bruto_movimentado: v => formatarPesoExecutivo(v),
-  valor_mercadoria_movimentada: v => `R$ ${formatarMilhoesExec(v)} mi`,
+  peso_bruto_entrada: v => formatarPesoExecutivo(v),
+  valor_mercadoria_entrada: v => `R$ ${formatarMilhoesExec(v)} mi`,
   clientes_atendidos: v => `${Math.round(v)} ${Math.round(v) === 1 ? "cliente" : "clientes"}`,
 };
+
+// D5.1 (V2.3): volume do balde "sem cliente identificado" abaixo do card de
+// clientes atendidos, separado por causa -- cliente nao cadastrado
+// (resolvivel, cadastro pendente) x unidade sem coluna de cliente na fonte
+// (nao resolvivel, RMRJ). Nunca soma os dois num numero so: mandaria a Maria
+// caçar um cadastro que nao existe pra RMRJ.
+function formatarBaldeSemCliente(balde) {
+  if (!balde) return "";
+  const nc = balde.nao_cadastrado;
+  const sc = balde.sem_coluna_na_fonte;
+  const pesoTotalKg = (nc.peso_kg || 0) + (sc.peso_kg || 0);
+  if (pesoTotalKg <= 0) return "";
+  const partes = [];
+  if (nc.peso_kg > 0) {
+    partes.push(`${escaparHtml(formatarNumeroKpi(nc.percentual_do_peso_total, "%"))} não cadastrado`);
+  }
+  if (sc.peso_kg > 0) {
+    partes.push(`${escaparHtml(formatarNumeroKpi(sc.percentual_do_peso_total, "%"))} sem coluna de cliente na fonte`);
+  }
+  return `<div class="kpi-sub">${escaparHtml(formatarToneladasDetalhado(pesoTotalKg))} sem cliente identificado no período (${partes.join(", ")}).</div>`;
+}
 
 function renderizarCards(resumo) {
   document.getElementById("cockpitCards").innerHTML = resumo.kpis.map(k => `
     <div class="kpi-card">
       <span class="kpi-valor">${escaparHtml((KPI_FORMATO[k.chave] || (v => formatarNumeroKpi(v, k.unidade)))(k.valor))}</span>
       <span class="kpi-nome">${escaparHtml(k.nome_executivo)}</span>
+      ${k.chave === "clientes_atendidos" ? formatarBaldeSemCliente(resumo.balde_sem_cliente) : ""}
     </div>`).join("");
 
   const p = resumo.participacao_maior_cliente;
   document.getElementById("cockpitParticipacao").innerHTML = p
-    ? `<div class="participacao">Cliente com maior participação (${escaparHtml(p.metrica === "valor_mercadoria_movimentada" ? "valor" : p.metrica)}): <strong>${escaparHtml(p.cliente)}</strong> — ${escaparHtml(formatarNumeroKpi(p.percentual, "%"))} do total.</div>`
+    ? `<div class="participacao">Cliente com maior participação (${escaparHtml(p.metrica === "valor_mercadoria_entrada" ? "valor" : p.metrica)}): <strong>${escaparHtml(p.cliente)}</strong> — ${escaparHtml(formatarNumeroKpi(p.percentual, "%"))} do total.</div>`
     : "";
 
   document.getElementById("cockpitLimitacoes").innerHTML = (resumo.limitacoes || []).map(l =>
@@ -413,14 +436,24 @@ function renderizarQualidade(q, pesoBrutoKg) {
   `;
 }
 
+// V2.4: /datahub/serie foi substituido por /cockpit/volumetria/evolucao, que
+// recebe `grandeza` (par entrada/saida) em vez de `metrica` (uma so). O
+// grafico desta secao continua mostrando SO a entrada, igual antes -- mostrar
+// entrada x saida x saldo junto e desenho visual da V2.5, nao deste lote.
+const GRANDEZA_DA_METRICA_FOCO = {
+  peso_bruto_entrada: "peso",
+  valor_mercadoria_entrada: "valor",
+};
+
 async function atualizarSecaoMetrica() {
   const f = filtrosAtuais();
   const metrica = document.getElementById("metricaFoco").value;
+  const grandeza = GRANDEZA_DA_METRICA_FOCO[metrica] || "peso";
   renderizarLinkLinhagem(f);
   const msgDiv = document.getElementById("cockpitMsg");
   try {
     const [serie, filiais, clientes] = await Promise.all([
-      api(`/datahub/serie?metrica=${metrica}&${query(f)}`),
+      api(`/cockpit/volumetria/evolucao?grandeza=${grandeza}&${query(f)}`),
       api(`/cockpit/comparacao/filiais?metrica=${metrica}&${query({ de: f.de, ate: f.ate, cliente: f.cliente })}`),
       api(`/cockpit/comparacao/clientes?metrica=${metrica}&${query({ de: f.de, ate: f.ate, filial: f.filial })}`),
     ]);
@@ -435,13 +468,13 @@ async function atualizarSecaoMetrica() {
 
 function renderizarSerie(serie) {
   const pontos = serie.mensal || [];
-  const unidade = serie.metrica.unidade;
+  const unidade = serie.unidade;
   grafico("chartSerie").setOption(baseOption({
     xAxis: { type: "category", data: pontos.map(p => competenciaCurta(p.competencia)),
       axisLine: { lineStyle: { color: CORES.grid } } },
     yAxis: { type: "value", axisLabel: { formatter: v => formatarValorPorUnidade(v, unidade) }, splitLine: { lineStyle: { color: CORES.grid, opacity: 0.5 } } },
     series: [{
-      type: "line", data: pontos.map(p => p.valor), smooth: true, symbolSize: 7,
+      type: "line", data: pontos.map(p => p.entrada), smooth: true, symbolSize: 7,
       lineStyle: { color: CORES.principal, width: 3 }, itemStyle: { color: CORES.principal },
       areaStyle: { color: "rgba(30,111,217,0.10)" },
     }],
@@ -452,8 +485,8 @@ function renderizarSerie(serie) {
 function renderizarVariacao(serie) {
   const pontos = serie.mensal || [];
   const variacoes = pontos.slice(1).map((p, i) => {
-    const anterior = pontos[i].valor;
-    const percentual = anterior ? ((p.valor - anterior) / anterior) * 100 : null;
+    const anterior = pontos[i].entrada;
+    const percentual = anterior ? ((p.entrada - anterior) / anterior) * 100 : null;
     return { competencia: p.competencia, percentual };
   });
   grafico("chartVariacao").setOption(baseOption({

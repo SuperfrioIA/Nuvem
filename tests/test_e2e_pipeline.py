@@ -94,11 +94,11 @@ def test_pipeline_ate_cockpit_e_linhagem(cliente, cursor, monkeypatch):
     )
     assert resumo.status_code == 200
     kpis = {k["chave"]: k["valor"] for k in resumo.json()["kpis"]}
-    assert kpis["peso_bruto_movimentado"] == 107.0
+    assert kpis["peso_bruto_entrada"] == 107.0
 
     ranking = cliente.get(
         "/api/admin/cockpit/comparacao/filiais",
-        params={"metrica": "peso_bruto_movimentado", "de": "2026-07", "ate": "2026-07"},
+        params={"metrica": "peso_bruto_entrada", "de": "2026-07", "ate": "2026-07"},
     )
     assert ranking.status_code == 200
     por_filial = {r["rotulo"]: r for r in ranking.json()["ranking"]}
@@ -107,7 +107,7 @@ def test_pipeline_ate_cockpit_e_linhagem(cliente, cursor, monkeypatch):
 
     celulas = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_movimentado", "competencia": "2026-07"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07"},
     )
     assert celulas.status_code == 200
     por_cliente_nome = {c["cliente"]: c for c in celulas.json()["celulas"]}
@@ -140,7 +140,7 @@ def test_pipeline_duas_filiais_nao_mistura_origem(cliente, cursor, monkeypatch):
 
     ranking = cliente.get(
         "/api/admin/cockpit/comparacao/filiais",
-        params={"metrica": "peso_bruto_movimentado", "de": "2026-07", "ate": "2026-07"},
+        params={"metrica": "peso_bruto_entrada", "de": "2026-07", "ate": "2026-07"},
     )
     assert ranking.status_code == 200
     por_filial = {r["rotulo"]: r["valor"] for r in ranking.json()["ranking"]}
@@ -150,7 +150,7 @@ def test_pipeline_duas_filiais_nao_mistura_origem(cliente, cursor, monkeypatch):
 
     celulas_016 = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_movimentado", "competencia": "2026-07", "filial": "RMSPIV"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07", "filial": "RMSPIV"},
     )
     assert celulas_016.status_code == 200
     (celula_016,) = celulas_016.json()["celulas"]
@@ -160,7 +160,7 @@ def test_pipeline_duas_filiais_nao_mistura_origem(cliente, cursor, monkeypatch):
 
     celulas_001 = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_movimentado", "competencia": "2026-07", "filial": "RMSPII"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07", "filial": "RMSPII"},
     )
     assert celulas_001.status_code == 200
     (celula_001,) = celulas_001.json()["celulas"]

@@ -27,6 +27,11 @@ e metricas da familia integrada.
   e somavel, e derivada na consulta (backend/services/serie_datahub.py).
   Volumes por embalagem ficam fora da serie persistida (decisao da Maria em
   31/jul/2026 -- exigiria dimensao de embalagem; o card segue ao vivo).
+  V2.3 renomeou o trio pro par de entrada e acrescentou o par de saida
+  (`peso_bruto_saida`, `registros_saida` -- sem `valor_mercadoria_saida`: a
+  fonte nao tem coluna de valor, docs/V2_3_PLANO_EXECUCAO.md secao 1.1). Em
+  banco existente o rename e feito pela migration 0015, NUNCA por este seed
+  (insert-only nao alcanca linha ja existente).
 
 Idempotente: ON CONFLICT DO NOTHING / WHERE NOT EXISTS em tudo -- nunca
 sobrescreve correcao manual feita depois pelo admin (por isso NAO segue o
@@ -41,9 +46,11 @@ TIPO_CONECTOR = "sharepoint_datahub"
 # (nome, unidade de exibicao) -- a unidade canonica de calculo vem do conceito
 # homonimo em conceitos_canonicos (kg / brl / un)
 METRICAS = (
-    ("peso_bruto_movimentado", "kg"),
-    ("valor_mercadoria_movimentada", "R$"),
-    ("registros_movimentacao", "registros"),
+    ("peso_bruto_entrada", "kg"),
+    ("valor_mercadoria_entrada", "R$"),
+    ("registros_entrada", "registros"),
+    ("peso_bruto_saida", "kg"),
+    ("registros_saida", "registros"),
 )
 
 

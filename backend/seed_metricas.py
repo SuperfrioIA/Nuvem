@@ -171,15 +171,20 @@ METRICAS = [
         "agregacao_padrao": "ultimo",
         "comparabilidade": "entre_filiais",
     },
-    # Bloco C (V1.3) -- metricas da familia integrada do DataHub
-    # (ENTRADA_MERCADORIAS), persistidas no grao competencia x filial x
-    # cliente. Nomes = conceitos canonicos do V1.1 (backend/seed_semantico.py).
+    # Bloco C (V1.3) -- metricas da familia integrada do DataHub (entrada),
+    # persistidas no grao competencia x filial x cliente. Nomes = conceitos
+    # canonicos do V1.1 (backend/seed_semantico.py). Renomeadas de
+    # "movimentado"/"movimentacao" pro par de entrada no V2.3, quando a saida
+    # ganhou metricas proprias (peso_bruto_saida, registros_saida, abaixo) --
+    # em banco existente o rename e feito pela migration 0015, NUNCA por este
+    # seed (ON CONFLICT DO NOTHING/UPDATE ... WHERE dominio IS NULL nao
+    # alcancaria uma linha ja classificada). Ver docs/V2_3_PLANO_EXECUCAO.md.
     {
-        "nome": "peso_bruto_movimentado",
-        "nome_executivo": "Peso bruto movimentado",
+        "nome": "peso_bruto_entrada",
+        "nome_executivo": "Peso bruto de entrada",
         "dominio": "volumetria",
         "descricao": (
-            "Peso bruto da mercadoria movimentada (entrada), somado das linhas de "
+            "Peso bruto da mercadoria recebida (entrada), somado das linhas de "
             "item do DataHub. Calculo interno em kg; exibicao executiva em toneladas."
         ),
         "granularidade_esperada": "armazem_cliente_competencia",
@@ -190,13 +195,13 @@ METRICAS = [
         "comparabilidade": "entre_filiais, por_cliente, no_tempo",
     },
     {
-        "nome": "valor_mercadoria_movimentada",
-        "nome_executivo": "Valor da mercadoria movimentada",
+        "nome": "valor_mercadoria_entrada",
+        "nome_executivo": "Valor da mercadoria de entrada",
         "dominio": "financeiro",
         "descricao": (
-            "Valor declarado nas notas dos clientes para a mercadoria movimentada -- "
-            "NAO e faturamento SuperFrio (decisao pendente da Maria sobre devolucao "
-            "dentro/fora do total, docs/ENTREGA_POC.md secao 3)."
+            "Valor declarado nas notas dos clientes para a mercadoria recebida "
+            "(entrada) -- NAO e faturamento SuperFrio (decisao pendente da Maria "
+            "sobre devolucao dentro/fora do total, docs/ENTREGA_POC.md secao 3)."
         ),
         "granularidade_esperada": "armazem_cliente_competencia",
         "periodicidade": "mensal",
@@ -206,12 +211,45 @@ METRICAS = [
         "comparabilidade": "entre_filiais, por_cliente, no_tempo",
     },
     {
-        "nome": "registros_movimentacao",
-        "nome_executivo": "Registros de movimentacao",
+        "nome": "registros_entrada",
+        "nome_executivo": "Registros de entrada",
         "dominio": "volumetria",
         "descricao": (
-            "Quantidade de linhas de item validas no arquivo -- indicador de volume "
-            "de dados, nao de negocio."
+            "Quantidade de linhas de item validas no arquivo de entrada -- "
+            "indicador de volume de dados, nao de negocio."
+        ),
+        "granularidade_esperada": "armazem_cliente_competencia",
+        "periodicidade": "mensal",
+        "tipo": "quantidade",
+        "direcao_risco": "informativo",
+        "agregacao_padrao": "soma",
+        "comparabilidade": "somente_historico_proprio",
+    },
+    # V2.3 -- par de saida. NAO existe valor_mercadoria_saida: a fonte
+    # (SAIDA_MERCADORIAS) nao tem coluna de valor em nenhuma unidade,
+    # conferido no dado em 06/ago/2026 (docs/V2_3_PLANO_EXECUCAO.md, secao 1.1).
+    {
+        "nome": "peso_bruto_saida",
+        "nome_executivo": "Peso bruto de saida",
+        "dominio": "volumetria",
+        "descricao": (
+            "Peso bruto da mercadoria expedida (saida), banda Separado Fisicamente "
+            "de SAIDA_MERCADORIAS -- somado das linhas de item."
+        ),
+        "granularidade_esperada": "armazem_cliente_competencia",
+        "periodicidade": "mensal",
+        "tipo": "quantidade",
+        "direcao_risco": "informativo",
+        "agregacao_padrao": "soma",
+        "comparabilidade": "entre_filiais, por_cliente, no_tempo",
+    },
+    {
+        "nome": "registros_saida",
+        "nome_executivo": "Registros de saida",
+        "dominio": "volumetria",
+        "descricao": (
+            "Quantidade de linhas de item validas no arquivo de saida -- "
+            "indicador de volume de dados, nao de negocio."
         ),
         "granularidade_esperada": "armazem_cliente_competencia",
         "periodicidade": "mensal",

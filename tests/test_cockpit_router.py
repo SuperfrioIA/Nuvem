@@ -21,7 +21,7 @@ def _semear_minimo(cursor):
     """Comita na hora: o teste consulta via outra conexao (a do app, atras do
     TestClient do fixture `cliente`) -- sem commit explicito aqui, a insercao
     fica so na transacao deste cursor e o app nunca a veria (READ COMMITTED)."""
-    peso = _id(cursor, "SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    peso = _id(cursor, "SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     rmspiv = _id(cursor, "SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     cursor.execute(
         "INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) VALUES (%s, %s, %s, %s)",
@@ -38,13 +38,13 @@ def test_resumo_sem_login_da_401(banco_migrado):
 
 def test_comparacao_filiais_sem_login_da_401(banco_migrado):
     with TestClient(app) as c:
-        resposta = c.get("/api/admin/cockpit/comparacao/filiais", params={"metrica": "peso_bruto_movimentado"})
+        resposta = c.get("/api/admin/cockpit/comparacao/filiais", params={"metrica": "peso_bruto_entrada"})
     assert resposta.status_code == 401
 
 
 def test_comparacao_clientes_sem_login_da_401(banco_migrado):
     with TestClient(app) as c:
-        resposta = c.get("/api/admin/cockpit/comparacao/clientes", params={"metrica": "peso_bruto_movimentado"})
+        resposta = c.get("/api/admin/cockpit/comparacao/clientes", params={"metrica": "peso_bruto_entrada"})
     assert resposta.status_code == 401
 
 
@@ -59,14 +59,14 @@ def test_resumo_sucesso(cliente, cursor):
     resposta = cliente.get("/api/admin/cockpit/resumo", params={"de": "2026-07", "ate": "2026-07"})
     assert resposta.status_code == 200
     valores = {k["chave"]: k["valor"] for k in resposta.json()["kpis"]}
-    assert valores["peso_bruto_movimentado"] == 100.0
+    assert valores["peso_bruto_entrada"] == 100.0
 
 
 def test_comparacao_filiais_sucesso(cliente, cursor):
     _semear_minimo(cursor)
     resposta = cliente.get(
         "/api/admin/cockpit/comparacao/filiais",
-        params={"metrica": "peso_bruto_movimentado", "de": "2026-07", "ate": "2026-07"},
+        params={"metrica": "peso_bruto_entrada", "de": "2026-07", "ate": "2026-07"},
     )
     assert resposta.status_code == 200
     assert resposta.json()["ranking"] == [{"rotulo": "RMSPIV", "valor": 100.0, "percentual": 100.0}]

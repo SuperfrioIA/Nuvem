@@ -29,9 +29,15 @@ from ..seed_datahub import TIPO_CONECTOR
 from . import tipo_estoque as tipo_estoque_servico
 
 # driver da contagem distinta de clientes: qualquer metrica do DataHub emite
-# exatamente um registro por balde de cliente; registros_movimentacao e a mais
-# neutra (existe em todo arquivo processado, linhas validas >= 1)
-_METRICA_DRIVER_CLIENTES = "registros_movimentacao"
+# exatamente um registro por balde de cliente; registros_entrada e a mais
+# neutra (existe em todo arquivo processado, linhas validas >= 1).
+#
+# So ENTRADA aqui, de proposito (decisao D5 do V2.3): esta e a contagem que a
+# tela ja mostra, e um lote que nao e de tela nao troca esse numero em
+# silencio. A leitura unificada (entrada + saida) existe desde o V2.4 em
+# `contagem_clientes_atendidos_unificada`, exposta ao lado desta em
+# GET /cockpit/volumetria/resumo -- as duas convivem, nenhuma substitui a outra.
+_METRICA_DRIVER_CLIENTES = "registros_entrada"
 
 
 class SerieDatahubError(Exception):
@@ -127,8 +133,16 @@ def resolver_tipo_estoque(valor: str) -> str:
 
 
 def filtros_sql(metrica_id, armazem_id, cliente_id, de, ate, tipo_estoque=None):
-    condicoes = ["metrica_id = %s"]
-    params = [metrica_id]
+    """`metrica_id` aceita um id unico (`metrica_id = %s`) ou uma lista/tupla
+    de ids (`metrica_id = ANY(%s)`) -- usado pela contagem unida de
+    `clientes_atendidos` (V2.4), que precisa somar entrada e saida na MESMA
+    consulta."""
+    if isinstance(metrica_id, (list, tuple)):
+        condicoes = ["metrica_id = ANY(%s)"]
+        params = [list(metrica_id)]
+    else:
+        condicoes = ["metrica_id = %s"]
+        params = [metrica_id]
     if armazem_id is not None:
         condicoes.append("armazem_id = %s")
         params.append(armazem_id)
@@ -223,6 +237,165 @@ def serie(cur, metrica: str, de=None, ate=None, filial=None, cliente=None, tipo_
     }
 
 
+def _armazens_sem_coluna_cliente(cur, prefixo_arquivo: str) -> list[int]:
+    """armazem_id que JA TEVE ALGUM processamento com layout SEM coluna de
+    cliente (RMRJ na entrada, layout de 18 colunas -- V2.3; RMSPV na saida,
+    layout de 34).
+
+    Derivado do que foi de fato LIDO (`processamentos_datahub.layout_lido`,
+    migration 0017), nunca de uma lista escrita a mao que alguem esquece de
+    atualizar quando a fonte mudar (docs/V2_3_PLANO_EXECUCAO.md, secao 3.6).
+    `prefixo_arquivo` distingue entrada de saida -- o MESMO armazem pode ter
+    coluna de cliente numa direcao e nao ter na outra (a RMSPV tem cliente na
+    entrada, layout de 20; nao tem na saida, layout de 34).
+
+    NAO e "mais recente" (achado da revisao independente do V2.3): a consulta
+    nao tem recorte de tempo, entao um armazem que TEVE um layout sem coluna
+    algum dia fica classificado como `sem_coluna_na_fonte` PRA SEMPRE, mesmo
+    que a fonte passe a publicar com coluna de cliente depois. Risco aceito
+    por enquanto -- na pratica so importa pra linha `cliente_id IS NULL`
+    NOVA que a fonte relance ja com coluna de cliente, caso que ainda nao
+    aconteceu com nenhum armazem. Se acontecer, resolver com uma janela de
+    recencia (ex.: layout do processamento mais recente por armazem, via
+    `DISTINCT ON (unidade, filial) ... ORDER BY processado_em DESC`) --
+    nao implementado aqui pra nao aumentar mais a superficie nao testada
+    contra banco real deste lote."""
+    cur.execute(
+        """
+        SELECT DISTINCT d.armazem_id
+        FROM processamentos_datahub p
+        JOIN conectores c ON c.tipo = %s
+        JOIN depara_armazem d ON d.conector_id = c.id
+         AND d.armazem_na_fonte = (
+             CASE WHEN p.unidade IS NOT NULL THEN p.unidade || '/' || p.filial ELSE p.filial END
+         )
+        WHERE p.arquivo LIKE %s AND p.layout_lido IN ('18_colunas', '34_colunas')
+        """,
+        (TIPO_CONECTOR, prefixo_arquivo),
+    )
+    return [row[0] for row in cur.fetchall()]
+
+
+def _soma_medida_balde(cur, metrica_id, armazem_id, de_data, ate_data, sem_coluna_ids, causa) -> float:
+    """Soma UMA metrica no balde `cliente_id IS NULL`, restrita a UMA causa:
+    `sem_coluna_na_fonte` (armazem esta em `sem_coluna_ids`) ou
+    `nao_cadastrado` (nao esta). As duas causas juntas cobrem o balde inteiro,
+    sem sobreposicao -- ver `balde_sem_cliente_entrada`."""
+    condicoes = ["metrica_id = %s", "cliente_id IS NULL"]
+    params = [metrica_id]
+    if armazem_id is not None:
+        condicoes.append("armazem_id = %s")
+        params.append(armazem_id)
+    if de_data is not None:
+        condicoes.append("competencia >= %s")
+        params.append(de_data)
+    if ate_data is not None:
+        condicoes.append("competencia <= %s")
+        params.append(ate_data)
+    if causa == "sem_coluna_na_fonte":
+        condicoes.append("armazem_id = ANY(%s)")
+        params.append(sem_coluna_ids)
+    elif sem_coluna_ids:
+        condicoes.append("armazem_id <> ALL(%s)")
+        params.append(sem_coluna_ids)
+    cur.execute(
+        f"SELECT COALESCE(SUM(valor), 0) FROM medidas WHERE {' AND '.join(condicoes)}", params
+    )
+    return float(cur.fetchone()[0])
+
+
+def _soma_medida_total(cur, metrica_id, armazem_id, de_data, ate_data) -> float:
+    condicoes = ["metrica_id = %s"]
+    params = [metrica_id]
+    if armazem_id is not None:
+        condicoes.append("armazem_id = %s")
+        params.append(armazem_id)
+    if de_data is not None:
+        condicoes.append("competencia >= %s")
+        params.append(de_data)
+    if ate_data is not None:
+        condicoes.append("competencia <= %s")
+        params.append(ate_data)
+    cur.execute(
+        f"SELECT COALESCE(SUM(valor), 0) FROM medidas WHERE {' AND '.join(condicoes)}", params
+    )
+    return float(cur.fetchone()[0])
+
+
+def _balde_sem_cliente(cur, prefixo_arquivo, metricas, armazem_id, de_data, ate_data) -> dict:
+    """Motor comum da decisao D5.1 (V2.3): o balde 'sem cliente identificado'
+    e exibido como NUMERO, separado por CAUSA -- cliente nao cadastrado
+    (resolvivel: cadastra e o proximo processamento move o valor pra linha do
+    cliente) x unidade sem coluna de cliente na fonte (NAO resolvivel: nao ha
+    CNPJ pra cadastrar). Somar os dois num numero so mandaria alguem caçar um
+    cadastro que nao existe -- mesmo defeito dos 5 erros permanentes da SANCA
+    que o V2.1.1 corrigiu.
+
+    `metricas` mapeia chave de saida ("peso_kg", "valor_brl", "registros") pro
+    nome da metrica no catalogo, ou None quando a direcao nao tem essa medida
+    -- a saida (V2.4) nao tem `valor_brl` porque nao existe
+    `valor_mercadoria_saida` (decisao D1 do V2.3)."""
+    sem_coluna_ids = _armazens_sem_coluna_cliente(cur, prefixo_arquivo)
+    ids = {chave: (metrica_info(cur, nome)["id"] if nome else None) for chave, nome in metricas.items()}
+
+    peso_id = ids["peso_kg"]
+    peso_total = _soma_medida_total(cur, peso_id, armazem_id, de_data, ate_data) if peso_id else 0.0
+
+    causas = {}
+    for causa in ("nao_cadastrado", "sem_coluna_na_fonte"):
+        linha = {}
+        for chave, metrica_id in ids.items():
+            if metrica_id is None:
+                linha[chave] = None
+                continue
+            bruto = _soma_medida_balde(cur, metrica_id, armazem_id, de_data, ate_data, sem_coluna_ids, causa)
+            linha[chave] = int(bruto) if chave == "registros" else bruto
+        peso = linha["peso_kg"]
+        linha["percentual_do_peso_total"] = (
+            round(peso / peso_total * 100, 1) if peso_total and peso is not None else 0.0
+        )
+        causas[causa] = linha
+    return causas
+
+
+def balde_sem_cliente_entrada(cur, armazem_id, de_data, ate_data) -> dict:
+    """So ENTRADA (decisao D5: o card de clientes_atendidos fica em entrada).
+    O balde equivalente da SAIDA (RMSPV) e `balde_sem_cliente_saida`, exibido
+    a partir do V2.4 -- declarado em `limitacoes`, nunca escondido."""
+    return _balde_sem_cliente(
+        cur, "ENTRADA_MERCADORIAS%",
+        {"peso_kg": "peso_bruto_entrada", "valor_brl": "valor_mercadoria_entrada", "registros": "registros_entrada"},
+        armazem_id, de_data, ate_data,
+    )
+
+
+def balde_sem_cliente_saida(cur, armazem_id, de_data, ate_data) -> dict:
+    """Par da SAIDA de `balde_sem_cliente_entrada`, exibido a partir do V2.4
+    (`backend/services/volumetria.py`). Sem `valor_brl`: a fonte
+    SAIDA_MERCADORIAS nao tem coluna de valor em nenhuma unidade (decisao D1
+    do V2.3) -- fica `None`, nunca inventado como 0."""
+    return _balde_sem_cliente(
+        cur, "SAIDA_MERCADORIAS%",
+        {"peso_kg": "peso_bruto_saida", "valor_brl": None, "registros": "registros_saida"},
+        armazem_id, de_data, ate_data,
+    )
+
+
+def contagem_clientes_atendidos_unificada(cur, armazem_id, de_data, ate_data) -> int:
+    """`COUNT(DISTINCT cliente_id)` sobre entrada E saida juntas (decisao D5,
+    V2.4: "mostrar as duas em vez de trocar uma pela outra em silencio").
+    Uma unica query com `metrica_id = ANY(...)` -- nao soma duas contagens
+    separadas, que contaria em dobro cliente atendido nas duas direcoes."""
+    entrada_id = metrica_info(cur, _METRICA_DRIVER_CLIENTES)["id"]
+    saida_id = metrica_info(cur, "registros_saida")["id"]
+    where, params = filtros_sql([entrada_id, saida_id], armazem_id, None, de_data, ate_data)
+    cur.execute(
+        f"SELECT COUNT(DISTINCT cliente_id) FROM medidas WHERE {where} AND cliente_id IS NOT NULL",
+        params,
+    )
+    return int(cur.fetchone()[0])
+
+
 def _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros) -> dict:
     driver = metrica_info(cur, _METRICA_DRIVER_CLIENTES)
     where, params = filtros_sql(driver["id"], armazem_id, None, de_data, ate_data)
@@ -269,13 +442,32 @@ def _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros) -> di
     limitacoes = [
         "Contagem distinta de clientes cadastrados: consolidar por soma de meses "
         "contaria o mesmo cliente mais de uma vez -- ano e acumulado refazem a "
-        "contagem no periodo."
+        "contagem no periodo.",
+        # D5 (V2.3): esta contagem (a que a tela ja mostra) continua so
+        # ENTRADA de proposito -- "o numero que a tela ja mostra nao muda num
+        # lote que nao e de tela". A leitura unificada das duas direcoes
+        # existe desde o V2.4 em `contagem_clientes_atendidos_unificada`,
+        # exposta em GET /cockpit/volumetria/resumo (lado a lado com esta,
+        # nunca substituindo em silencio).
+        "Conta so clientes atendidos na ENTRADA -- a leitura somando entrada e "
+        "saida esta em GET /cockpit/volumetria/resumo (campo "
+        "clientes_atendidos.uniao).",
     ]
     if tem_balde_null:
         limitacoes.append(
             "Ha movimentacao sem cliente identificado no cadastro no recorte -- "
-            "ela NAO entra nesta contagem (ver pendencias de cliente)."
+            "ela NAO entra nesta contagem (ver 'sem_cliente_identificado', abaixo)."
         )
+
+    # D5.1 (V2.3, pedido da Maria): o balde 'sem cliente identificado' passa a
+    # ser exibido como numero, separado por causa -- ver
+    # `balde_sem_cliente_entrada`. O balde equivalente da SAIDA (RMSPV) esta
+    # em GET /cockpit/volumetria/resumo desde o V2.4 (`balde_sem_cliente_saida`).
+    sem_cliente_identificado = balde_sem_cliente_entrada(cur, armazem_id, de_data, ate_data)
+    limitacoes.append(
+        "O balde 'sem cliente identificado' da SAIDA (unidade RMSPV, sem coluna "
+        "de cliente na fonte) esta em GET /cockpit/volumetria/resumo, nao aqui."
+    )
 
     return {
         "metrica": {
@@ -287,6 +479,7 @@ def _serie_clientes_atendidos(cur, armazem_id, de_data, ate_data, filtros) -> di
         "filtros": filtros,
         "mensal": mensal,
         "anual": anual,
+        "sem_cliente_identificado": sem_cliente_identificado,
         "acumulado": acumulado,
         "limitacoes": limitacoes,
     }

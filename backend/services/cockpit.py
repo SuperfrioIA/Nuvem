@@ -22,21 +22,27 @@ from . import processamento_datahub, serie_datahub
 # qual metrica -- valor (financeiro) e a leitura mais direta de participacao
 # de negocio nesta comparacao; peso fica como card proprio, nao como driver
 # da participacao.
-_METRICA_PARTICIPACAO = "valor_mercadoria_movimentada"
+#
+# V2.3 renomeou o trio pro par de entrada quando a saida ganhou metricas
+# proprias -- os cards CONTINUAM apontando pro par de entrada de proposito
+# (docs/V2_3_PLANO_EXECUCAO.md, secao 3.2): este lote e de ingestao, a tela
+# tem que exibir exatamente os mesmos numeros de antes dele. Saida na tela e
+# V2.4/V2.5.
+_METRICA_PARTICIPACAO = "valor_mercadoria_entrada"
 
-_METRICAS_CARDS = ("peso_bruto_movimentado", "valor_mercadoria_movimentada")
+_METRICAS_CARDS = ("peso_bruto_entrada", "valor_mercadoria_entrada")
 
 _SEM_CLIENTE = "Sem cliente identificado"
 
 # "Quantidade de operacoes quando semanticamente valida" (secao 11.4) fica de
 # fora do resumo por decisao explicita: a unica metrica candidata,
-# registros_movimentacao, e documentada no proprio catalogo (seed_metricas.py)
+# registros_entrada, e documentada no proprio catalogo (seed_metricas.py)
 # como "indicador de volume de dados, nao de negocio" -- promove-la a KPI
 # executivo contradiria essa declaracao. O card volta quando existir uma
 # metrica de negocio aprovada para operacoes.
 _LIMITACAO_OPERACOES = (
     "Quantidade de operacoes fora dos cards: a unica metrica candidata "
-    "(registros_movimentacao) e um indicador de volume de dados, nao de "
+    "(registros_entrada) e um indicador de volume de dados, nao de "
     "negocio (catalogo de metricas) -- nao ha ainda um KPI aprovado para isso."
 )
 
@@ -80,6 +86,7 @@ def resumo(cur, de=None, ate=None, filial=None, cliente=None) -> dict:
     kpis = []
     filtros_resolvidos = None
     limitacoes = [_LIMITACAO_OPERACOES]
+    balde_sem_cliente = None
 
     for metrica in _METRICAS_CARDS:
         pontos = serie_datahub.serie(cur, metrica, de=de, ate=ate, filial=filial, cliente=cliente)
@@ -102,6 +109,12 @@ def resumo(cur, de=None, ate=None, filial=None, cliente=None) -> dict:
             "valor": clientes_pontos["acumulado"],
         })
         limitacoes.extend(clientes_pontos["limitacoes"])
+        # D5.1 (V2.3): volume do balde "sem cliente identificado", separado por
+        # causa (nao cadastrado x unidade sem coluna de cliente na fonte) --
+        # ver serie_datahub._balde_sem_cliente_entrada. Nome distinto do
+        # `sem_cliente_identificado` de `participacao` (abaixo), que e outra
+        # coisa: um booleano dizendo se o LIDER do ranking e esse balde.
+        balde_sem_cliente = clientes_pontos["sem_cliente_identificado"]
 
         ranking = comparar_clientes(cur, _METRICA_PARTICIPACAO, de=de, ate=ate, filial=filial)
         if ranking["ranking"]:
@@ -117,6 +130,7 @@ def resumo(cur, de=None, ate=None, filial=None, cliente=None) -> dict:
         "filtros": filtros_resolvidos,
         "kpis": kpis,
         "participacao_maior_cliente": participacao,
+        "balde_sem_cliente": balde_sem_cliente,
         "limitacoes": limitacoes,
     }
 

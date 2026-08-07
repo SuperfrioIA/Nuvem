@@ -9,6 +9,7 @@ import pytest
 from alembic.script import ScriptDirectory
 
 from backend import migracao
+from backend.database import fechar_pool, init_db
 from tests.conftest import consultar
 
 
@@ -291,7 +292,12 @@ def test_migracao_0006_ciclo_completo_preserva_grao_filial(banco_vazio):
         """
     )
     armazem_id = consultar("SELECT id FROM armazens")[0][0]
-    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    # WHERE explicito (achado rodando contra Postgres real): desde a 0015
+    # (V2.3) `migracao.migrar()` sozinho, sem seed, ja deixa `metricas` com
+    # duas linhas (peso_bruto_saida/registros_saida, inseridas no upgrade por
+    # causa da guarda de FK) -- `SELECT id FROM metricas` sem filtro nao pega
+    # mais garantidamente a metrica_teste que este teste acabou de criar.
+    metrica_id = consultar("SELECT id FROM metricas WHERE nome = 'metrica_teste'")[0][0]
     cliente_id = consultar("SELECT id FROM clientes")[0][0]
     _executar(
         f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
@@ -581,9 +587,13 @@ def test_migracao_0011_ciclo_completo_da_tabela_de_auditoria(banco_vazio):
 def test_migracao_0012_aplica_depara_em_banco_existente_e_apaga_a_pendencia(banco_vazio):
     """Lote V2.1: a 0012 e migration de DADO pelo mesmo motivo da 0009 -- o
     seed_datahub e insert-only, entao corrigir o seed nao alcanca banco que ja
-    tem as linhas. Simula o estado da VM (conector e armazens existindo, CWB3 e
-    SANCA sem de-para e com pendencia registrada) e prova que o upgrade cria o
-    de-para E limpa a pendencia resolvida."""
+    tem as linhas. Simula o estado da VM (conector e armazens existindo, CWB3,
+    SANCA e RJ sem de-para e com pendencia registrada) e prova que o upgrade
+    cria o de-para E limpa a pendencia resolvida.
+
+    "head" agora inclui a 0016 (V2.3: de-para da RJ, junto do leitor da
+    variante de 18 colunas) -- por isso a RJ tambem sai de pendencia aqui,
+    diferente de quando so a 0012 existia."""
     from alembic import command
 
     migracao.migrar()
@@ -612,12 +622,10 @@ def test_migracao_0012_aplica_depara_em_banco_existente_e_apaga_a_pendencia(banc
         FROM depara_armazem d JOIN armazens a ON a.id = d.armazem_id
         WHERE d.conector_id = %s ORDER BY d.armazem_na_fonte
         """ % conector_id
-    ) == [("CWB3/001", "CWBIII"), ("SANCA/025", "RMSPV")]
-    # pendencia resolvida sai do painel; a da RJ FICA (ela nao ganhou de-para --
-    # o leitor da variante de 18 colunas e do V2.3)
-    assert consultar(
-        "SELECT armazem_na_fonte FROM depara_pendencias ORDER BY armazem_na_fonte"
-    ) == [("RJ/004-003",)]
+    ) == [("CWB3/001", "CWBIII"), ("RJ/004-003", "RMRJ"), ("SANCA/025", "RMSPV")]
+    # as tres pendencias resolvidas saem do painel (V2.3: a RJ ganhou o leitor
+    # da variante de 18 colunas, entao o de-para dela deixou de ser retido)
+    assert consultar("SELECT COUNT(*) FROM depara_pendencias")[0][0] == 0
 
     # indices novos existem, e o redundante com a UNIQUE nao foi criado
     assert consultar(
@@ -636,10 +644,8 @@ def test_migracao_0012_aplica_depara_em_banco_existente_e_apaga_a_pendencia(banc
         "SELECT COUNT(*) FROM pg_indexes WHERE tablename = 'medidas' "
         "AND indexname LIKE 'ix_medidas%'"
     ) == [(0,)]
-    # a pendencia apagada NAO volta: ela e derivada do processamento
-    assert consultar(
-        "SELECT armazem_na_fonte FROM depara_pendencias ORDER BY armazem_na_fonte"
-    ) == [("RJ/004-003",)]
+    # as pendencias apagadas NAO voltam: sao derivadas do processamento
+    assert consultar("SELECT COUNT(*) FROM depara_pendencias")[0][0] == 0
 
 
 def test_migracao_0013_alarga_o_check_do_status_e_o_downgrade_reaperta(banco_vazio):
@@ -718,7 +724,9 @@ def test_migracao_0014_ciclo_completo_preserva_celula_sem_tipo_estoque(banco_vaz
         """
     )
     armazem_id = consultar("SELECT id FROM armazens")[0][0]
-    metrica_id = consultar("SELECT id FROM metricas")[0][0]
+    # WHERE explicito -- mesmo motivo do test_migracao_0006_..._preserva_grao_filial:
+    # desde a 0015 (V2.3) `metricas` ja nasce com duas linhas antes deste INSERT.
+    metrica_id = consultar("SELECT id FROM metricas WHERE nome = 'metrica_teste'")[0][0]
     _executar(
         f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
         f"VALUES ({metrica_id}, {armazem_id}, '2026-07-01', 10)"
@@ -831,3 +839,267 @@ def test_schema_esperado_bate_com_a_baseline(banco_vazio):
     for tabela, coluna, _tipo, _nulo in colunas:
         existentes.setdefault(tabela, set()).add(coluna)
     assert migracao.validar_schema_legado(existentes) == []
+
+
+# --- V2.3: par de metricas entrada/saida, de-para da RJ, layout_lido ----------
+
+
+def test_migracao_0015_renomeia_em_lugar_preserva_celulas(banco_vazio):
+    """A prova central do V2.3: renomear NUNCA pode significar inserir nome
+    novo. Simula o estado pre-lote (metrica e conceito com o nome antigo,
+    celula gravada) e prova que o upgrade RENOMEIA em lugar -- o id da
+    metrica e o vinculo da celula sobrevivem intactos. Se o codigo tivesse
+    feito INSERT em vez de UPDATE, o id mudaria e a celula ficaria presa a um
+    id orfao (o defeito mais grave que o lote poderia introduzir)."""
+    from alembic import command
+
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0014_tipo_estoque")
+
+    _executar(
+        """
+        INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST');
+        INSERT INTO metricas (nome, unidade) VALUES ('peso_bruto_movimentado', 'kg');
+        INSERT INTO conceitos_canonicos (chave, nome, descricao, unidade_canonica, categoria_unidade, agregacao_padrao)
+        VALUES ('peso_bruto_movimentado', 'Peso bruto movimentado', 'desc', 'kg', 'massa', 'soma');
+        """
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    metrica_id_antes = consultar(
+        "SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'"
+    )[0][0]
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+        f"VALUES ({metrica_id_antes}, {armazem_id}, '2026-07-01', 123.45)"
+    )
+
+    command.upgrade(migracao._config(), "head")
+
+    # o ID NAO MUDOU -- foi renomeado em lugar, nunca inserido de novo
+    linha = consultar("SELECT id, nome FROM metricas WHERE id = %s" % metrica_id_antes)
+    assert linha == [(metrica_id_antes, "peso_bruto_entrada")]
+    assert consultar(
+        "SELECT chave FROM conceitos_canonicos WHERE id = "
+        "(SELECT id FROM conceitos_canonicos WHERE nome = 'Peso bruto de entrada')"
+    ) == [("peso_bruto_entrada",)]
+    # a celula continua ligada ao MESMO metrica_id -- nao ficou orfa
+    assert consultar(
+        f"SELECT valor::float FROM medidas WHERE metrica_id = {metrica_id_antes}"
+    ) == [(123.45,)]
+    assert consultar("SELECT COUNT(*) FROM metricas WHERE nome = 'peso_bruto_movimentado'") == [(0,)]
+
+    # as duas metricas novas de saida existem, aditivas e com conceito aprovado
+    novas = consultar(
+        "SELECT nome, agregacao_padrao FROM metricas WHERE nome IN "
+        "('peso_bruto_saida', 'registros_saida') ORDER BY nome"
+    )
+    assert novas == [("peso_bruto_saida", "soma"), ("registros_saida", "soma")]
+    conceitos_novos = consultar(
+        "SELECT chave, unidade_canonica, status FROM conceitos_canonicos "
+        "WHERE chave IN ('peso_bruto_saida', 'registros_saida') ORDER BY chave"
+    )
+    assert conceitos_novos == [
+        ("peso_bruto_saida", "kg", "aprovado"),
+        ("registros_saida", "un", "aprovado"),
+    ]
+    # nao existe valor_mercadoria_saida -- a fonte nao tem coluna de valor
+    assert consultar(
+        "SELECT COUNT(*) FROM metricas WHERE nome = 'valor_mercadoria_saida'"
+    ) == [(0,)]
+
+
+def test_migracao_0015_downgrade_remove_so_o_que_o_lote_criou(banco_migrado):
+    """O downgrade desfaz os tres renames e apaga as DUAS metricas de saida
+    (e as celulas delas, se existirem) -- nunca toca no que ja existia antes
+    do lote.
+
+    `banco_migrado` (migracao + `init_db()`, os seeds inclusos) de proposito
+    -- e o unico jeito de reproduzir o bug que a revisao independente achou:
+    o seed liga o campo posicao 32 de SAIDA_MERCADORIAS ao conceito
+    `peso_bruto_saida` (`catalogo_campos.conceito_id`, sem ON DELETE), e o
+    DELETE de `conceitos_canonicos` do downgrade batia de frente com essa FK
+    em qualquer banco onde o seed ja rodou -- ou seja, em qualquer banco real."""
+    from alembic import command
+
+    _executar(
+        "INSERT INTO armazens (nome, sigla) VALUES ('Teste', 'TST')"
+    )
+    armazem_id = consultar("SELECT id FROM armazens")[0][0]
+    saida_id = consultar("SELECT id FROM metricas WHERE nome = 'peso_bruto_saida'")[0][0]
+    _executar(
+        f"INSERT INTO medidas (metrica_id, armazem_id, competencia, valor) "
+        f"VALUES ({saida_id}, {armazem_id}, '2026-07-01', 10)"
+    )
+
+    command.downgrade(migracao._config(), "0014_tipo_estoque")
+
+    assert consultar(
+        "SELECT COUNT(*) FROM metricas WHERE nome IN ('peso_bruto_saida', 'registros_saida')"
+    ) == [(0,)]
+    assert consultar(
+        "SELECT COUNT(*) FROM conceitos_canonicos WHERE chave IN ('peso_bruto_saida', 'registros_saida')"
+    ) == [(0,)]
+    # a celula de saida foi removida -- nao e representavel sem a metrica
+    assert consultar("SELECT COUNT(*) FROM medidas WHERE metrica_id = %s" % saida_id) == [(0,)]
+    # o campo do catalogo semantico que apontava pro conceito removido
+    # sobrevive, so perde o vinculo -- nao pode ficar orfao nem travar o DELETE
+    assert consultar(
+        "SELECT conceito_id, status FROM catalogo_campos "
+        "WHERE nome_original = 'Peso Bruto' AND fonte_id = ("
+        "  SELECT id FROM catalogo_fontes WHERE chave = 'datahub_saida_mercadorias'"
+        ") AND posicao = 32"
+    ) == [(None, "rascunho")]
+
+    command.upgrade(migracao._config(), "head")
+    assert _versao_alembic() == _head()
+
+
+_METRICAS_V23 = (
+    "peso_bruto_entrada", "valor_mercadoria_entrada", "registros_entrada",
+    "peso_bruto_saida", "registros_saida",
+)
+
+
+def _textos_metricas_e_conceitos():
+    metricas = consultar(
+        "SELECT nome, nome_executivo, descricao FROM metricas "
+        f"WHERE nome IN {_METRICAS_V23} ORDER BY nome"
+    )
+    conceitos = consultar(
+        "SELECT chave, nome, descricao FROM conceitos_canonicos "
+        f"WHERE chave IN {_METRICAS_V23} ORDER BY chave"
+    )
+    return metricas, conceitos
+
+
+def _recriar_schema_vazio():
+    """Mesmo DROP/CREATE do fixture `banco_vazio` (tests/conftest.py), chamado
+    uma SEGUNDA vez no meio deste teste -- precisa comparar dois caminhos de
+    banco na mesma execucao, e o fixture so roda uma vez no setup."""
+    fechar_pool()
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    conn.autocommit = True
+    with conn.cursor() as cur:
+        cur.execute("DROP SCHEMA public CASCADE")
+        cur.execute("CREATE SCHEMA public")
+    conn.close()
+
+
+def test_seed_novo_e_migracao_existente_terminam_com_texto_identico(banco_vazio):
+    """Secao 3.1 do plano de execucao do V2.3: banco novo semeado e banco
+    existente migrado tem que terminar IDENTICOS nas cinco linhas de
+    `metricas` e `conceitos_canonicos` que este lote toca -- nome_executivo e
+    descricao inclusos, nao so o `nome`/`chave`.
+
+    Sem este teste (achado da propria revisao independente do V2.3): o rename
+    da 0015 grava um texto, e o guard condicional dos dois seeds
+    (`seed_metricas.aplicar`: `UPDATE ... WHERE dominio IS NULL`;
+    `seed_semantico.aplicar`: `INSERT ... ON CONFLICT DO NOTHING`) faz o SEED
+    vencer em banco novo (a linha com nome antigo nunca existiu, entao o
+    rename da migration e no-op e quem cria a linha e o seed) e a MIGRATION
+    vencer em banco existente (a linha ja tinha `dominio` classificado ha
+    meses, entao o `WHERE dominio IS NULL` do seed nao alcança mais nada) --
+    dois bancos rodando o mesmo codigo terminavam com descricoes diferentes
+    pro mesmo conceito, e um deles perdia a nota de decisao pendente sobre
+    devolucao (docs/ENTREGA_POC.md secao 3)."""
+    from alembic import command
+
+    # Caminho A: banco EXISTENTE, migrado -- simula producao rodando desde
+    # antes do V2.3 (as 3 metricas/conceitos originais ja existiam com o nome
+    # antigo, classificadas, quando a 0015 chega).
+    migracao.migrar()
+    command.downgrade(migracao._config(), "0014_tipo_estoque")
+    # 'brl' e 'un' representam o cadastro de `unidades` de producao, que ja
+    # existe muito antes do V2.3 -- sem isto o INSERT de conceitos_canonicos
+    # abaixo (unidade_canonica='brl') quebraria com FK, porque a defensiva da
+    # 0015 so cobre 'kg'/'un'.
+    _executar(
+        "INSERT INTO unidades (chave, nome, categoria, fator_para_base, base_da_categoria) "
+        "VALUES ('brl', 'Real', 'valor_monetario', 1, true) ON CONFLICT (chave) DO NOTHING"
+    )
+    _executar(
+        """
+        INSERT INTO metricas (nome, unidade, nome_executivo, dominio, descricao,
+                               tipo, direcao_risco, agregacao_padrao, comparabilidade,
+                               granularidade_esperada, periodicidade)
+        VALUES
+            ('peso_bruto_movimentado', 'kg', 'Peso bruto movimentado', 'volumetria',
+             'texto antigo', 'quantidade', 'informativo', 'soma', 'entre_filiais', 'armazem_cliente_competencia', 'mensal'),
+            ('valor_mercadoria_movimentada', 'R$', 'Valor da mercadoria movimentada', 'financeiro',
+             'texto antigo', 'valor_financeiro', 'informativo', 'soma', 'entre_filiais', 'armazem_cliente_competencia', 'mensal'),
+            ('registros_movimentacao', 'registros', 'Registros de movimentacao', 'volumetria',
+             'texto antigo', 'quantidade', 'informativo', 'soma', 'somente_historico_proprio', 'armazem_cliente_competencia', 'mensal');
+        INSERT INTO conceitos_canonicos (chave, nome, descricao, unidade_canonica, categoria_unidade, agregacao_padrao, comparabilidade)
+        VALUES
+            ('peso_bruto_movimentado', 'Peso bruto movimentado', 'texto antigo', 'kg', 'massa', 'soma', 'entre_filiais'),
+            ('valor_mercadoria_movimentada', 'Valor da mercadoria movimentada', 'texto antigo', 'brl', 'valor_monetario', 'soma', 'entre_filiais'),
+            ('registros_movimentacao', 'Registros de movimentacao', 'texto antigo', 'un', 'quantidade', 'contagem', 'somente_historico_proprio');
+        """
+    )
+    command.upgrade(migracao._config(), "head")
+    init_db()
+    existente = _textos_metricas_e_conceitos()
+
+    # Caminho B: banco NOVO -- migrar + semear do zero, like producao nunca
+    # tivesse rodado antes.
+    _recriar_schema_vazio()
+    migracao.migrar()
+    init_db()
+    novo = _textos_metricas_e_conceitos()
+
+    assert existente == novo
+
+
+def test_migracao_0017_layout_lido_aceita_os_quatro_valores_e_null(banco_vazio):
+    """`layout_lido` (V2.3) e nullable (arquivo processado antes do lote nunca
+    registrou layout -- NULL, nao um valor inventado) e o CHECK fecha o
+    conjunto: 20/18 colunas (entrada), 36/34 (saida)."""
+    migracao.migrar()
+    _executar(
+        "INSERT INTO conectores (tipo, nome) VALUES ('sharepoint_datahub', 'SharePoint DataHub')"
+    )
+    conector_id = consultar("SELECT id FROM conectores")[0][0]
+    _executar(
+        "INSERT INTO execucoes (conector_id, origem, status) "
+        f"VALUES ({conector_id}, 'datahub', 'ok')"
+    )
+    execucao_id = consultar("SELECT id FROM execucoes")[0][0]
+
+    for indice, layout in enumerate((None, "20_colunas", "18_colunas", "36_colunas", "34_colunas")):
+        _executar(
+            "INSERT INTO processamentos_datahub "
+            "(arquivo, item_id, filial, competencia, execucao_id, status, layout_lido) "
+            f"VALUES ('x{indice}.xlsx', 'item-{indice}', '016', '2026-01-01', "
+            f"{execucao_id}, 'ok', {('%r' % layout) if layout else 'NULL'})"
+        )
+    assert consultar(
+        "SELECT COUNT(*) FROM processamentos_datahub WHERE layout_lido IS NULL"
+    ) == [(1,)]
+    assert consultar(
+        "SELECT COUNT(*) FROM processamentos_datahub WHERE layout_lido IS NOT NULL"
+    ) == [(4,)]
+
+    with pytest.raises(psycopg2.errors.CheckViolation):
+        _executar(
+            "INSERT INTO processamentos_datahub "
+            "(arquivo, item_id, filial, competencia, execucao_id, status, layout_lido) "
+            f"VALUES ('ruim.xlsx', 'item-ruim', '016', '2026-01-01', "
+            f"{execucao_id}, 'ok', '99_colunas')"
+        )
+
+
+def test_migracao_0017_downgrade_remove_a_coluna(banco_vazio):
+    from alembic import command
+
+    migracao.migrar()
+    colunas, _ = _assinatura()
+    assert any(c == "processamentos_datahub" and col == "layout_lido" for c, col, _, _ in colunas)
+
+    command.downgrade(migracao._config(), "0016_depara_rj")
+    colunas, _ = _assinatura()
+    assert not any(
+        c == "processamentos_datahub" and col == "layout_lido" for c, col, _, _ in colunas
+    )
+
+    command.upgrade(migracao._config(), "head")
+    assert _versao_alembic() == _head()

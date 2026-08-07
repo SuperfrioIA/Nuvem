@@ -133,7 +133,7 @@ def test_maioria_suja_vira_texto():
 def test_soma_permitida_com_campo_aprovado_sai_do_motor_de_compatibilidade():
     leitura = _leitura(["Peso Bruto"], [[100], [200], [50.5]])
     campos = [
-        _campo(1, "Peso Bruto", conceito_chave="peso_bruto_movimentado",
+        _campo(1, "Peso Bruto", conceito_chave="peso_bruto_entrada",
                unidade_canonica="kg", categoria_unidade="massa")
     ]
     coluna = _coluna(perfil_dados.perfilar(leitura, campos, _TABELA), "Peso Bruto")
@@ -142,7 +142,7 @@ def test_soma_permitida_com_campo_aprovado_sai_do_motor_de_compatibilidade():
     assert coluna["soma"] == {
         "total": 350.5, "unidade": "kg", "itens_somados": 3, "itens_ignorados": 0,
     }
-    assert coluna["conceito"] == "peso_bruto_movimentado"
+    assert coluna["conceito"] == "peso_bruto_entrada"
 
 
 def test_soma_ignora_valor_nao_numerico_e_conta():

@@ -105,9 +105,11 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
       <div class="filtroCampo">
         <label for="fMetrica">Métrica</label>
         <select id="fMetrica">
-          <option value="peso_bruto_movimentado">Peso bruto movimentado</option>
-          <option value="valor_mercadoria_movimentada">Valor da mercadoria movimentada</option>
-          <option value="registros_movimentacao">Registros de movimentação</option>
+          <option value="peso_bruto_entrada">Peso bruto de entrada</option>
+          <option value="valor_mercadoria_entrada">Valor da mercadoria de entrada</option>
+          <option value="registros_entrada">Registros de entrada</option>
+          <option value="peso_bruto_saida">Peso bruto de saída</option>
+          <option value="registros_saida">Registros de saída</option>
         </select>
       </div>
       <div class="filtroCampo">
@@ -147,7 +149,7 @@ let _celulasCache = [];
 function lerFiltrosDaUrl() {
   const p = new URLSearchParams(location.search);
   return {
-    metrica: p.get("metrica") || "peso_bruto_movimentado",
+    metrica: p.get("metrica") || "peso_bruto_entrada",
     competencia: p.get("competencia") || "",
     filial: p.get("filial") || "",
     cliente: p.get("cliente") || "",

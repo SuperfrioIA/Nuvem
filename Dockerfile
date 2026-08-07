@@ -9,6 +9,11 @@ COPY backend/ backend/
 COPY frontend/ frontend/
 COPY alembic.ini .
 COPY alembic/ alembic/
+# scripts/processar_saida.py roda DENTRO do container (V2.3, decisao D4) --
+# e o unico de scripts/ que chama o motor de ingestao (psycopg2, GRAPH_*),
+# ao contrario de verificar_v2.py/totais_competencia.py, que ficam no host e
+# so fazem SELECT via `psql` do container do banco.
+COPY scripts/processar_saida.py scripts/processar_saida.py
 
 EXPOSE 8000
 

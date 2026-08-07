@@ -27,7 +27,10 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 ## Regras para IA
 
 - Fase atual: **construção da V2 — volumetria integrada e cockpit visual**
-  (aberta em 06/ago/2026; lote V2.1 em construção — ver `docs/V2_PLANO.md`). A
+  (aberta em 06/ago/2026; V2.1, V2.1.1 e V2.2 feitos e deployados; **V2.3
+  (saída) e V2.4 (consultas de volumetria) construídos em 07/ago/2026,
+  revisados de forma independente, verificação contra Postgres real e deploy
+  ainda pendentes** — status em `docs/V2_PLANO.md`). A
   V1 está concluída e implantada (Blocos A–G, entre 31/jul e 04/ago/2026, deploy
   do Bloco G na VM em 05/ago/2026). Não construir código sem pedido explícito da
   Maria, e a autorização é **por lote**. Antes de mexer em

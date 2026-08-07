@@ -45,8 +45,8 @@ o Laboratório explorando em cima dessa base já governada.
 | **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **feito** (06/ago/2026, deployado na VM) |
 | **V2.1.1** | `sem_dado`: competência sem movimento não é erro | **feito** (06/ago/2026) — achado na primeira rodada real |
 | **V2.2** | Tipo de estoque como dimensão | **feito** (06/ago/2026) |
-| **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | não autorizado |
-| **V2.4** | Consultas de volumetria sob `/cockpit/` | não autorizado |
+| **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | **construído, revisado e verificado** (06–07/ago/2026) — revisão independente (2 críticos + 7 médios corrigidos), suíte **577 passed contra Postgres real**, migrations validadas via `alembic` CLI; falta só `scripts/verificar_v2.py` (precisa do stack da VM) e o deploy |
+| **V2.4** | Consultas de volumetria sob `/cockpit/` | **construído e verificado** (07/ago/2026) — mesma suíte verde contra Postgres real; falta `scripts/verificar_v2.py` (idem) e o deploy |
 | **V2.5** | Cockpit visual | não autorizado |
 | **V2.6** | Conciliação com o Power BI | não autorizado |
 | **V2.7** | Escala e operação | não autorizado |
@@ -411,12 +411,288 @@ conciliação com o Power BI (V2.6).
 
 ---
 
+## Lote V2.3 — Saída (autorizado em 06/ago/2026, código construído, verificação pendente)
+
+Autorizado pela Maria em 06/ago/2026. **Plano de execução completo:
+[`docs/V2_3_PLANO_EXECUCAO.md`](V2_3_PLANO_EXECUCAO.md)** — é lá que estão a
+evidência da conferência, os passos em ordem, o aceite e os riscos. Esta seção é
+só o resumo do que ficou decidido.
+
+> A direção que falta, na fonte e na banda decididas.
+
+### A conferência da fonte derrubou quatro premissas da proposta
+
+Perfilei 10 arquivos de `SAIDA_MERCADORIAS` das quatro unidades pelo Graph,
+somente leitura, em 06/ago/2026 — mesmo procedimento que o V2.1 usou com o
+layout da RJ.
+
+1. **Não existe coluna de valor na saída, em nenhuma unidade.** Os 36 rótulos
+   terminam em `Corte Físico / Início / Final / Separador`. A proposta pede seis
+   métricas; o dado sustenta **cinco**.
+2. **A SANCA tem 34 colunas e a banda inteira desloca** — `Peso Bruto` na coluna
+   **29**, não 31. Ler 31 num arquivo da SANCA leria `Início`, um timestamp, como
+   peso. O leitor tem que achar a banda pela linha 5 e contar o deslocamento.
+3. **Quem não tem cliente na saída é a RMSPV, não a RMRJ.** A RJ tem
+   `Cliente`/`Cliente CNPJ` na saída; falta na *entrada* dela. São dois casos, os
+   dois tratados no lote.
+4. **Escopo real:** 248 arquivos, 2,60 GB, competências 2110..2608. **Só 2026: 72
+   arquivos, 616 MB.**
+
+Confirmados: `_f1`/`_f2` são **disjuntos** (ao contrário do `DADOS_GERAIS`); a
+CWB3 publica **sem sufixo** e 12 competências têm parte única; `Status Separação`
+é `Concluído` em 296.586 linhas amostradas, **nenhum `Cancelado`**.
+
+### Decisões da Maria
+
+| # | Decisão |
+|---|---|
+| D1 | **Cinco métricas, não seis** — `valor_mercadoria_saida` não é criada, não tem fonte. |
+| D2 | Linha sem cliente cai no balde `NULL` existente, **sem pendência fantasma** (não há CNPJ para cadastrar). |
+| D3 | **Só 2026.** O histórico anterior fica declarado como disponível e deliberadamente fora. |
+| D4 | Roda por **script de linha de comando na VM**. Botão no painel é V2.7. |
+| D5 | `clientes_atendidos` **continua só na entrada**; a união das direções é V2.4. |
+| D5.1 | O **balde "sem cliente identificado" passa a ser exibido como número**, separado por causa (não cadastrado × unidade sem coluna na fonte). |
+
+### Ordem de execução (resumo)
+
+Métricas e conceitos (`0015`, rename em lugar) → varredura dos consumidores do
+nome → leitor da saída → variante de 18 colunas da entrada → de-para da RJ
+(`0016`) → `layout_lido` (`0017`) → partição, guarda e processamento → script de
+processamento → balde sem cliente visível → cobertura e catálogo →
+`verificar_v2.py`.
+
+**O rename é o item mais perigoso do lote, não o leitor.** Renomear em lugar
+(`UPDATE metricas SET nome`) preserva o `metrica_id` e as células; inserir nome
+novo deixaria o cockpit em 0 t **sem erro nenhum**. E quase todo consumidor do
+nome falha em silêncio: kg no lugar de tonelada no cockpit, check de deploy
+passando por vacuidade em `verificar_v2.py`, `diff` vazio aprovando o lote em
+`totais_competencia.py`.
+
+### O que foi construído (06/ago/2026)
+
+Todo o escopo do plano de execução, seguindo a ordem acima:
+
+- **Migrations `0015` (rename entrada + par de saída), `0016` (de-para da RJ)
+  e `0017` (`layout_lido`)** — as duas primeiras testadas em código quanto à
+  preservação de célula/vínculo no rename e ao no-op em banco novo/existente;
+  a `0017` com o `CHECK` fechado nos quatro layouts.
+- **`backend/services/saida_mercadorias.py`** (novo) — cabeçalho de dois
+  níveis, banda oficial por deslocamento (não posição chumbada), dois layouts
+  (36/34 colunas), streaming (gerador, nunca materializa a lista de linhas),
+  filtro de `Status Separação = Cancelado`.
+- **`entrada_mercadorias.py`** — variante de 18 colunas da RJ, detectada pelo
+  cabeçalho.
+- **`processamento_datahub.py`** — reescrito: agregador parametrizado por
+  produtor, partição de 1..N partes, guarda de colisão com `indice_parte`,
+  prune isolado por produtor (`_METRICAS_ENTRADA` / `_METRICAS_SAIDA`, nunca
+  os dois juntos numa chamada), filtro de escopo D3.
+- **`scripts/processar_saida.py`** (novo, roda dentro do container — Dockerfile
+  ajustado pra copiá-lo) — decisão D4, uma partição por transação.
+- **Balde "sem cliente identificado" visível** (D5.1) — `serie_datahub.py`
+  (`_armazens_sem_coluna_cliente`, derivado de `layout_lido`, nunca de lista
+  fixa), `cockpit.py` e `frontend/cockpit.html`.
+- **Catálogo semântico da saída** — 36 campos, só `Peso Bruto` da banda oficial
+  aprovado; corrigido de passagem um bug real no seed (`return` cedo que
+  faria os campos da saída nunca serem aplicados em banco já migrado).
+- **`nuvem_datahub.py`** — `SAIDA_MERCADORIAS` como `integrada`, escopo D3
+  declarado por arquivo, RJ sai de "layout não homologado".
+- **`scripts/verificar_v2.py`** — checks da seção 3.11 do plano de execução.
+- **Varredura de consumidores do nome** completa (frontend, `cockpit.py`,
+  `serie_datahub.py`, os dois scripts) — nenhum ponto ficou com o nome antigo
+  fora de docs/memória.
+
+### Verificação contra Postgres real (07/ago/2026)
+
+Esta sessão (Sonnet) não tinha `docker` no PATH do Bash/PowerShell, mas achou
+um caminho: `memory/suite-testes-local.md` documentava um Postgres de teste
+(`nuvem-teste-db`, porta 5433) rodando dentro do WSL da máquina da Maria,
+inacessível direto do host mas alcançável via `wsl -d Ubuntu-24.04`. Rodou a
+suíte de verdade num container Python efêmero (`python:3.11-slim`,
+`pip install -r requirements-dev.txt`) ligado à mesma rede Docker do banco —
+nunca modificou o ambiente da Maria fora desse container descartável.
+
+- **Suíte completa: 577 passed, 0 failed.** A primeira rodada achou **7
+  falhas reais** (nenhuma delas bug de produção — todas eram testes que não
+  acompanharam as mudanças deste lote):
+  - `test_migracao_0006_...preserva_grao_filial` e
+    `test_migracao_0014_...preserva_celula_sem_tipo_estoque`: os dois faziam
+    `SELECT id FROM metricas` **sem** `WHERE nome = 'metrica_teste'` — desde a
+    `0015` a tabela já nasce com 2 linhas (peso/registros de saída) antes do
+    `INSERT` do teste, e o `[0][0]` pegava a métrica errada. `WHERE` explícito
+    adicionado nos dois.
+  - `test_processamento_datahub.py::test_origem_sem_depara_nao_baixa_o_arquivo`
+    e `test_filial_com_hifen_da_rj_vira_pendencia_visivel`: usavam a RJ como
+    exemplo de origem **sem** de-para — a migration `0016` deste mesmo lote
+    deu de-para a ela (RMRJ). Trocados por `RMSPII/002`/`003` (que continuam
+    pendentes de verdade).
+  - `test_endpoint_campos_por_fonte` e
+    `test_seed_metricas_preenche_catalogo_semantico`: contagens hardcoded (1
+    fonte, 15 métricas) que o lote mudou pra 2 fontes e 17 métricas.
+  - `test_seed_novo_e_migracao_existente_terminam_com_texto_identico` (o
+    teste de paridade escrito nesta sessão): achou uma FK faltando (`brl` em
+    `unidades`, no setup do teste) e, depois de corrigida, achou uma
+    divergência **real** de caractere (`NAO` maiúsculo no seed, `nao`
+    minúsculo na migration — erro de digitação da própria correção desta
+    sessão) que o teste existe justamente pra pegar. Corrigido.
+  - Todas as 7 corrigidas; suíte rodou de novo **duas vezes** depois, 577
+    passed as duas vezes.
+- **As três migrations novas foram validadas nos dois sentidos** via `alembic`
+  CLI direto (não só pela suíte): `alembic downgrade 0014_tipo_estoque` e
+  `alembic upgrade head` contra um banco **semeado** (`init_db()` completo,
+  não só `migrar()`) — exatamente o cenário que o bug crítico da FK em
+  `catalogo_campos` (revisão independente, abaixo) exigia pra aparecer.
+  Ciclo completo, sem erro.
+- **`scripts/verificar_v2.py` não rodou**: o script assume um stack
+  `docker compose` com serviço `nuvem-db` (o da VM); o Postgres de teste
+  aqui é um container avulso (`nuvem-teste-db`), fora desse contexto, e não
+  tem dado real de arquivo processado do SharePoint pra verificar de
+  qualquer forma. Fica pra rodar na VM, com o dado de verdade.
+- **Checagem estática cobriu tudo**: `py_compile` em cada arquivo Python
+  tocado, `node --check` no JavaScript embutido de `cockpit.html`.
+- **Nada foi implantado na VM nem no SharePoint** — só leitura, como sempre;
+  o container de teste usado é exatamente isso, um banco de teste, nunca a
+  VM de produção.
+
+### Revisão independente (Opus, 07/ago/2026)
+
+Auditoria adversarial de todo o diff não commitado, sem acesso à conversa que
+escreveu o código — achou **2 críticos e 7 médios reais**, todos corrigidos
+nesta sessão antes do fechamento:
+
+- **Crítico — downgrade da `0015` quebrava em qualquer banco semeado**:
+  `catalogo_campos.conceito_id` referencia `conceitos_canonicos(id)` sem
+  `ON DELETE`; o campo posição 32 de `SAIDA_MERCADORIAS` fica ligado a
+  `peso_bruto_saida` pelo seed, e o `DELETE` do downgrade batia de frente com
+  essa FK. Corrigido com `UPDATE ... SET conceito_id = NULL` antes do
+  `DELETE`; teste `test_migracao_0015_downgrade_remove_so_o_que_o_lote_criou`
+  trocado de `banco_vazio` pra `banco_migrado` (só assim reproduz o bug).
+- **Crítico — `scripts/processar_saida.py` estourava `KeyError` e derrubava a
+  rodada inteira** quando uma origem de saída não tinha de-para: o relatório
+  de `pendencia_depara` não tem as mesmas chaves do relatório de sucesso, e a
+  leitura estava fora do `try/except` de isolamento por partição.
+  Corrigido — pendência agora é contada e relatada à parte, nunca derruba as
+  partições seguintes nem conta como sucesso no resumo.
+- **Médio — `layout_lido` virava `NULL` num reprocesso com erro ou
+  pendência**, reclassificando em silêncio o balde "sem cliente identificado"
+  de `sem_coluna_na_fonte` (não resolvível) pra `nao_cadastrado` (resolvível)
+  — exatamente o defeito que a D5.1 existe pra evitar. Corrigido com
+  `COALESCE` no `UPDATE` do upsert.
+- **Médio — partição com arquivo sem sufixo de parte junto com `_fN` somava
+  em silêncio** em vez de dar erro (a guarda de colisão não pega esse caso,
+  só índice duplicado). Corrigido com uma checagem própria em
+  `_agrupar_particoes_saida`, com teste puro cobrindo.
+- **Médio — `medidas_gravadas` gravado em dobro** numa partição de N partes
+  (o total da partição inteira ia pra CADA linha de parte, e
+  `cockpit.qualidade()` soma por status). Corrigido: só a primeira parte
+  carrega o total, as demais ficam com 0.
+- **Médio — banco novo semeado e banco existente migrado terminavam com texto
+  diferente** nas métricas/conceitos do V2.3 (um guard usa `UPDATE ... WHERE
+  dominio IS NULL`, outro usa `ON CONFLICT DO NOTHING` — qual vence depende
+  de qual caminho o banco percorreu). Textos alinhados entre a migration `0015`
+  e os seeds; teste de paridade novo
+  (`test_seed_novo_e_migracao_existente_terminam_com_texto_identico`) cobre a
+  exigência da seção 3.1 do plano de execução, que não tinha teste.
+- **Médio — `scripts/totais_competencia.py` não conseguia mais produzir a
+  prova antes/depois** que o runbook pede: o rename de métrica fazia o
+  `diff` acusar 100% das linhas como diferentes só pelo rótulo. Adicionada a
+  flag `--nomes-antigos`.
+- **Médio — duas superfícies novas sem nenhum teste**: o balde "sem cliente
+  identificado" inteiro (D5.1) e a variante de 18 colunas da entrada (RJ).
+  Testes novos em `test_serie_datahub.py` e `test_entrada_mercadorias.py`.
+- **Médio — comentário afirmava recência que o SQL não tem**:
+  `_armazens_sem_coluna_cliente` classifica um armazém como "sem coluna" pra
+  sempre, não só no processamento mais recente — docstring corrigida pra
+  declarar o risco em vez de afirmar algo que o código não faz (implementar a
+  janela de recência ficou registrado como melhoria futura, não bloqueante:
+  nenhum armazém trocou de layout até hoje).
+- **Baixos** (rótulo de check que não testava o que dizia, ordem de dois
+  `if` que rotulava errado um arquivo de saída fora de escopo, texto colado
+  sem espaço no catálogo semântico, `registros_saida` com unidade `un` em vez
+  de `registros` como o par de entrada) — todos corrigidos.
+
+O núcleo do lote (rename em lugar, isolamento do prune, leitor por
+deslocamento de banda) saiu confirmado sólido pela revisão.
+
+---
+
+## Lote V2.4 — Consultas de volumetria (autorizado e construído em 07/ago/2026)
+
+Autorizado pela Maria em 07/ago/2026 **para planejar e construir mesmo com a
+verificação da V2.3 ainda pendente** contra Postgres real — decisão explícita
+dela, não esquecimento. **Plano de execução completo:
+[`docs/V2_4_PLANO_EXECUCAO.md`](V2_4_PLANO_EXECUCAO.md)** (decisões E1–E9).
+
+> Os números que a tela vai consumir, sob `/cockpit/`. Só backend — desenho
+> visual é V2.5.
+
+### O que foi construído
+
+- **`backend/services/volumetria.py`** (novo) — `evolucao`, `resumo`,
+  `ranking`, `matriz`. Conceito de **grandeza** (`peso`, `registros`, `valor`)
+  mapeando pro par de métricas entrada/saída; `valor` não tem par (decisão D1
+  do V2.3) e nunca inventa um. Escopo temporal misto tratado por mês: mês
+  anterior a 2026-01 fica `null` (fora de escopo, D3 do V2.3) — não é zero.
+  Reaproveita `serie_datahub.serie()`, `resolver_filial`, `resolver_cliente`,
+  `metrica_info`, `exigir_metrica_aditiva`, `resolver_tipo_estoque` e
+  `filtros_sql` — nenhuma consulta duplicada.
+- **`GET /cockpit/volumetria/{resumo,evolucao,ranking,matriz}`** —
+  `backend/routers/cockpit.py`. `evolucao` **substitui** `GET /datahub/serie`
+  (rota removida de `backend/routers/datahub.py`); `ranking`/`matriz` são
+  endpoints novos e adicionais, não trocam `/cockpit/comparacao/*` (que
+  continuam servindo o gráfico atual de uma métrica só).
+- **`clientes_atendidos` somando as duas direções** (decisão D5 do V2.3,
+  empurrada pra cá) — `serie_datahub.contagem_clientes_atendidos_unificada`,
+  exposta em `resumo` **ao lado** da contagem só-entrada que a tela já
+  mostra, nunca substituindo em silêncio.
+- **Balde "sem cliente identificado" da saída** (decisão D5.1 do V2.3,
+  empurrada pra cá) — `serie_datahub.balde_sem_cliente_saida`, generalizado a
+  partir do motor que já existia pra entrada (`_balde_sem_cliente` comum),
+  sem `valor_brl` (a saída não tem métrica de valor).
+- **`frontend/cockpit.html`** — a única linha que chamava `/datahub/serie`
+  agora chama `/cockpit/volumetria/evolucao`; `renderizarSerie`/
+  `renderizarVariacao` ajustadas pra forma nova. Mesmo visual de hoje — mostrar
+  entrada × saída × saldo juntos na tela é V2.5.
+- Testes novos: `tests/test_volumetria.py` (regra de negócio, 20 casos),
+  `tests/test_volumetria_router.py` (autenticação + encaixe HTTP), mais casos
+  em `tests/test_serie_datahub.py` (balde da saída, contagem unida, `filtros_sql`
+  com lista de métricas). `tests/test_datahub_router.py` perdeu os três testes
+  de `/serie` (rota removida).
+
+### Assunção que precisa da confirmação da Maria
+
+**`total = entrada + saída`** (throughput do período) e **`saldo = entrada −
+saída`** (variação líquida: positivo acumula estoque, negativo reduz) — é a
+leitura mais comum em operação logística, mas ninguém validou o nome nem a
+fórmula com ela ainda. Se "saldo" significar outra coisa pro negócio, é só
+trocar a fórmula em `volumetria.py` (dois lugares: `evolucao` e `ranking`) —
+não tem migração nem dado persistido envolvido.
+
+### Verificação contra Postgres real (07/ago/2026)
+
+Rodou junto com a verificação do V2.3 (mesmo container efêmero contra o
+`nuvem-teste-db` via WSL — ver detalhes na seção do V2.3). `test_volumetria.py`
+(20 casos), `test_volumetria_router.py` e os casos novos de
+`test_serie_datahub.py` — todos escritos às cegas nesta sessão, cada consulta
+conferida manualmente linha a linha contra a lógica de `volumetria.py` antes
+de rodar pela primeira vez — **passaram de primeira**, sem nenhum ajuste.
+`scripts/verificar_v2.py` segue sem rodar (mesma limitação do V2.3: assume
+`docker compose` da VM, não o container de teste avulso).
+
+---
+
 ## Próximo lote autorizado
 
-**Nenhum.** V2.1, V2.1.1 e V2.2 foram deployados e validados juntos na VM em
-06/ago/2026: `git pull` + `up -d --build` (migrations `0012`, `0013` e `0014`
-rodaram no startup), "Reprocessar tudo" (forçar) processou os 46 arquivos da
-família ENTRADA_MERCADORIAS (0 pulados, 0 erros — todos gravaram no grão novo,
-com `tipo_estoque`), e `scripts/verificar_v2.py` rodou **sem falhas**.
+**Nenhum ainda — mas V2.3 e V2.4 estão bem perto de fechar.** Construídos,
+revisados de forma independente e agora **verificados contra Postgres real**
+(577 testes, migrations validadas via `alembic` CLI nos dois sentidos contra
+banco semeado). O que falta pro fechamento formal: `scripts/verificar_v2.py`
+na VM (precisa do stack `docker compose` real, com dado processado de
+verdade), o deploy em si, e a Maria avisada do resultado antes do commit —
+nenhuma dessas etapas depende mais de acesso a Postgres, só da VM. V2.5
+(cockpit visual) segue **não autorizado**.
 
-O V2.3 (saída) só começa com autorização explícita.
+V2.1, V2.1.1 e V2.2 foram deployados e validados juntos na VM em 06/ago/2026:
+`git pull` + `up -d --build` (migrations `0012`, `0013` e `0014` rodaram no
+startup), "Reprocessar tudo" (forçar) processou os 46 arquivos da família
+ENTRADA_MERCADORIAS (0 pulados, 0 erros — todos gravaram no grão novo, com
+`tipo_estoque`), e `scripts/verificar_v2.py` rodou **sem falhas**.

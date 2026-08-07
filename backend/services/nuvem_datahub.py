@@ -15,10 +15,17 @@ sumir silenciosamente da contagem total.
 """
 
 import re
+from datetime import date
 
 # inventario_datahub entra so pelo helper puro que interpreta o caminho (quem
 # monta o caminho e ele) -- este modulo continua sem tocar cache nem Graph
 from . import filiais_datahub, inventario_datahub
+
+# Decisao D3 do V2.3: a saida so entra a partir de 2026 -- mesma constante de
+# processamento_datahub.COMPETENCIA_MINIMA_SAIDA, duplicada aqui de proposito
+# (nao importar o motor de processamento so pra isto, e este modulo e puro/
+# sem I/O). Se as duas divergirem um dia, e regressao a ser pega em teste.
+_COMPETENCIA_MINIMA_SAIDA = date(2026, 1, 1)
 
 # linha_cabecalho: linha (1-based) onde o cabecalho REALMENTE comeca em cada
 # familia -- conferido arquivo por arquivo em docs/FONTES_DATAHUB.md (obstaculo
@@ -40,7 +47,11 @@ _FAMILIAS = (
     {"familia": "GUIAS_ENTRADA", "area": "ENTRADA", "estado": "nao_integrada", "linha_cabecalho": 2},
     {"familia": "CORTES_PRODUTOS", "area": "SAIDA", "estado": "nao_integrada", "linha_cabecalho": 5},
     {"familia": "GUIAS_SAIDA", "area": "SAIDA", "estado": "nao_integrada", "linha_cabecalho": 2},
-    {"familia": "SAIDA_MERCADORIAS", "area": "SAIDA", "estado": "nao_integrada", "linha_cabecalho": 6},
+    # integrada no V2.3: leitor de dois niveis + banda oficial (Separado
+    # Fisicamente) homologados. So 2026 em diante entra (decisao D3); o
+    # historico anterior fica declarado fora, nunca em silencio -- ver
+    # `_cobertura_do_arquivo`.
+    {"familia": "SAIDA_MERCADORIAS", "area": "SAIDA", "estado": "integrada", "linha_cabecalho": 6},
     {"familia": "DADOS_GERAIS", "area": "ENTREGAS", "estado": "nao_integrada", "linha_cabecalho": 3},
     {"familia": "OCORRENCIAS_ENTREGAS", "area": "ENTREGAS", "estado": "nao_integrada", "linha_cabecalho": 2},
     {"familia": "ESTOQUE_POR_LOTE", "area": "ESTOQUE", "estado": "nao_integrada", "linha_cabecalho": 5},
@@ -98,12 +109,16 @@ ROTULO_ESTADO = {
 _ORDEM_AREAS = ("ENTRADA", "SAIDA", "ENTREGAS", "ESTOQUE", "OUTROS")
 
 # Melhor esforco: filial + competencia no fim do nome (ex. "_016_2607.xlsx").
-# O codigo aceita hifen porque a unidade RJ nomeia assim (`004-003`).
+# O codigo aceita hifen porque a unidade RJ nomeia assim (`004-003`). O sufixo
+# `_fN` opcional (V2.3) e a particao da SAIDA_MERCADORIAS
+# (`_016_2607_f1.xlsx`) -- sem ele, todo arquivo partido caia no fallback
+# "sem filial/competencia reconhecida" e a bolinha nunca saberia se aquele
+# arquivo especifico esta ou nao no escopo de 2026 (decisao D3).
 # Familias por cliente/temperatura (ESTOQUE_POR_LOTE segregado,
 # PALLETS_EXCEDENTES) e o formato diario AAMMDD do ESTOQUE_POR_LOTE nao batem
 # nesse padrao -- ficam None, exibido como "-" na tela (decisao de 30/jul/2026,
 # ponto 4 do P5.5: nao quebrar quando o nome nao seguir o padrao esperado).
-_PADRAO_FILIAL_COMPETENCIA = re.compile(r"_(\d+(?:-\d+)*)_(\d{2})(\d{2})\.[^.]+$")
+_PADRAO_FILIAL_COMPETENCIA = re.compile(r"_(\d+(?:-\d+)*)_(\d{2})(\d{2})(?:_f\d+)?\.[^.]+$")
 
 
 def _identificar_familia(nome: str) -> dict:
@@ -134,27 +149,28 @@ def _extrair_filial_competencia(nome: str) -> tuple[str | None, str | None]:
 
 
 # Unidades cuja variante da familia integrada NAO tem leitor homologado, com o
-# motivo. Conferido no dado em 06/ago/2026: a `ENTRADA_MERCADORIAS` da RJ tem 18
-# colunas (faltam `Cliente` e `Cliente CNPJ`), e o leitor exige as 20.
+# motivo. VAZIO desde o V2.3: a `ENTRADA_MERCADORIAS` de 18 colunas da RJ e as
+# duas variantes da `SAIDA_MERCADORIAS` (36/34 colunas) ganharam leitor nesse
+# lote -- os dois layouts conhecidos de cada familia sao homologados. O
+# mecanismo fica pra proxima variante que aparecer sem leitor (nao remover:
+# `_cobertura_do_arquivo` continua consultando este dict).
 #
-# Isto existe pra tela nomear a causa CERTA. Dizer "origem sem de-para" nesses
-# arquivos convida o admin a cadastrar o de-para em dois cliques (o painel tem
-# `POST /api/admin/depara`, que cria e apaga a pendencia) -- e ai os 8 arquivos
-# da RJ saem de pendencia limpa e viram erro de leitura, exatamente o desfecho
-# que o V2.1 reteve o de-para pra evitar.
-UNIDADES_SEM_LEITOR_HOMOLOGADO = {
-    "RJ": "layout de 18 colunas, sem Cliente/Cliente CNPJ",
-}
+# Isto existe pra tela nomear a causa CERTA. Dizer "origem sem de-para" num
+# arquivo sem leitor convida o admin a cadastrar o de-para em dois cliques (o
+# painel tem `POST /api/admin/depara`, que cria e apaga a pendencia) -- e ai
+# os arquivos saem de pendencia limpa e viram erro de leitura, exatamente o
+# desfecho que o V2.1 reteve o de-para da RJ pra evitar.
+UNIDADES_SEM_LEITOR_HOMOLOGADO: dict[str, str] = {}
 
 
-def _cobertura_do_arquivo(estado: str, unidade, filial, sigla) -> str | None:
+def _cobertura_do_arquivo(estado: str, familia: str, unidade, filial, competencia, sigla) -> str | None:
     """Por que este arquivo esta (ou nao esta) na cobertura da tela executiva.
 
     None = nada a declarar: arquivo da unidade representativa, com de-para, lido
     e somado nos indicadores desta tela. Qualquer outra situacao devolve texto,
     porque dentro da bolinha "Integrada" um arquivo sem declaracao se le como
-    processado -- e ha tres motivos diferentes pra ele nao estar, que pedem acoes
-    diferentes de quem le.
+    processado -- e ha varios motivos diferentes pra ele nao estar, que pedem
+    acoes diferentes de quem le.
     """
     if estado != ESTADO_INTEGRADA:
         return None  # o estado da familia ja explica
@@ -167,8 +183,36 @@ def _cobertura_do_arquivo(estado: str, unidade, filial, sigla) -> str | None:
             "foi retido de propósito — não cadastrar até existir o leitor da "
             "variante, senão estes arquivos passam de pendência a erro de leitura."
         )
+    # SAIDA_MERCADORIAS (V2.3): checado ANTES do de-para, de proposito (achado
+    # da revisao independente do V2.3) -- um arquivo de saida anterior a 2026
+    # esta fora de escopo por DECISAO (D3), nao por falta de de-para; se o
+    # de-para tambem faltar (ex.: origem nova, ainda sem cadastro), a causa
+    # certa pra declarar e a decisao de escopo, nao "sem de-para confirmado"
+    # (que convida a cadastrar um de-para que nao mudaria nada, porque o
+    # arquivo continuaria fora de escopo mesmo com de-para).
+    #
+    # NUNCA alimenta o card executivo do /nuvem (que e so de entrada,
+    # `entrada_mercadorias.item_mais_recente`) nem ainda o cockpit (V2.4) --
+    # independente da unidade, inclusive a RMSPII. Sem esta declaracao, um
+    # arquivo de saida da RMSPII cairia no "None" abaixo (mesmo caminho da
+    # entrada representativa) e se leria como "usado nos indicadores desta
+    # tela", que e falso pras duas telas.
+    if familia == "SAIDA_MERCADORIAS":
+        if competencia and competencia < f"{_COMPETENCIA_MINIMA_SAIDA:%Y-%m}":
+            return (
+                "Fora da cobertura: histórico anterior a 2026, fora de escopo por "
+                "decisão (V2.3) — disponível na fonte, deliberadamente não processado."
+            )
+        if sigla is None:
+            return "Fora da cobertura: origem sem de-para confirmado."
+        return (
+            "Ingerido na série histórica de saída (V2.3); não alimenta o card "
+            "executivo do /nuvem (que é só de entrada) nem ainda o cockpit (V2.4)."
+        )
+
     if sigla is None:
         return "Fora da cobertura: origem sem de-para confirmado."
+
     if unidade != filiais_datahub.UNIDADE_REPRESENTATIVA:
         return (
             "Ingerido na série histórica, mas fora dos indicadores desta tela: os "
@@ -210,7 +254,9 @@ def montar_bolinhas(resumo: dict) -> list[dict]:
         # RMSPII na tela
         unidade = inventario_datahub.unidade_do_caminho(arquivo.get("caminho"))
         sigla = filiais_datahub.sigla(unidade, filial)
-        cobertura = _cobertura_do_arquivo(definicao["estado"], unidade, filial, sigla)
+        cobertura = _cobertura_do_arquivo(
+            definicao["estado"], definicao["familia"], unidade, filial, competencia, sigla
+        )
         bolinha["total_arquivos"] += 1
         bolinha["tamanho_total_mb"] += (arquivo.get("tamanho") or 0) / (1024 * 1024)
         bolinha["arquivos"].append(

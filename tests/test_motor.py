@@ -79,7 +79,7 @@ def test_grao_cliente_soma_na_serie_da_filial(cursor):
 
     cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     armazem_id = cursor.fetchone()[0]
-    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     metrica_id = cursor.fetchone()[0]
     cursor.execute("SELECT id FROM clientes WHERE nk_erp = '67945071'")
     sapore = cursor.fetchone()[0]

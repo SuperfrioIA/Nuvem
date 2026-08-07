@@ -315,7 +315,11 @@ def test_kpis_traz_amostra_de_linhas(cliente, monkeypatch):
     assert corpo["linhas_amostra"][0]["Cliente"] == "CLIENTE A"
 
 
-# --- POST /processar, GET /processamentos, GET /serie (Bloco C / V1.3) --------
+# --- POST /processar, GET /processamentos (Bloco C / V1.3) --------------------
+#
+# GET /serie foi removido neste diretorio no V2.4: virou
+# GET /cockpit/volumetria/evolucao (backend/routers/cockpit.py), com `grandeza`
+# no lugar de `metrica` -- ver tests/test_volumetria_router.py.
 
 
 def test_processar_sem_login_da_401(banco_migrado):
@@ -330,22 +334,17 @@ def test_processamentos_sem_login_da_401(banco_migrado):
     assert resposta.status_code == 401
 
 
-def test_serie_sem_login_da_401(banco_migrado):
-    with TestClient(app) as c:
-        resposta = c.get("/api/admin/datahub/serie", params={"metrica": "peso_bruto_movimentado"})
-    assert resposta.status_code == 401
-
-
 def test_processar_sem_sincronizacao_da_400(cliente):
     resposta = cliente.post("/api/admin/datahub/processar", json={})
     assert resposta.status_code == 400
     assert "Sincronizar agora" in resposta.json()["detail"]
 
 
-def test_processar_persiste_e_serie_devolve(cliente, monkeypatch):
+def test_processar_persiste_e_processamentos_lista(cliente, monkeypatch):
     """Caminho fim a fim pelo endpoint: sincronizar -> processar -> pular
-    inalterado -> forcar -> listar processamentos/pendencias -> consultar a
-    serie da filial (via codigo do DataHub)."""
+    inalterado -> forcar -> listar processamentos/pendencias. A leitura da
+    serie gravada (mesmo dado) e testada em
+    tests/test_volumetria_router.py::test_evolucao_devolve_serie_da_filial."""
     _sincronizar_com_arquivo_em(cliente, monkeypatch)
     monkeypatch.setattr(
         graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
@@ -372,22 +371,6 @@ def test_processar_persiste_e_serie_devolve(cliente, monkeypatch):
     assert [p["cliente_na_fonte"] for p in listagem["pendencias_cliente"]] == ["12345678"]
     assert listagem["pendencias_filial"] == []
 
-    serie = cliente.get(
-        "/api/admin/datahub/serie",
-        # codigo de origem qualificado pela unidade (migration 0008)
-        params={"metrica": "peso_bruto_movimentado", "filial": "RMSPII/001"},
-    ).json()
-    assert serie["filtros"]["filial"] == "RMSPII"
-    assert serie["mensal"] == [{"competencia": "2026-07", "valor": 1300.0}]
-    assert serie["anual"] == [{"ano": 2026, "valor": 1300.0}]
-    assert serie["acumulado"] == 1300.0
-
-
-def test_serie_parametro_invalido_da_400(cliente):
-    resposta = cliente.get("/api/admin/datahub/serie", params={"metrica": "nao_existe"})
-    assert resposta.status_code == 400
-    assert "nao cadastrada" in resposta.json()["detail"]
-
 
 def test_processamentos_expoe_pendencia_de_tipo_estoque(cliente, monkeypatch):
     """V2.2: 'Nome Estoque' = 'ESTOQUE 1' nao casa com nenhuma palavra-chave --
@@ -401,24 +384,6 @@ def test_processamentos_expoe_pendencia_de_tipo_estoque(cliente, monkeypatch):
 
     listagem = cliente.get("/api/admin/datahub/processamentos").json()
     assert [p["valor_na_fonte"] for p in listagem["pendencias_tipo_estoque"]] == ["ESTOQUE 1"]
-
-
-def test_serie_aceita_filtro_de_tipo_estoque(cliente, monkeypatch):
-    _sincronizar_com_arquivo_em(cliente, monkeypatch)
-    monkeypatch.setattr(
-        graph_datahub, "baixar_item", lambda item_id, limite_bytes: _xlsx_entrada_mercadorias()
-    )
-    cliente.post("/api/admin/datahub/processar", json={})
-
-    serie = cliente.get(
-        "/api/admin/datahub/serie",
-        params={
-            "metrica": "peso_bruto_movimentado", "filial": "RMSPII/001",
-            "tipo_estoque": "NAO_CLASSIFICADO",
-        },
-    ).json()
-    assert serie["mensal"] == [{"competencia": "2026-07", "valor": 1300.0}]
-    assert serie["filtros"]["tipo_estoque"] == "NAO_CLASSIFICADO"
 
 
 # --- GET /nuvem (Lote P5.5) ----------------------------------------------

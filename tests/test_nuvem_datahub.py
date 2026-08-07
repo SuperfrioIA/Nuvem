@@ -57,15 +57,15 @@ def test_ua_e_familia_propria_e_nao_entra_como_integrada():
 
 
 def test_cobertura_declara_o_motivo_certo_de_cada_arquivo():
-    """Dentro da bolinha "Integrada" ha arquivo que a nuvem nao le e arquivo que
-    le mas nao mostra nesta tela -- por motivos DIFERENTES, que pedem acoes
+    """Dentro da bolinha "Integrada" ha arquivo que a nuvem le mas nao mostra
+    nesta tela -- por motivos DIFERENTES dos de RMSPII/002, que pedem acoes
     diferentes de quem le. Sem declaracao, todos se leem como processados.
 
-    Achados da verificacao independente do V2.1: dizer "origem sem de-para" na RJ
-    convida o admin a cadastrar o de-para (o painel tem POST /api/admin/depara,
-    que cria e apaga a pendencia) e transformar 8 pendencias limpas em 8 erros de
-    leitura; e arquivo de CWB3/SANCA com Cobertura vazia se le como incluido nos
-    indicadores da tela, que sao so da RMSPII."""
+    A RJ ganhou de-para e leitor da variante de 18 colunas no V2.3 (antes
+    disso, a causa era layout nao homologado -- ver
+    tests/test_nuvem_datahub.py no historico do V2.1). Com de-para, ela se
+    comporta como a CWB3: ingerida na serie, fora dos indicadores desta tela
+    (que sao so da RMSPII)."""
     resumo = {"arquivos": [
         _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx",
                  caminho="RMSPII/ENTRADA/ENTRADA_MERCADORIAS_016_2607.xlsx"),
@@ -81,10 +81,10 @@ def test_cobertura_declara_o_motivo_certo_de_cada_arquivo():
 
     # unidade representativa, com de-para: nada a declarar
     assert cobertura["016"] is None
-    # RJ: a causa e o LAYOUT, e o texto tem que impedir o cadastro do de-para
-    assert "layout não homologado" in cobertura["004-003"]
-    assert "não cadastrar" in cobertura["004-003"]
-    assert "sem de-para" not in cobertura["004-003"]
+    # RJ (V2.3): tem de-para e leitor -- ingerida na serie, mas fora dos
+    # indicadores desta tela (mesmo caso da CWB3)
+    assert "série histórica" in cobertura["004-003"]
+    assert "RMSPII" in cobertura["004-003"]
     # CWB3: tem de-para, e ingerida na serie, mas nao esta nos numeros da tela
     assert "série histórica" in cobertura["001"]
     assert "RMSPII" in cobertura["001"]
@@ -173,7 +173,8 @@ def test_mesmo_codigo_em_outra_unidade_nao_herda_a_sigla_da_rmspii():
 
 def test_filial_com_hifen_da_rj_e_extraida_do_nome():
     """A unidade RJ nomeia com hifen (`004-003`): antes o padrao exigia so
-    digitos e a filial saia None na tela."""
+    digitos e a filial saia None na tela. Desde o V2.3 a RJ tem de-para
+    (RMRJ) -- a sigla resolve."""
     resumo = {"arquivos": [
         _arquivo("ENTRADA_MERCADORIAS_004-003_2601.xlsx",
                  caminho="RJ/ENTRADA/ENTRADA_MERCADORIAS_004-003_2601.xlsx"),
@@ -181,7 +182,7 @@ def test_filial_com_hifen_da_rj_e_extraida_do_nome():
     arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
     assert arquivo["unidade"] == "RJ"
     assert arquivo["filial"] == "004-003"
-    assert arquivo["filial_sigla"] is None
+    assert arquivo["filial_sigla"] == "RMRJ"
     assert arquivo["competencia"] == "2026-01"
 
 

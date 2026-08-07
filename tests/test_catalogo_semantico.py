@@ -40,7 +40,7 @@ def test_conceitos_canonicos_semeados(banco_migrado):
     linhas = consultar(
         """
         SELECT unidade_canonica, categoria_unidade, agregacao_padrao, status
-        FROM conceitos_canonicos WHERE chave = 'peso_bruto_movimentado'
+        FROM conceitos_canonicos WHERE chave = 'peso_bruto_entrada'
         """
     )
     assert linhas == [("kg", "massa", "soma", "aprovado")]
@@ -87,7 +87,7 @@ def test_campos_entrada_mercadorias_completos(banco_migrado):
     assert por_posicao[9][4] == 10
     assert por_posicao[9][5] == "embalagem"
     # Peso Bruto: kg, massa, conceito canonico
-    assert por_posicao[14][2] == "peso_bruto_movimentado"
+    assert por_posicao[14][2] == "peso_bruto_entrada"
     assert por_posicao[14][3] == "kg"
 
 
@@ -117,7 +117,7 @@ def test_endpoints_semantica_exigem_login(banco_migrado):
 def test_endpoint_conceitos_e_unidades(cliente):
     conceitos = cliente.get("/api/admin/semantica/conceitos").json()
     assert {c["chave"] for c in conceitos} >= {
-        "peso_bruto_movimentado", "valor_mercadoria_movimentada", "volumes_declarados",
+        "peso_bruto_entrada", "valor_mercadoria_entrada", "volumes_declarados",
     }
 
     unidades = cliente.get("/api/admin/semantica/unidades").json()
@@ -127,12 +127,17 @@ def test_endpoint_conceitos_e_unidades(cliente):
 
 
 def test_endpoint_campos_por_fonte(cliente):
+    # duas familias integradas desde o V2.3: entrada (20 campos) e saida (36,
+    # so a banda oficial aprovada -- backend/seed_semantico.py)
     fontes = cliente.get("/api/admin/semantica/fontes").json()
-    assert len(fontes) == 1  # so a familia integrada tem campos por ora
-    assert fontes[0]["chave"] == "datahub_entrada_mercadorias"
-    assert fontes[0]["total_campos"] == 20
+    assert len(fontes) == 2
+    por_chave = {f["chave"]: f for f in fontes}
+    assert por_chave["datahub_entrada_mercadorias"]["total_campos"] == 20
+    assert por_chave["datahub_saida_mercadorias"]["total_campos"] == 36
 
-    campos = cliente.get(f"/api/admin/semantica/campos?fonte_id={fontes[0]['id']}").json()
+    campos = cliente.get(
+        f"/api/admin/semantica/campos?fonte_id={por_chave['datahub_entrada_mercadorias']['id']}"
+    ).json()
     volume = next(c for c in campos if c["nome_original"] == "Volume")
     # unidade canonica derivada do conceito (nenhuma, no caso do volume)
     assert volume["conceito_chave"] == "volumes_declarados"

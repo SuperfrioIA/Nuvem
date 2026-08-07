@@ -47,13 +47,13 @@ def test_origem_do_arquivo_com_de_para_confirmado():
 
 
 def test_origem_do_arquivo_sem_de_para_confirmado():
-    """A RJ e o exemplo de origem sem de-para desde o V2.1 -- antes era a CWB3,
-    que passou a ter de-para naquele lote. A RJ segue pendente porque a
-    ENTRADA_MERCADORIAS dela tem 18 colunas e o leitor da variante nao existe."""
+    """RMSPII/002 e o exemplo de origem sem de-para: decisao humana pendente,
+    sem leitor nem migracao previstos. A RJ (004-003) tinha esse papel ate o
+    V2.3 -- desde entao tem de-para (RMRJ), como a CWB3 desde o V2.1."""
     origem = laboratorio_chat.origem_do_arquivo(
-        {"caminho": "RJ/ENTRADA/ENTRADA MERCADORIAS/x.xlsx", "filial": "004-003"}
+        {"caminho": "RMSPII/ENTRADA/ENTRADA MERCADORIAS/x.xlsx", "filial": "002"}
     )
-    assert origem == "RJ/004-003 (sem de-para confirmado)"
+    assert origem == "RMSPII/002 (sem de-para confirmado)"
 
 
 def test_origem_do_arquivo_sem_filial_no_nome():

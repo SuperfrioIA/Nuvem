@@ -1,9 +1,11 @@
-"""Verificacao somente leitura da cobertura do DataHub em producao (lote V2.1).
+"""Verificacao somente leitura da cobertura do DataHub em producao (lote V2.1,
+estendida no V2.2 e no V2.3 -- saida).
 
 Complementa o scripts/verificar_v1.py, que cobre a superficie HTTP (health,
 gate de login, paginas fechadas). Este cobre o ESTADO DOS DADOS depois do
 deploy: schema na revisao certa, de-para qualificado pela unidade, pendencias
-visiveis, processamentos por unidade e os indices de `medidas`.
+visiveis, processamentos por unidade, os indices de `medidas` e, desde o
+V2.3, o par entrada/saida de metricas e o recorte de escopo da saida (D3).
 
 **Nao grava nada.** Os checks de banco sao SELECT; os de HTTP sao GET (mais o
 POST de login e o de logout).
@@ -36,9 +38,7 @@ SERVICO_DB = os.environ.get("SERVICO_DB", "nuvem-db")
 USUARIO_DB = os.environ.get("POSTGRES_USER", "nuvem")
 NOME_DB = os.environ.get("POSTGRES_DB", "nuvem")
 
-# Origens que seguem SEM de-para por decisao, nao por esquecimento: a RJ espera o
-# leitor da variante de 18 colunas (V2.3). Aparecer como pendencia aqui e o
-# comportamento correto -- o que seria defeito e sumir.
+# Origens que seguem SEM de-para por decisao, nao por esquecimento.
 #
 # `RMSPII/002` NAO entra: o de-para dela segue pendente por decisao da Maria, mas
 # o codigo 002 so aparece em DADOS_GERAIS e OCORRENCIAS_ENTREGAS, que nao sao
@@ -47,18 +47,43 @@ NOME_DB = os.environ.get("POSTGRES_DB", "nuvem")
 # avisava "pendencia esperada ausente" pra sempre, pedindo uma coisa impossivel
 # (achado da primeira rodada real na VM, 06/ago/2026). Aviso que nunca sai treina
 # quem le a ignorar a saida inteira.
-PENDENCIAS_ESPERADAS = {"RJ/004-003"}
+#
+# `RJ/004-003` SAIU desta lista no V2.3 (migration 0016_depara_rj): a RJ ganhou
+# de-para junto do leitor da variante de 18 colunas. Se voltar a aparecer como
+# pendencia, e regressao -- nao pendencia esperada.
+PENDENCIAS_ESPERADAS: set[str] = set()
 
-# De-para do conector sharepoint_datahub depois do V2.1
+# De-para do conector sharepoint_datahub depois do V2.3
 DEPARA_ESPERADO = {
     "RMSPII/001": "RMSPII",
     "RMSPII/015": "RMSPIII",
     "RMSPII/016": "RMSPIV",
     "CWB3/001": "CWBIII",
     "SANCA/025": "RMSPV",
+    "RJ/004-003": "RMRJ",
 }
 
 INDICES_ESPERADOS = {"ix_medidas_metrica_competencia", "ix_medidas_metrica_cliente_competencia"}
+
+# Metricas do DataHub apos o V2.3 (par de entrada + par de saida -- nao existe
+# valor_mercadoria_saida, a fonte nao tem coluna de valor). Resolvidas contra
+# o catalogo na hora, nunca assumidas -- ver o comentario no check que usa isto.
+_METRICAS_DATAHUB = (
+    "peso_bruto_entrada", "valor_mercadoria_entrada", "registros_entrada",
+    "peso_bruto_saida", "registros_saida",
+)
+_METRICAS_DATAHUB_SQL = "(" + ", ".join(f"'{m}'" for m in _METRICAS_DATAHUB) + ")"
+
+# Layouts sem coluna de cliente, conferidos no dado em 06/ago/2026 (V2.3):
+# RMRJ na entrada (18 colunas) e RMSPV na saida (34 colunas). Usado pelo check
+# de "zero celula de cliente nao nulo" abaixo.
+UNIDADES_SEM_CLIENTE_ENTRADA = {"RMRJ"}
+UNIDADES_SEM_CLIENTE_SAIDA = {"RMSPV"}
+
+# Competencia minima da saida (decisao D3/07 -- so 2026)
+COMPETENCIA_MINIMA_SAIDA = "2026-01-01"
+
+TOTAL_ARQUIVOS_SAIDA_ESPERADO = 72
 
 _FALHAS: list[str] = []
 
@@ -233,42 +258,57 @@ def verificar_banco() -> None:
     # silencio. Este check pega isso -- mas so como AVISO, nao FALHA: a propria
     # migration 0014 documenta que, entre o deploy (upgrade da migration) e o
     # "Processar arquivos" com FORCAR (dois passos manuais separados do
-    # runbook), toda celula das 3 metricas fica com tipo_estoque NULL por
-    # desenho -- "total certo, dimensao ausente", nao um defeito. Reprovar o
-    # deploy por rodar o script antes do reprocesso confundiria rotina com erro.
-    grao_misto = _sql(
-        """
-        SELECT mt.nome, COUNT(*) FROM medidas m
-        JOIN metricas mt ON mt.id = m.metrica_id
-        WHERE mt.nome IN
-            ('peso_bruto_movimentado', 'valor_mercadoria_movimentada', 'registros_movimentacao')
-          AND m.tipo_estoque IS NULL
-        GROUP BY 1
-        """
-    )
-    if grao_misto:
-        _avisar(
-            "celulas do DataHub ainda no grao antigo (tipo_estoque NULL)",
-            f"{grao_misto} -- normal ate rodar 'Processar arquivos' com FORCAR; "
-            "so e defeito se persistir depois do reprocesso",
+    # runbook), toda celula das metricas do DataHub fica com tipo_estoque NULL
+    # por desenho -- "total certo, dimensao ausente", nao um defeito. Reprovar
+    # o deploy por rodar o script antes do reprocesso confundiria rotina com erro.
+    #
+    # A lista e RESOLVIDA contra `metricas` (V2.3): antes era literal, e um
+    # rename sem atualizar aqui fazia a consulta voltar VAZIA -- o `if
+    # grao_misto` caia no ramo de sucesso e o check PASSAVA POR VACUIDADE,
+    # aprovando um banco inteiro no grao antigo. Agora o script FALHA se a
+    # lista nao resolver nenhuma metrica.
+    metricas_datahub = [
+        linha[0] for linha in _sql(f"SELECT nome FROM metricas WHERE nome IN {_METRICAS_DATAHUB_SQL}")
+    ]
+    if not metricas_datahub:
+        _checar(
+            "metricas do DataHub existem no catalogo (V2.3)",
+            False,
+            f"nenhuma de {_METRICAS_DATAHUB} encontrada -- rename sem seed/migration aplicada?",
         )
     else:
-        _checar("nenhuma celula das metricas do DataHub com tipo_estoque NULL (grao misto)", True)
+        lista_encontradas = "(" + ", ".join(f"'{m}'" for m in metricas_datahub) + ")"
+        grao_misto = _sql(
+            f"""
+            SELECT mt.nome, COUNT(*) FROM medidas m
+            JOIN metricas mt ON mt.id = m.metrica_id
+            WHERE mt.nome IN {lista_encontradas}
+              AND m.tipo_estoque IS NULL
+            GROUP BY 1
+            """
+        )
+        if grao_misto:
+            _avisar(
+                "celulas do DataHub ainda no grao antigo (tipo_estoque NULL)",
+                f"{grao_misto} -- normal ate rodar 'Processar arquivos' com FORCAR; "
+                "so e defeito se persistir depois do reprocesso",
+            )
+        else:
+            _checar("nenhuma celula das metricas do DataHub com tipo_estoque NULL (grao misto)", True)
 
-    distribuicao = _sql(
-        """
-        SELECT mt.nome, COALESCE(m.tipo_estoque, '(nulo)'), COUNT(*), ROUND(SUM(m.valor), 3)
-        FROM medidas m
-        JOIN metricas mt ON mt.id = m.metrica_id
-        WHERE mt.nome IN
-            ('peso_bruto_movimentado', 'valor_mercadoria_movimentada', 'registros_movimentacao')
-        GROUP BY 1, 2 ORDER BY 1, 2
-        """
-    )
-    print("\n      distribuicao por tipo de estoque:")
-    for metrica, tipo, qtd, soma in distribuicao:
-        print(f"        {metrica:<32} {tipo:<18} {qtd:>6} celula(s)   soma {soma}")
-    print()
+        distribuicao = _sql(
+            f"""
+            SELECT mt.nome, COALESCE(m.tipo_estoque, '(nulo)'), COUNT(*), ROUND(SUM(m.valor), 3)
+            FROM medidas m
+            JOIN metricas mt ON mt.id = m.metrica_id
+            WHERE mt.nome IN {lista_encontradas}
+            GROUP BY 1, 2 ORDER BY 1, 2
+            """
+        )
+        print("\n      distribuicao por tipo de estoque:")
+        for metrica, tipo, qtd, soma in distribuicao:
+            print(f"        {metrica:<32} {tipo:<18} {qtd:>6} celula(s)   soma {soma}")
+        print()
 
     # unidade NULL so e legitima em arquivo solto na raiz (sem galho de unidade)
     sem_unidade = _sql(
@@ -342,6 +382,144 @@ def verificar_banco() -> None:
         )
 
 
+def verificar_saida() -> None:
+    """Checks especificos do V2.3 -- rename das metricas, isolamento entre
+    entrada e saida, e o recorte de escopo da saida (decisao D3, so 2026).
+    """
+    metricas_existentes = {
+        linha[0]
+        for linha in _sql(f"SELECT nome FROM metricas WHERE nome IN {_METRICAS_DATAHUB_SQL}")
+    }
+    _checar(
+        "as 5 metricas do par entrada/saida existem no catalogo",
+        metricas_existentes == set(_METRICAS_DATAHUB),
+        f"faltando: {sorted(set(_METRICAS_DATAHUB) - metricas_existentes)}",
+    )
+
+    sem_conceito = _sql(
+        f"""
+        SELECT mt.nome FROM metricas mt
+        LEFT JOIN conceitos_canonicos cc ON cc.chave = mt.nome
+            AND cc.status = 'aprovado' AND cc.unidade_canonica IS NOT NULL
+        WHERE mt.nome IN {_METRICAS_DATAHUB_SQL} AND cc.id IS NULL
+        """
+    )
+    _checar(
+        "as 5 metricas tem conceito canonico aprovado com unidade definida",
+        not sem_conceito,
+        f"sem conceito aprovado com unidade: {[l[0] for l in sem_conceito]}",
+    )
+
+    # nenhuma celula de metrica de saida em armazem sem de-para: se a metrica
+    # foi gravada, o armazem_id ja passou pelo de-para no momento da escrita
+    # (ingestao.resolver_armazem) -- este check prova isso pelo dado, nao
+    # confiando so no codigo
+    orfas = _sql(
+        """
+        SELECT mt.nome, COUNT(*) FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        LEFT JOIN depara_armazem d ON d.armazem_id = m.armazem_id
+         AND d.conector_id = (SELECT id FROM conectores WHERE tipo = 'sharepoint_datahub')
+        WHERE mt.nome IN ('peso_bruto_saida', 'registros_saida') AND d.id IS NULL
+        GROUP BY 1
+        """
+    )
+    _checar(
+        "nenhuma celula de saida em armazem sem de-para",
+        not orfas,
+        f"{orfas}",
+    )
+
+    # RMRJ (entrada) e RMSPV (saida) sao os layouts sem coluna de cliente
+    # (conferido no dado, 06/ago/2026) -- se aparecer celula de cliente NAO
+    # NULO nessas origens, o leitor casou o layout errado (leu Cliente/Cliente
+    # CNPJ de colunas que nao existem, ou o de-para mudou sem o leitor
+    # acompanhar)
+    vazamento_entrada = _sql(
+        """
+        SELECT COUNT(*) FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        JOIN armazens a ON a.id = m.armazem_id
+        WHERE mt.nome = 'peso_bruto_entrada' AND a.sigla = 'RMRJ' AND m.cliente_id IS NOT NULL
+        """
+    )
+    _checar(
+        "RMRJ (entrada, layout de 18 colunas) sem nenhuma celula com cliente identificado",
+        vazamento_entrada[0][0] == "0",
+        f"{vazamento_entrada[0][0]} celula(s) com cliente -- leitor pode ter casado o layout errado",
+    )
+    vazamento_saida = _sql(
+        """
+        SELECT COUNT(*) FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        JOIN armazens a ON a.id = m.armazem_id
+        WHERE mt.nome = 'peso_bruto_saida' AND a.sigla = 'RMSPV' AND m.cliente_id IS NOT NULL
+        """
+    )
+    _checar(
+        "RMSPV (saida, layout de 34 colunas) sem nenhuma celula com cliente identificado",
+        vazamento_saida[0][0] == "0",
+        f"{vazamento_saida[0][0]} celula(s) com cliente -- leitor pode ter casado o layout errado",
+    )
+
+    # decisao D3 -- so 2026: nenhuma celula de saida em competencia anterior
+    fora_de_escopo = _sql(
+        f"""
+        SELECT COUNT(*) FROM medidas m
+        JOIN metricas mt ON mt.id = m.metrica_id
+        WHERE mt.nome IN ('peso_bruto_saida', 'registros_saida')
+          AND m.competencia < '{COMPETENCIA_MINIMA_SAIDA}'
+        """
+    )
+    _checar(
+        "nenhuma celula de saida em competencia anterior a 2026 (decisao D3)",
+        fora_de_escopo[0][0] == "0",
+        f"{fora_de_escopo[0][0]} celula(s) fora do recorte -- escopo D3 nao respeitado",
+    )
+
+    # toda particao com status terminal tem TODAS as partes terminais -- nunca
+    # metade ok, metade pendencia_depara/erro (a particao e processada como
+    # unidade so, ver processamento_datahub.processar_particao_saida)
+    particoes_mistas = _sql(
+        """
+        SELECT unidade, filial, competencia, COUNT(DISTINCT status) AS estados
+        FROM processamentos_datahub
+        WHERE arquivo LIKE 'SAIDA_MERCADORIAS%'
+        GROUP BY 1, 2, 3
+        HAVING COUNT(DISTINCT status) > 1
+        """
+    )
+    _checar(
+        "nenhuma particao de saida com partes em status diferentes",
+        not particoes_mistas,
+        f"{particoes_mistas}",
+    )
+
+    total_saida_ok = _sql(
+        """
+        SELECT COUNT(*) FROM processamentos_datahub
+        WHERE arquivo LIKE 'SAIDA_MERCADORIAS%' AND status IN ('ok', 'sem_dado')
+        """
+    )
+    quantos = int(total_saida_ok[0][0])
+    if quantos == 0:
+        _avisar(
+            "nenhum arquivo de SAIDA_MERCADORIAS processado ainda",
+            "rodar 'docker compose exec nuvem-app python scripts/processar_saida.py'",
+        )
+    elif quantos != TOTAL_ARQUIVOS_SAIDA_ESPERADO:
+        _avisar(
+            f"{quantos} arquivo(s) de saida processado(s), esperado {TOTAL_ARQUIVOS_SAIDA_ESPERADO}",
+            "a fonte pode ter ganho/perdido arquivo desde a conferencia de 06/ago/2026 -- "
+            "conferir antes de tratar como defeito",
+        )
+    else:
+        _checar(
+            f"contagem de arquivos de saida processados bate com o esperado ({TOTAL_ARQUIVOS_SAIDA_ESPERADO})",
+            True,
+        )
+
+
 # --- HTTP (GET nas telas e endpoints de leitura) ------------------------------
 
 
@@ -403,7 +581,13 @@ def main() -> int:
     except ErroPsql as exc:
         _checar("consultar o banco pelo psql do container", False, str(exc))
 
-    print("-- HTTP --")
+    print("\n-- saida (V2.3) --")
+    try:
+        verificar_saida()
+    except ErroPsql as exc:
+        _checar("consultar o banco pelo psql do container (saida)", False, str(exc))
+
+    print("\n-- HTTP --")
     if not senha:
         _avisar("ADMIN_PASSWORD nao definida", "checks de HTTP pulados")
     else:

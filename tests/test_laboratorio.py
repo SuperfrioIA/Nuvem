@@ -147,7 +147,7 @@ def test_perfilar_aplica_catalogo_da_familia_integrada_e_grava_sessao(monkeypatc
 
     # catalogo aplicado: peso soma em kg; volume NAO (unidade por linha, EMB)
     peso = next(c for c in perfil["colunas"] if c["nome"] == "Peso Bruto")
-    assert peso["conceito"] == "peso_bruto_movimentado"
+    assert peso["conceito"] == "peso_bruto_entrada"
     assert peso["soma_permitida"] is True
     assert peso["soma"]["total"] == 350.0
     assert peso["soma"]["unidade"] == "kg"

@@ -99,7 +99,7 @@ def test_celulas_lista_filtrada_por_metrica_e_competencia(cursor, monkeypatch):
     _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
     processamento_datahub.processar_arquivo(cursor, "item-016")
 
-    resultado = linhagem.celulas(cursor, "peso_bruto_movimentado", "2026-07")
+    resultado = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07")
     assert resultado["filtros"]["competencia"] == "2026-07"
     por_cliente = {c["cliente"]: c for c in resultado["celulas"]}
     assert por_cliente["Sapore"]["valor"] == 100.0
@@ -117,7 +117,7 @@ def test_celulas_inclui_tipo_estoque(cursor, monkeypatch):
     _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
     processamento_datahub.processar_arquivo(cursor, "item-016")
 
-    resultado = linhagem.celulas(cursor, "peso_bruto_movimentado", "2026-07")
+    resultado = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07")
     assert [c["tipo_estoque"] for c in resultado["celulas"]] == ["NAO_CLASSIFICADO"]
 
 
@@ -127,10 +127,10 @@ def test_celulas_filtra_por_filial_e_cliente(cursor, monkeypatch):
     _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
     processamento_datahub.processar_arquivo(cursor, "item-016")
 
-    so_sapore = linhagem.celulas(cursor, "peso_bruto_movimentado", "2026-07", cliente="67945071")
+    so_sapore = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07", cliente="67945071")
     assert len(so_sapore["celulas"]) == 1
 
-    outra_filial = linhagem.celulas(cursor, "peso_bruto_movimentado", "2026-07", filial="RMSPII")
+    outra_filial = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07", filial="RMSPII")
     assert outra_filial["celulas"] == []
 
 
@@ -145,7 +145,7 @@ def test_origem_da_celula_cadeia_completa(cursor, monkeypatch):
     _preparar(monkeypatch, [(arquivo, _xlsx(linhas))])
     processamento_datahub.processar_arquivo(cursor, "item-016")
 
-    medida_id = _medida_id_por_cliente(cursor, "peso_bruto_movimentado", "Sapore")
+    medida_id = _medida_id_por_cliente(cursor, "peso_bruto_entrada", "Sapore")
     origem = linhagem.origem_da_celula(cursor, medida_id)
 
     assert origem["rastreavel"] is True
@@ -160,7 +160,7 @@ def test_origem_da_celula_cadeia_completa(cursor, monkeypatch):
 
 def test_origem_da_celula_legado_declara_limitacao(cursor):
     cur = cursor
-    metrica_id = _id(cur, "SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    metrica_id = _id(cur, "SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     armazem_id = _id(cur, "SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     cur.execute(
         """

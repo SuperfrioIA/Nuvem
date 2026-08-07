@@ -27,9 +27,9 @@ def _semear(cur):
 
     Total geral: valor=1300, peso=130. Participacao sapore = 1000/1300 (~76,9%).
     """
-    valor = _id(cur, "SELECT id FROM metricas WHERE nome = 'valor_mercadoria_movimentada'")
-    peso = _id(cur, "SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
-    registros = _id(cur, "SELECT id FROM metricas WHERE nome = 'registros_movimentacao'")
+    valor = _id(cur, "SELECT id FROM metricas WHERE nome = 'valor_mercadoria_entrada'")
+    peso = _id(cur, "SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
+    registros = _id(cur, "SELECT id FROM metricas WHERE nome = 'registros_entrada'")
     rmspiv = _id(cur, "SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     rmspii = _id(cur, "SELECT id FROM armazens WHERE sigla = 'RMSPII'")
     sapore = _id(cur, "SELECT id FROM clientes WHERE nk_erp = '67945071'")
@@ -91,8 +91,8 @@ def test_resumo_traz_cards_e_participacao(cursor):
     resultado = cockpit.resumo(cursor, de="2026-07", ate="2026-07")
 
     valores = {k["chave"]: k["valor"] for k in resultado["kpis"]}
-    assert valores["peso_bruto_movimentado"] == 130.0
-    assert valores["valor_mercadoria_movimentada"] == 1300.0
+    assert valores["peso_bruto_entrada"] == 130.0
+    assert valores["valor_mercadoria_entrada"] == 1300.0
     assert valores["clientes_atendidos"] == 2
 
     participacao = resultado["participacao_maior_cliente"]
@@ -100,7 +100,7 @@ def test_resumo_traz_cards_e_participacao(cursor):
     assert participacao["percentual"] == pytest.approx(1000 / 1300 * 100)
     assert participacao["sem_cliente_identificado"] is False
 
-    assert any("registros_movimentacao" in l for l in resultado["limitacoes"])
+    assert any("registros_entrada" in l for l in resultado["limitacoes"])
 
 
 def test_resumo_com_filtro_de_cliente_omite_participacao_e_clientes_atendidos(cursor):
@@ -109,7 +109,7 @@ def test_resumo_com_filtro_de_cliente_omite_participacao_e_clientes_atendidos(cu
 
     assert resultado["participacao_maior_cliente"] is None
     assert {k["chave"] for k in resultado["kpis"]} == {
-        "peso_bruto_movimentado", "valor_mercadoria_movimentada",
+        "peso_bruto_entrada", "valor_mercadoria_entrada",
     }
 
 
@@ -117,7 +117,7 @@ def test_resumo_respeita_filtro_de_filial(cursor):
     _semear(cursor)
     resultado = cockpit.resumo(cursor, de="2026-07", ate="2026-07", filial="RMSPIV")
     valores = {k["chave"]: k["valor"] for k in resultado["kpis"]}
-    assert valores["valor_mercadoria_movimentada"] == 1000.0
+    assert valores["valor_mercadoria_entrada"] == 1000.0
     assert resultado["filtros"]["filial"] == "RMSPIV"
 
 
@@ -126,7 +126,7 @@ def test_resumo_respeita_filtro_de_filial(cursor):
 
 def test_comparar_filiais_ranking_e_participacao(cursor):
     _semear(cursor)
-    resultado = cockpit.comparar_filiais(cursor, "valor_mercadoria_movimentada", de="2026-07", ate="2026-07")
+    resultado = cockpit.comparar_filiais(cursor, "valor_mercadoria_entrada", de="2026-07", ate="2026-07")
 
     assert resultado["total"] == 1300.0
     assert resultado["ranking"] == [
@@ -138,7 +138,7 @@ def test_comparar_filiais_ranking_e_participacao(cursor):
 def test_comparar_filiais_filtra_por_cliente(cursor):
     _semear(cursor)
     resultado = cockpit.comparar_filiais(
-        cursor, "valor_mercadoria_movimentada", de="2026-07", ate="2026-07", cliente="67945071"
+        cursor, "valor_mercadoria_entrada", de="2026-07", ate="2026-07", cliente="67945071"
     )
     assert resultado["ranking"] == [
         {"rotulo": "RMSPIV", "valor": 700.0, "percentual": 70.0},
@@ -153,7 +153,7 @@ def test_comparar_filiais_recusa_metrica_nao_aditiva(cursor):
 
 def test_comparar_filiais_intervalo_invalido(cursor):
     with pytest.raises(cockpit.CockpitError, match="maior que"):
-        cockpit.comparar_filiais(cursor, "peso_bruto_movimentado", de="2026-07", ate="2026-01")
+        cockpit.comparar_filiais(cursor, "peso_bruto_entrada", de="2026-07", ate="2026-01")
 
 
 # --- comparar_clientes() ------------------------------------------------------
@@ -162,7 +162,7 @@ def test_comparar_filiais_intervalo_invalido(cursor):
 def test_comparar_clientes_expoe_sem_cliente_identificado(cursor):
     _semear(cursor)
     resultado = cockpit.comparar_clientes(
-        cursor, "valor_mercadoria_movimentada", de="2026-07", ate="2026-07", filial="RMSPIV"
+        cursor, "valor_mercadoria_entrada", de="2026-07", ate="2026-07", filial="RMSPIV"
     )
     assert resultado["total"] == 1000.0
     assert resultado["ranking"] == [
@@ -176,7 +176,7 @@ def test_comparar_clientes_expoe_sem_cliente_identificado(cursor):
 
 def test_comparar_clientes_sem_filial_soma_as_duas(cursor):
     _semear(cursor)
-    resultado = cockpit.comparar_clientes(cursor, "valor_mercadoria_movimentada", de="2026-07", ate="2026-07")
+    resultado = cockpit.comparar_clientes(cursor, "valor_mercadoria_entrada", de="2026-07", ate="2026-07")
     por_rotulo = {r["rotulo"]: r["valor"] for r in resultado["ranking"]}
     assert por_rotulo["Sem cliente identificado"] == 100.0
     assert sum(por_rotulo.values()) == 1300.0
@@ -184,7 +184,7 @@ def test_comparar_clientes_sem_filial_soma_as_duas(cursor):
 
 def test_comparar_clientes_filial_desconhecida_da_erro_claro(cursor):
     with pytest.raises(serie_datahub.SerieDatahubError, match="filial desconhecida"):
-        cockpit.comparar_clientes(cursor, "valor_mercadoria_movimentada", filial="XPTO")
+        cockpit.comparar_clientes(cursor, "valor_mercadoria_entrada", filial="XPTO")
 
 
 # --- qualidade() ---------------------------------------------------------------

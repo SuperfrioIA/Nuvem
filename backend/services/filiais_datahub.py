@@ -28,12 +28,13 @@ SIGLA_POR_CODIGO = {
     # por arquivo, antes de liberar (docs/V2_PLANO.md).
     "CWB3/001": "CWBIII",
     "SANCA/025": "RMSPV",
-    # `RJ/004-003 -> RMRJ` esta decidido mas NAO entra aqui: a
-    # ENTRADA_MERCADORIAS da RJ tem 18 colunas, sem `Cliente`/`Cliente CNPJ`, e
-    # o leitor exige as 20. Com de-para, os 8 arquivos dela sairiam de pendencia
-    # limpa e virariam erro de leitura. Entra no V2.3, junto do leitor da
-    # variante -- e a decisao de produto que vem com ele: sem coluna de cliente,
-    # toda a RMRJ cai no balde "sem cliente identificado".
+    # decidida em 06/ago/2026, aplicada no lote V2.3 (migration
+    # 0016_depara_rj): a ENTRADA_MERCADORIAS da RJ tem 18 colunas, sem
+    # `Cliente`/`Cliente CNPJ` -- o leitor passou a reconhecer essa variante
+    # pelo cabecalho (entrada_mercadorias.py), entao dar de-para agora nao
+    # troca pendencia por erro de leitura. Toda a RMRJ cai no balde "sem
+    # cliente identificado" (decisao D2 do V2.3): nao ha CNPJ pra cadastrar.
+    "RJ/004-003": "RMRJ",
 }
 
 # Unidade cujo arquivo pode representar a fonte inteira na tela executiva do

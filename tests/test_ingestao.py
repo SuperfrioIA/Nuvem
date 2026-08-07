@@ -99,7 +99,7 @@ def test_upsert_medida_com_tipo_estoque_grava_celulas_distintas_por_tipo(cursor)
     e cada uma upserta de forma independente."""
     conector_id = _conector_id(cursor)
     execucao_id = _execucao(cursor, conector_id, "datahub")
-    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_movimentado'")
+    cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     metrica_id = cursor.fetchone()[0]
     cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
     armazem_id = cursor.fetchone()[0]
@@ -283,7 +283,8 @@ def test_cadastro_filiais_conferido_em_03ago2026(banco_migrado):
 
 def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
     """R3: toda metrica semeada nasce com os campos semanticos preenchidos --
-    nenhuma fica so com nome+unidade. 12 do piloto/POC + 3 do DataHub (V1.3)."""
+    nenhuma fica so com nome+unidade. 12 do piloto/POC + 5 do DataHub (par
+    entrada/saida de peso e registros, so entrada de valor -- V2.3)."""
     linhas = consultar(
         """
         SELECT nome, nome_executivo, dominio, tipo, direcao_risco, agregacao_padrao,
@@ -291,7 +292,7 @@ def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
         FROM metricas
         """
     )
-    assert len(linhas) == 15
+    assert len(linhas) == 17
     for nome, nome_executivo, dominio, tipo, direcao_risco, agregacao_padrao, comparabilidade, ativo in linhas:
         assert nome_executivo, nome
         assert dominio, nome
@@ -309,10 +310,10 @@ def test_seed_metricas_preenche_catalogo_semantico(banco_migrado):
 
     # as 3 do DataHub (Bloco C / V1.3): aditivas e com dominio executivo
     agregacoes = dict(consultar("SELECT nome, agregacao_padrao FROM metricas"))
-    assert agregacoes["peso_bruto_movimentado"] == "soma"
-    assert agregacoes["valor_mercadoria_movimentada"] == "soma"
-    assert agregacoes["registros_movimentacao"] == "soma"
-    assert dominios["valor_mercadoria_movimentada"] == "financeiro"
+    assert agregacoes["peso_bruto_entrada"] == "soma"
+    assert agregacoes["valor_mercadoria_entrada"] == "soma"
+    assert agregacoes["registros_entrada"] == "soma"
+    assert dominios["valor_mercadoria_entrada"] == "financeiro"
 
 
 def test_seed_metricas_nao_sobrescreve_edicao_manual(cursor):

@@ -6,6 +6,16 @@ Nao e um leitor generico de planilha -- so entende esta familia especifica
 caminho generico de leitura continua sendo o dos modelos de importacao
 (backend/conectores/upload_manual.py).
 
+**Dois layouts (V2.3).** A RJ (`RJ/004-003`) publica uma variante de 18
+colunas, sem `Cliente` e `Cliente CNPJ` -- conferido no dado em 06/ago/2026
+(docs/V2_3_PLANO_EXECUCAO.md). O layout e detectado pelo CABECALHO, nunca pela
+unidade: um de-para novo nao pode mudar como um arquivo e lido, e amanha outra
+unidade pode publicar a mesma variante. No layout de 18, toda linha entra no
+balde `cliente_id NULL` (decisao D2 -- nao ha CNPJ pra cadastrar, entao
+`raiz_cnpj(None)` ja devolve None e `processamento_datahub` ja NAO registra
+pendencia de cliente quando a raiz e None -- nenhum codigo novo precisou disso,
+so este leitor emitir `None` em vez de faltar a chave).
+
 Guarda de seguranca: item_id so e aceito se aparecer na lista de arquivos da
 ultima sincronizacao do Lote P2 (backend/services/inventario_datahub.py) --
 nunca um id digitado ou uma URL externa. Alem disso, o nome do arquivo tem que
@@ -37,9 +47,9 @@ _ABA_ESPERADA = "SLIN"
 # nomeia os exports dela. Antes o padrao exigia so digitos, entao os 42
 # arquivos da RJ nao casavam e sumiam do processamento SEM virar pendencia --
 # "nao casou no regex" virava "nao existe". Casando, eles chegam ate a
-# resolucao de de-para e param la, visiveis no painel (a RJ nao tem de-para
-# confirmado). O leitor da variante de 18 colunas da RJ NAO faz parte deste
-# lote: sem de-para, nenhum arquivo dela e baixado.
+# resolucao de de-para (V2.1: parava ali, visivel como pendencia, porque a RJ
+# nao tinha de-para nem leitor da variante; V2.3: de-para e leitor da
+# variante de 18 colunas entram juntos, ver docstring do modulo).
 _PADRAO_NOME = re.compile(
     r"^ENTRADA_MERCADORIAS_(\d+(?:-\d+)*)_(\d{2})(\d{2})\.xlsx$", re.IGNORECASE
 )
@@ -60,6 +70,15 @@ _COLUNAS_ESPERADAS = (
 _COLUNAS_NUMERICAS = (
     "Volume", "Peso Líquido", "Peso Bruto", "Vlr. Unitário", "Vlr. Total", "Qtde UA",
 )
+
+# As duas colunas que a variante de 18 colunas da RJ nao tem (V2.3). Sao as
+# unicas opcionais -- todas as outras 18 continuam obrigatorias nos dois
+# layouts.
+_COLUNAS_CLIENTE = ("Cliente", "Cliente CNPJ")
+_COLUNAS_OBRIGATORIAS_SEMPRE = tuple(c for c in _COLUNAS_ESPERADAS if c not in _COLUNAS_CLIENTE)
+
+LAYOUT_20_COLUNAS = "20_colunas"
+LAYOUT_18_COLUNAS = "18_colunas"
 
 
 class EntradaMercadoriasError(Exception):
@@ -127,17 +146,32 @@ def _abrir_aba(conteudo: bytes):
     return wb
 
 
-def _indice_cabecalho(linha_cabecalho) -> dict[str, int]:
+def _indice_cabecalho(linha_cabecalho) -> tuple[dict[str, int], str]:
+    """Indice nome->posicao e o LAYOUT detectado (20 ou 18 colunas, V2.3).
+
+    As 18 colunas sempre obrigatorias tem que existir nos dois layouts; so
+    `Cliente`/`Cliente CNPJ` sao opcionais, e so as duas juntas -- ter uma sem
+    a outra e planilha incoerente, nunca um layout valido, e falha com erro
+    claro em vez de decidir por chute qual delas usar.
+    """
     indice: dict[str, int] = {}
     for i, valor in enumerate(linha_cabecalho):
         nome = str(valor).strip() if valor is not None else ""
         if nome and nome not in indice:
             indice[nome] = i
 
-    faltando = sorted({c for c in _COLUNAS_ESPERADAS if c not in indice})
+    faltando = sorted({c for c in _COLUNAS_OBRIGATORIAS_SEMPRE if c not in indice})
     if faltando:
         raise EntradaMercadoriasError("coluna(s) nao encontrada(s): " + ", ".join(faltando))
-    return indice
+
+    presentes_cliente = [c for c in _COLUNAS_CLIENTE if c in indice]
+    if presentes_cliente and len(presentes_cliente) != len(_COLUNAS_CLIENTE):
+        raise EntradaMercadoriasError(
+            "layout inconsistente: tem "
+            f"{presentes_cliente[0]!r} mas nao {[c for c in _COLUNAS_CLIENTE if c not in presentes_cliente]!r}"
+        )
+    layout = LAYOUT_20_COLUNAS if presentes_cliente else LAYOUT_18_COLUNAS
+    return indice, layout
 
 
 def _paranum_br(valor):
@@ -223,8 +257,13 @@ def ler(item_id: str) -> dict:
         except StopIteration as exc:
             raise EntradaMercadoriasError("arquivo vazio -- sem linha de cabecalho") from exc
 
-        indice = _indice_cabecalho(cabecalho)
+        indice, layout = _indice_cabecalho(cabecalho)
         colunas_unicas = list(dict.fromkeys(_COLUNAS_ESPERADAS))
+        # No layout de 18, Cliente/Cliente CNPJ nao existem no cabecalho --
+        # nao tem posicao pra ler. O registro recebe None pras duas explicito
+        # (ver docstring do modulo: raiz_cnpj(None) ja cai no balde sem
+        # cliente, sem pendencia, sem precisar de codigo novo no processamento).
+        colunas_a_ler = [c for c in colunas_unicas if c in indice]
 
         linhas_validas: list[dict] = []
         lidas = 0
@@ -234,9 +273,9 @@ def ler(item_id: str) -> dict:
                 continue
             lidas += 1
 
-            registro = {}
+            registro = {c: None for c in _COLUNAS_CLIENTE}
             valida = True
-            for coluna in colunas_unicas:
+            for coluna in colunas_a_ler:
                 pos = indice[coluna]
                 valor_bruto = linha[pos] if pos < len(linha) else None
                 if coluna in _COLUNAS_NUMERICAS:
@@ -269,6 +308,9 @@ def ler(item_id: str) -> dict:
         "unidade": inventario_datahub.unidade_do_caminho(arquivo.get("caminho")),
         "filial": filial,
         "competencia": competencia,
+        # layout detectado pelo cabecalho (V2.3) -- alimenta processamentos_datahub.layout_lido,
+        # a base de "quais unidades nao tem coluna de cliente" (nunca uma lista escrita a mao)
+        "layout": layout,
         "linhas_lidas": lidas,
         "linhas_validas": total_validas,
         "linhas_descartadas": descartadas,

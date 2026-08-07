@@ -35,3 +35,39 @@ não existe.
 de pé — `OperationalError`/`connection refused` em massa é ambiente, não
 regressão. Ver [[vm-nuvem-ia]] para o ambiente de produção, que é outro (VM
 Linux com Docker Compose, runbook em `docs/DEPLOY.md`).
+
+**Rodando de dentro de um agente sem `docker` no PATH do Bash/PowerShell**
+(achado em 07/ago/2026, sessão sem acesso direto a Docker): o comando `docker`
+pode não existir nos shells do Windows mesmo com o container de teste de pé —
+mas `wsl -d Ubuntu-24.04 -e docker ps` funciona, porque o Docker Desktop
+expõe o daemon só dentro do WSL. Esse WSL **não tem** `pip`/`pytest`
+instalados (bare, só `python3` e `docker`). Caminho que funcionou, sem tocar
+no ambiente da Maria de forma permanente (container efêmero, `--rm`):
+
+```
+wsl -d Ubuntu-24.04 -e bash -c "docker run --rm \
+  --network nuvem-teste \
+  -v /mnt/c/Users/maria.watanabe/Documents/nuvem-ia:/app -w /app \
+  -e TEST_DATABASE_URL=postgresql://nuvem:teste@nuvem-teste-db:5432/nuvem_teste \
+  -e ADMIN_PASSWORD=senha-teste \
+  python:3.11-slim \
+  bash -c 'pip install --quiet -r requirements-dev.txt && python -m pytest -q'"
+```
+
+Peças que importam: `--network nuvem-teste` (a rede Docker do container do
+banco — `docker network ls`/`docker inspect nuvem-teste-db` confirmam o
+nome), `nuvem-teste-db:5432` (nome DNS do container + porta INTERNA, não a
+5433 mapeada pro host), e o volume mount do projeto direto do Windows via
+`/mnt/c/...`. `python:3.11-slim` já estava puxado localmente (cache de builds
+anteriores), então não precisou de download de imagem nova.
+
+**Why:** sem isso, a suíte só rodava contra Postgres mockado/ausente
+(287+ erros de conexão recusada) e boa parte do trabalho de banco (migrations,
+motor de processamento, catálogo semântico) ficava "escrito e revisado, nunca
+executado" — rodar de verdade achou 7 falhas reais que a leitura estática não
+pegou (contagens hardcoded desatualizadas, `SELECT` sem `WHERE` que passou a
+pegar a linha errada depois que uma migration nova populou a tabela, um typo
+de maiúscula/minúscula na correção de um achado da revisão independente).
+**How to apply:** antes de reportar "não dá pra verificar contra banco real"
+num ambiente sem Docker direto, testar `wsl -d <distro> -e docker ps` — pode
+existir um container de teste já de pé que só não está no caminho óbvio.

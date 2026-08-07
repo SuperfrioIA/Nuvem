@@ -37,8 +37,11 @@ UNIDADES = [
 #  agregacao_padrao, comparabilidade, observacoes)
 CONCEITOS = [
     (
-        "peso_bruto_movimentado", "Peso bruto movimentado",
-        "Peso bruto da mercadoria movimentada, somado das linhas de item.",
+        # Renomeado no V2.3 (migration 0015) quando a saída ganhou par próprio
+        # — em banco existente o rename é feito pela migration, nunca por
+        # este seed (ON CONFLICT DO NOTHING não alcança linha já existente).
+        "peso_bruto_entrada", "Peso bruto de entrada",
+        "Peso bruto da mercadoria recebida (entrada), somado das linhas de item.",
         "kg", "massa", "soma", "entre_filiais, entre_clientes, no_tempo",
         "Exibição executiva em toneladas; cálculo interno sempre em kg.",
     ),
@@ -49,12 +52,21 @@ CONCEITOS = [
         None,
     ),
     (
-        "valor_mercadoria_movimentada", "Valor da mercadoria movimentada",
-        "Valor declarado nas notas dos clientes para a mercadoria movimentada — "
-        "não é faturamento SuperFrio.",
+        "valor_mercadoria_entrada", "Valor da mercadoria de entrada",
+        "Valor declarado nas notas dos clientes para a mercadoria recebida "
+        "(entrada) — não é faturamento SuperFrio.",
         "brl", "valor_monetario", "soma", "entre_filiais, entre_clientes, no_tempo",
         "Decisão pendente da Maria: devolução dentro ou fora do total "
         "(docs/ENTREGA_POC.md, seção 3).",
+    ),
+    (
+        # V2.3 — par de saída. NÃO existe valor_mercadoria_saida: a fonte
+        # (SAIDA_MERCADORIAS) não tem coluna de valor em nenhuma unidade
+        # (conferido no dado em 06/ago/2026, docs/V2_3_PLANO_EXECUCAO.md §1.1).
+        "peso_bruto_saida", "Peso bruto de saída",
+        "Peso bruto da mercadoria expedida (saída), somado das linhas de item.",
+        "kg", "massa", "soma", "entre_filiais, entre_clientes, no_tempo",
+        "Banda Separado Fisicamente de SAIDA_MERCADORIAS.",
     ),
     (
         "volumes_declarados", "Volumes declarados",
@@ -77,8 +89,14 @@ CONCEITOS = [
         None,
     ),
     (
-        "registros_movimentacao", "Registros de movimentação",
-        "Quantidade de linhas de item válidas no recorte.",
+        "registros_entrada", "Registros de entrada",
+        "Quantidade de linhas de item válidas no recorte de entrada.",
+        "un", "quantidade", "contagem", "somente_historico_proprio",
+        "Indicador de volume de dados, não de negócio.",
+    ),
+    (
+        "registros_saida", "Registros de saída",
+        "Quantidade de linhas de item válidas no recorte de saída.",
         "un", "quantidade", "contagem", "somente_historico_proprio",
         "Indicador de volume de dados, não de negócio.",
     ),
@@ -179,7 +197,7 @@ CAMPOS_ENTRADA_MERCADORIAS = [
      "peso_liquido_movimentado", "numero", "kg", None, "massa", "valor direto",
      "soma", False, False, False, True, "aprovado", None, _RESP_POC),
     (14, "Peso Bruto", "Peso bruto da linha, em kg.",
-     "peso_bruto_movimentado", "numero", "kg", None, "massa", "valor direto",
+     "peso_bruto_entrada", "numero", "kg", None, "massa", "valor direto",
      "soma", False, False, False, True, "aprovado",
      "kg confirmado por conferência real (016/2607: 4.281.727 kg = 4.281,7 t).",
      _RESP_POC),
@@ -188,7 +206,7 @@ CAMPOS_ENTRADA_MERCADORIAS = [
      False, False, False, False, "aprovado",
      "NÃO ADITIVO: nunca somar valor unitário; média só ponderada.", _RESP_POC),
     (16, "Vlr. Total", "Valor total declarado da linha.",
-     "valor_mercadoria_movimentada", "numero", "brl", None, "valor_monetario",
+     "valor_mercadoria_entrada", "numero", "brl", None, "valor_monetario",
      "valor direto", "soma", False, False, False, True, "aprovado",
      "Inclui devoluções hoje — decisão pendente (ENTREGA_POC §3).", _RESP_POC),
     (17, "Qtde UA", "Quantidade de UAs da linha.", "quantidade_uas", "numero",
@@ -203,6 +221,157 @@ CAMPOS_ENTRADA_MERCADORIAS = [
      "MERCADORIAS (SEM NF-E)).", None, "texto", None, None, None, None, None,
      False, False, False, False, "aprovado",
      "Base da decisão pendente sobre devolução no valor movimentado.", _RESP_POC),
+]
+
+_RESP_V23 = "Maria Watanabe (conferência da fonte contra o dado real, V2.3, 06/ago/2026)"
+
+# Campos de SAIDA_MERCADORIAS (V2.3), POSIÇÃO 1-based do cabeçalho REAL de 36
+# colunas (RMSPII/CWB3/RJ) -- que tem Cliente/Cliente CNPJ. Igual a
+# CAMPOS_ENTRADA_MERCADORIAS, a identidade do campo e a posicao, e aqui isso
+# fica mais delicado: os 6 rotulos de UMA banda de medida (Volume, EMB,
+# Fracao, EMB, Peso Liquido, Peso Bruto) repetem 3x (posicoes 15-20, 21-26,
+# 27-32 -- Solicitado, Atendido, Separado Fisicamente respectivamente), e SO
+# a banda "Separado Fisicamente" (27-32) e a oficial (decisao 4 da proposta
+# V3). As outras duas ficam 'rascunho', com observacao nomeando a banda, pra
+# ninguem (Laboratorio, perfil_dados) somar a banda errada.
+#
+# **AS POSICOES VALEM SO PRO LAYOUT DE 36 COLUNAS.** A SANCA publica um
+# layout de 34 colunas, SEM Cliente/Cliente CNPJ (conferido no dado em
+# 06/ago/2026, docs/V2_3_PLANO_EXECUCAO.md) -- nele, toda posicao a partir da
+# 3 desloca -2 em relacao a este catalogo (o leitor,
+# backend/services/saida_mercadorias.py, NUNCA usa estas posicoes absolutas:
+# acha a banda "Separado Fisicamente" pela linha 5 e le "Peso Bruto" no
+# deslocamento relativo +5 a partir dela). Decisao explicita de nao criar uma
+# segunda fonte logica pro layout de 34: o catalogo semantico documenta o
+# layout de REFERENCIA (36 colunas, com cliente), e esta observacao e a
+# declaracao de que a variante existe -- mesmo padrao de
+# CAMPOS_ENTRADA_MERCADORIAS, que tambem so documenta o layout de 20 colunas
+# (a variante de 18 da RJ nao ganhou catalogo proprio).
+CAMPOS_SAIDA_MERCADORIAS = [
+    (1, "Cliente", "Nome do cliente destinatario no WMS. Ausente no layout de "
+     "34 colunas da SANCA -- toda a unidade cai no balde sem cliente "
+     "identificado (decisao D2 do V2.3).", None, "texto", None,
+     None, None, None, None, False, False, True, False, "rascunho",
+     "Layout de 34 colunas (SANCA) nao tem esta coluna.", _RESP_V23),
+    (2, "Cliente CNPJ", "CNPJ do cliente destinatario. Ausente no layout de 34 "
+     "colunas.", None, "texto", None, None, None, None, None,
+     False, False, True, False, "rascunho",
+     "Layout de 34 colunas (SANCA) nao tem esta coluna.", _RESP_V23),
+    (3, "Estoque", "Nome do estoque/camara de origem da separacao.", None,
+     "texto", None, None, None, None, None, False, False, False, False,
+     "rascunho", "Fonte da dimensao tipo_estoque (mesma classificacao de "
+     "Nome Estoque na entrada, backend/services/tipo_estoque.py).", None),
+    (4, "Empresa", "Empresa do WMS.", None, "texto", None, None, None, None,
+     None, False, False, False, False, "rascunho", None, None),
+    (5, "GSM", "Numero da guia de saida -- mesma numeracao de GUIAS_SAIDA. "
+     "Numero (junção conferida a 100%, memory/juncoes-familias-datahub.md).",
+     None, "texto", None, None, None, None, None, False, False, False, True,
+     "rascunho", "Fora de escopo do V2.3 -- serve pra produtividade "
+     "(GUIAS_SAIDA), nao pra volumetria.", None),
+    (6, "Operação", "Tipo de operacao da linha (SAIDA NORMAL, descarte, "
+     "transferencia...).", None, "texto", None, None, None, None, None,
+     False, False, False, False, "rascunho",
+     "Soma tudo (decisao 6) -- nao filtra por Operacao. Descarte/transferencia "
+     "sao 0,8% das linhas na amostra de 06/ago/2026, vs 39% de devolucao na "
+     "entrada; vira linha da conciliacao (V2.6).", None),
+    (7, "Data Solicitação", "Data da solicitacao de saida.", None, "texto",
+     None, None, None, None, None, True, False, False, False, "rascunho", None, None),
+    (8, "Data Saída", "Data efetiva da saida.", None, "texto", None, None,
+     None, None, None, True, False, False, False, "rascunho", None, None),
+    (9, "Status Separação", "Status da separacao do pedido.", None, "texto",
+     None, None, None, None, None, False, False, False, True, "rascunho",
+     "Filtrado: linha com 'Cancelado' (normalizado) nao entra na agregacao "
+     "-- nenhuma ocorrencia na amostra de 06/ago/2026 (defensivo, nao "
+     "saneamento).", _RESP_V23),
+    (10, "Item", "Identificador do item na separacao.", None, "texto", None,
+     None, None, None, None, False, False, False, False, "rascunho", None, None),
+    (11, "Código", "Código do produto no WMS.", None, "texto", None,
+     None, None, None, None, False, False, False, False, "rascunho",
+     "Mesma ressalva de cadastro de produto do campo homonimo da entrada.", None),
+    (12, "Descrição", "Descrição do produto no WMS.", None, "texto", None,
+     None, None, None, None, False, False, False, False, "rascunho", None, None),
+    (13, "Pedido", "Numero do pedido de saida.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho", None, None),
+    (14, "Destinatário", "Destinatario da carga.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho", None, None),
+    # Banda "Solicitado pelo Cliente" (15-20) -- NAO oficial
+    (15, "Volume", "Volume solicitado (banda Solicitado pelo Cliente).", None,
+     "numero", None, 16, "embalagem", None, "nenhuma", False, False, False,
+     False, "rascunho", "Banda Solicitado pelo Cliente -- NAO e a oficial "
+     "(decisao 4: a oficial e Separado Fisicamente, posicao 27-32).", None),
+    (16, "EMB", "Embalagem do Volume solicitado.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho",
+     "Banda Solicitado pelo Cliente -- NAO e a oficial.", None),
+    (17, "Fração", "Fracao solicitada.", None, "numero", None, 18, "embalagem",
+     None, "nenhuma", False, False, False, False, "rascunho",
+     "Banda Solicitado pelo Cliente -- NAO e a oficial.", None),
+    (18, "EMB", "Embalagem da Fração solicitada.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho",
+     "Banda Solicitado pelo Cliente -- NAO e a oficial.", None),
+    (19, "Peso Liquido", "Peso liquido solicitado, em kg.", None, "numero",
+     "kg", None, "massa", None, "nenhuma", False, False, False, False,
+     "rascunho", "Banda Solicitado pelo Cliente -- NAO e a oficial.", None),
+    (20, "Peso Bruto", "Peso bruto solicitado, em kg.", None, "numero", "kg",
+     None, "massa", None, "nenhuma", False, False, False, False, "rascunho",
+     "Banda Solicitado pelo Cliente -- NAO e a oficial. NAO ligar ao conceito "
+     "peso_bruto_saida (ver posicao 32).", _RESP_V23),
+    # Banda "Atendido pelo Estoque" (21-26) -- NAO oficial
+    (21, "Volume", "Volume atendido pelo estoque.", None, "numero", None, 22,
+     "embalagem", None, "nenhuma", False, False, False, False, "rascunho",
+     "Banda Atendido pelo Estoque -- NAO e a oficial.", None),
+    (22, "EMB", "Embalagem do Volume atendido.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho",
+     "Banda Atendido pelo Estoque -- NAO e a oficial.", None),
+    (23, "Fração", "Fracao atendida.", None, "numero", None, 24, "embalagem",
+     None, "nenhuma", False, False, False, False, "rascunho",
+     "Banda Atendido pelo Estoque -- NAO e a oficial.", None),
+    (24, "EMB", "Embalagem da Fração atendida.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho",
+     "Banda Atendido pelo Estoque -- NAO e a oficial.", None),
+    (25, "Peso Liquido", "Peso liquido atendido, em kg.", None, "numero",
+     "kg", None, "massa", None, "nenhuma", False, False, False, False,
+     "rascunho", "Banda Atendido pelo Estoque -- NAO e a oficial.", None),
+    (26, "Peso Bruto", "Peso bruto atendido, em kg.", None, "numero", "kg",
+     None, "massa", None, "nenhuma", False, False, False, False, "rascunho",
+     "Banda Atendido pelo Estoque -- NAO e a oficial. NAO ligar ao conceito "
+     "peso_bruto_saida (ver posicao 32).", _RESP_V23),
+    # Banda "Separado Fisicamente" (27-32) -- A OFICIAL (decisao 4 da proposta V3)
+    (27, "Volume", "Volume efetivamente separado.", "volumes_declarados",
+     "numero", None, 28, "embalagem", "valor direto; unidade linha a linha "
+     "via EMB (posicao 28)", "soma", False, False, False, True, "rascunho",
+     "Banda Separado Fisicamente (oficial) -- mesma ressalva de embalagens "
+     "da entrada: somar so dentro da mesma embalagem.", _RESP_V23),
+    (28, "EMB", "Embalagem do Volume separado (posicao 27) -- e a UNIDADE da "
+     "medida, nao uma medida.", None, "texto", None, None, None, None, None,
+     False, False, False, True, "rascunho", None, _RESP_V23),
+    (29, "Fração", "Fracao separada, na embalagem da posicao 30.", None,
+     "numero", None, 30, "embalagem", None, "nenhuma", False, False, False,
+     False, "rascunho", "Semantica nao validada -- nao usar em indicador.", None),
+    (30, "EMB", "Embalagem da Fração separada (posicao 29).", None, "texto",
+     None, None, None, None, None, False, False, False, False, "rascunho", None, None),
+    (31, "Peso Liquido", "Peso liquido efetivamente separado, em kg.", None,
+     "numero", "kg", None, "massa", "valor direto", "soma", False, False,
+     False, True, "rascunho", "Banda Separado Fisicamente (oficial); sem "
+     "conceito canonico de saida no V2.3 (so peso bruto e registros).", _RESP_V23),
+    (32, "Peso Bruto", "Peso bruto efetivamente separado, em kg -- BANDA "
+     "OFICIAL da familia (decisao 4 da proposta V3).", "peso_bruto_saida",
+     "numero", "kg", None, "massa", "valor direto", "soma", False, False,
+     False, True, "aprovado",
+     "Unica coluna aprovada desta familia: a banda oficial, conferida no dado "
+     "real em 06/ago/2026. O leitor acha esta posicao pelo deslocamento a "
+     "partir da banda 'Separado Fisicamente' na linha 5, nunca por numero "
+     "fixo (a SANCA tem esta mesma coluna na posicao 29, 0-based).", _RESP_V23),
+    (33, "Corte Físico", "Indicador de corte fisico na separacao.", None,
+     "texto", None, None, None, None, None, False, False, False, False,
+     "rascunho", None, None),
+    (34, "Início", "Horario de inicio da separacao.", None, "texto", None,
+     None, None, None, None, False, False, False, False, "rascunho",
+     "Produtividade de separacao -- fora do escopo de volumetria do V2.3.", None),
+    (35, "Final", "Horario de fim da separacao.", None, "texto", None, None,
+     None, None, None, False, False, False, False, "rascunho",
+     "Produtividade de separacao -- fora do escopo de volumetria do V2.3.", None),
+    (36, "Separador", "Identificacao de quem separou.", None, "texto", None,
+     None, None, None, None, False, False, False, False, "rascunho", None, None),
 ]
 
 _GRAO_MEDIDA = "linha de item"
@@ -243,12 +412,20 @@ def aplicar(cur):
             (chave, nome, descricao, pasta, grao),
         )
 
-    cur.execute(
-        "SELECT id FROM catalogo_fontes WHERE chave = 'datahub_entrada_mercadorias'"
-    )
+    _semear_campos(cur, "datahub_entrada_mercadorias", CAMPOS_ENTRADA_MERCADORIAS)
+    _semear_campos(cur, "datahub_saida_mercadorias", CAMPOS_SAIDA_MERCADORIAS)
+
+
+def _semear_campos(cur, fonte_chave: str, campos) -> None:
+    """campos: só na primeira vez QUE AQUELA FONTE não tiver nenhum (mesmo
+    padrão do seed_catalogo pra colunas) -- o guard e POR FONTE, nunca um
+    `return` cedo pra funcao inteira: numa base ja migrada (com
+    datahub_entrada_mercadorias ja semeada ha meses), um `return` cedo
+    global faria os campos novos de datahub_saida_mercadorias NUNCA serem
+    aplicados -- achado da propria revisao deste lote (V2.3)."""
+    cur.execute("SELECT id FROM catalogo_fontes WHERE chave = %s", (fonte_chave,))
     fonte_id = cur.fetchone()[0]
 
-    # campos: só na primeira vez (mesmo padrão do seed_catalogo pra colunas)
     cur.execute("SELECT 1 FROM catalogo_campos WHERE fonte_id = %s LIMIT 1", (fonte_id,))
     if cur.fetchone():
         return
@@ -256,7 +433,7 @@ def aplicar(cur):
     for (posicao, nome, descricao, conceito_chave, tipo_dado, unidade_original,
          unidade_por_coluna, categoria, transformacao, agregacao,
          dim_temporal, dim_filial, dim_cliente, obrigatorio, status,
-         observacoes, responsavel) in CAMPOS_ENTRADA_MERCADORIAS:
+         observacoes, responsavel) in campos:
         conceito_id = None
         if conceito_chave:
             cur.execute(

@@ -254,6 +254,74 @@ def test_coluna_ausente_falha(monkeypatch):
         entrada_mercadorias.ler(_ITEM_ID)
 
 
+# --- layout de 18 colunas (RJ, V2.3) -- sem Cliente/Cliente CNPJ --------------
+
+_CABECALHO_18 = [c for c in _CABECALHO if c not in ("Cliente", "Cliente CNPJ")]
+_NOME_ARQUIVO_RJ = "ENTRADA_MERCADORIAS_004-003_2601.xlsx"
+_ITEM_ID_RJ = "item-fake-rj"
+
+
+def _linha_18_colunas(volume=10, peso_liq="1.234,56", peso_bruto=1300,
+                       vlr_unit=5.5, vlr_total="12.345,67", qtde_ua=3):
+    """Mesma linha de `_linha_valida`, sem as duas primeiras posicoes
+    (Cliente, Cliente CNPJ) -- e o que a RJ de fato publica (V2.3)."""
+    return _linha_valida(
+        volume=volume, peso_liq=peso_liq, peso_bruto=peso_bruto,
+        vlr_unit=vlr_unit, vlr_total=vlr_total, qtde_ua=qtde_ua,
+    )[2:]
+
+
+def _arquivo_rj(monkeypatch=None):
+    arquivo = _arquivo_inventario(nome=_NOME_ARQUIVO_RJ, id_=_ITEM_ID_RJ)
+    arquivo["caminho"] = f"RJ/ENTRADA/ENTRADA MERCADORIAS/{_NOME_ARQUIVO_RJ}"
+    inventario_datahub._cache["resumo"]["arquivos"].append(arquivo)
+    return arquivo
+
+
+def test_layout_18_colunas_detectado_e_cliente_fica_none(monkeypatch):
+    """A RJ nao tem Cliente/Cliente CNPJ no cabecalho -- nunca virou erro nem
+    coluna inventada: `ler()` detecta o layout de 18 e devolve Cliente/Cliente
+    CNPJ como None explicito em toda linha (decisao D2, V2.3: `raiz_cnpj(None)`
+    ja cai no balde sem cliente, sem pendencia falsa)."""
+    _arquivo_rj()
+    _mockar_download(monkeypatch, _xlsx([_linha_18_colunas()], cabecalho=_CABECALHO_18))
+
+    resultado = entrada_mercadorias.ler(_ITEM_ID_RJ)
+
+    assert resultado["layout"] == entrada_mercadorias.LAYOUT_18_COLUNAS
+    assert resultado["filial"] == "004-003"
+    assert resultado["linhas_validas"] == 1
+    linha = resultado["linhas"][0]
+    assert linha["Cliente"] is None
+    assert linha["Cliente CNPJ"] is None
+    # as outras 18 colunas continuam lidas e validadas normalmente
+    assert linha["Peso Bruto"] == 1300.0
+    assert linha["Vlr. Total"] == 12345.67
+
+
+def test_layout_20_colunas_continua_igual_com_cliente_preenchido(monkeypatch):
+    """Mesmo arquivo/leitor: RMSPII (20 colunas) nao regride -- layout
+    detectado e o de sempre, Cliente/Cliente CNPJ vem preenchidos."""
+    _mockar_download(monkeypatch, _xlsx([_linha_valida(cliente="CLIENTE A")]))
+
+    resultado = entrada_mercadorias.ler(_ITEM_ID)
+
+    assert resultado["layout"] == entrada_mercadorias.LAYOUT_20_COLUNAS
+    assert resultado["linhas"][0]["Cliente"] == "CLIENTE A"
+    assert resultado["linhas"][0]["Cliente CNPJ"] == "12345678000199"
+
+
+def test_layout_so_com_cliente_sem_cnpj_e_inconsistente_falha(monkeypatch):
+    """Ter UMA das duas colunas de cliente sem a outra nao e layout valido --
+    planilha incoerente, erro claro em vez de decidir por chute qual usar."""
+    _arquivo_rj()
+    cabecalho_incoerente = ["Cliente"] + _CABECALHO_18
+    _mockar_download(monkeypatch, _xlsx([], cabecalho=cabecalho_incoerente))
+
+    with pytest.raises(entrada_mercadorias.EntradaMercadoriasError, match="layout inconsistente"):
+        entrada_mercadorias.ler(_ITEM_ID_RJ)
+
+
 # --- validacao de valor / arquivo vazio ---------------------------------------
 
 

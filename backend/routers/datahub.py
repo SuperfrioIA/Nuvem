@@ -15,7 +15,6 @@ from ..services import (
     nuvem_datahub,
     processamento_datahub,
     resumo_poc,
-    serie_datahub,
 )
 
 router = APIRouter(prefix="/datahub", dependencies=[Depends(exigir_login)])
@@ -184,30 +183,6 @@ def processamentos():
                 "pendencias_cliente": processamento_datahub.listar_pendencias_cliente(cur),
                 "pendencias_tipo_estoque": processamento_datahub.listar_pendencias_tipo_estoque(cur),
             }
-
-
-@router.get("/serie")
-def serie(
-    metrica: str,
-    de: str | None = None,
-    ate: str | None = None,
-    filial: str | None = None,
-    cliente: str | None = None,
-    tipo_estoque: str | None = None,
-):
-    """Serie historica persistida (V1.3): mensal + consolidacao anual +
-    acumulado, do que esta em `medidas` -- nunca recalcula do arquivo.
-    tipo_estoque (V2.2) e filtro de dimensao, igual filial/cliente -- ranking e
-    distribuicao por tipo continuam fora desta consulta (V2.4)."""
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return serie_datahub.serie(
-                    cur, metrica, de=de, ate=ate, filial=filial, cliente=cliente,
-                    tipo_estoque=tipo_estoque,
-                )
-    except serie_datahub.SerieDatahubError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/nuvem")

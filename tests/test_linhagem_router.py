@@ -13,7 +13,7 @@ def test_celulas_sem_login_da_401(banco_migrado):
     with TestClient(app) as c:
         resposta = c.get(
             "/api/admin/linhagem/celulas",
-            params={"metrica": "peso_bruto_movimentado", "competencia": "2026-07"},
+            params={"metrica": "peso_bruto_entrada", "competencia": "2026-07"},
         )
     assert resposta.status_code == 401
 
@@ -27,7 +27,7 @@ def test_origem_sem_login_da_401(banco_migrado):
 def test_celulas_sem_dado_devolve_lista_vazia(cliente):
     resposta = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_movimentado", "competencia": "2026-07"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07"},
     )
     assert resposta.status_code == 200
     assert resposta.json()["celulas"] == []
@@ -45,7 +45,7 @@ def test_celulas_metrica_invalida_da_400(cliente):
 def test_celulas_competencia_invalida_da_400(cliente):
     resposta = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_movimentado", "competencia": "julho/2026"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "julho/2026"},
     )
     assert resposta.status_code == 400
     assert "AAAA-MM" in resposta.json()["detail"]
