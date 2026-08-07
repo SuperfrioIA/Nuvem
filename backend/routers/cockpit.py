@@ -1,22 +1,52 @@
 """Endpoints do Cockpit executivo (Bloco F / V1.7) e de volumetria (V2.4).
 
 `/resumo`, `/comparacao/*` e `/qualidade` sao de UMA metrica por vez (Bloco
-F/V1.7) -- inalterados, ainda servem o grafico atual do cockpit.html.
+F/V1.7) -- inalterados, ainda servem `/cockpit/comparacao/*` como API publica.
 `/volumetria/*` (V2.4) e o par entrada/saida com total e saldo derivados;
 `/volumetria/evolucao` SUBSTITUI o antigo `GET /datahub/serie` (removido de
-`routers/datahub.py` neste lote -- unico consumidor era `cockpit.html`).
+`routers/datahub.py` no V2.4 -- unico consumidor era `cockpit.html`).
+
+V2.7: toda leitura daqui passa por `cache_consulta` (TTL curto). O `get_conn()`
+fica DENTRO da funcao passada pro cache, de proposito -- acerto de cache nao
+pega conexao do pool. Limites de resposta (`tamanho_pagina`, `limite`) sao
+declarados no proprio `Query`, entao valor fora da faixa vira 422 do FastAPI com
+a faixa na mensagem, nunca uma resposta gigante.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..auth import exigir_login
 from ..database import get_conn
-from ..services import cockpit, serie_datahub, volumetria
+from ..services import cache_consulta, cockpit, serie_datahub, volumetria
 
 router = APIRouter(prefix="/cockpit", dependencies=[Depends(exigir_login)])
 
 _ERROS = (cockpit.CockpitError, serie_datahub.SerieDatahubError)
 _ERROS_VOLUMETRIA = (volumetria.VolumetriaError, serie_datahub.SerieDatahubError)
+
+# Teto do `tamanho_pagina` da matriz. 2000 nao e numero redondo por acaso: e o
+# teto que a exportacao CSV da tela usa (frontend/cockpit.html,
+# MATRIZ_TETO_EXPORTACAO) -- os dois tem que casar, senao o botao Exportar
+# tomaria 422 justamente no caso que ele existe pra atender.
+TETO_TAMANHO_PAGINA = 2000
+
+
+def _lido(nome: str, parametros: dict, consultar):
+    """Executa `consultar(cur)` atras do cache de consulta (V2.7), traduzindo
+    erro de parametro pra HTTP 400 como antes.
+
+    A traducao fica FORA do cache: erro nao e cacheado (ver
+    `cache_consulta`), entao a excecao sobe de dentro de `calcular` e e
+    convertida aqui, na mesma borda de sempre."""
+    def calcular():
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                return consultar(cur)
+
+    try:
+        return cache_consulta.obter_ou_calcular(nome, parametros, calcular)
+    except _ERROS_VOLUMETRIA + _ERROS as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/resumo")
@@ -26,12 +56,8 @@ def resumo(
     filial: str | None = None,
     cliente: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return cockpit.resumo(cur, de=de, ate=ate, filial=filial, cliente=cliente)
-    except _ERROS as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {"de": de, "ate": ate, "filial": filial, "cliente": cliente}
+    return _lido("cockpit.resumo", parametros, lambda cur: cockpit.resumo(cur, **parametros))
 
 
 @router.get("/comparacao/filiais")
@@ -41,12 +67,11 @@ def comparacao_filiais(
     ate: str | None = None,
     cliente: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return cockpit.comparar_filiais(cur, metrica, de=de, ate=ate, cliente=cliente)
-    except _ERROS as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {"metrica": metrica, "de": de, "ate": ate, "cliente": cliente}
+    return _lido(
+        "cockpit.comparar_filiais", parametros,
+        lambda cur: cockpit.comparar_filiais(cur, metrica, de=de, ate=ate, cliente=cliente),
+    )
 
 
 @router.get("/comparacao/clientes")
@@ -56,12 +81,11 @@ def comparacao_clientes(
     ate: str | None = None,
     filial: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return cockpit.comparar_clientes(cur, metrica, de=de, ate=ate, filial=filial)
-    except _ERROS as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {"metrica": metrica, "de": de, "ate": ate, "filial": filial}
+    return _lido(
+        "cockpit.comparar_clientes", parametros,
+        lambda cur: cockpit.comparar_clientes(cur, metrica, de=de, ate=ate, filial=filial),
+    )
 
 
 @router.get("/qualidade")
@@ -70,12 +94,8 @@ def qualidade(
     ate: str | None = None,
     filial: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return cockpit.qualidade(cur, de=de, ate=ate, filial=filial)
-    except _ERROS as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {"de": de, "ate": ate, "filial": filial}
+    return _lido("cockpit.qualidade", parametros, lambda cur: cockpit.qualidade(cur, **parametros))
 
 
 @router.get("/volumetria/resumo")
@@ -86,14 +106,10 @@ def volumetria_resumo(
     cliente: str | None = None,
     tipo_estoque: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return volumetria.resumo(
-                    cur, de=de, ate=ate, filial=filial, cliente=cliente, tipo_estoque=tipo_estoque
-                )
-    except _ERROS_VOLUMETRIA as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {
+        "de": de, "ate": ate, "filial": filial, "cliente": cliente, "tipo_estoque": tipo_estoque,
+    }
+    return _lido("volumetria.resumo", parametros, lambda cur: volumetria.resumo(cur, **parametros))
 
 
 @router.get("/volumetria/evolucao")
@@ -105,14 +121,16 @@ def volumetria_evolucao(
     cliente: str | None = None,
     tipo_estoque: str | None = None,
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return volumetria.evolucao(
-                    cur, grandeza, de=de, ate=ate, filial=filial, cliente=cliente, tipo_estoque=tipo_estoque
-                )
-    except _ERROS_VOLUMETRIA as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {
+        "grandeza": grandeza, "de": de, "ate": ate, "filial": filial,
+        "cliente": cliente, "tipo_estoque": tipo_estoque,
+    }
+    return _lido(
+        "volumetria.evolucao", parametros,
+        lambda cur: volumetria.evolucao(
+            cur, grandeza, de=de, ate=ate, filial=filial, cliente=cliente, tipo_estoque=tipo_estoque
+        ),
+    )
 
 
 @router.get("/volumetria/ranking")
@@ -124,16 +142,19 @@ def volumetria_ranking(
     filial: str | None = None,
     cliente: str | None = None,
     tipo_estoque: str | None = None,
+    limite: int | None = Query(None, ge=1, le=500),
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return volumetria.ranking(
-                    cur, grandeza, dimensao, de=de, ate=ate, filial=filial, cliente=cliente,
-                    tipo_estoque=tipo_estoque,
-                )
-    except _ERROS_VOLUMETRIA as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {
+        "grandeza": grandeza, "dimensao": dimensao, "de": de, "ate": ate, "filial": filial,
+        "cliente": cliente, "tipo_estoque": tipo_estoque, "limite": limite,
+    }
+    return _lido(
+        "volumetria.ranking", parametros,
+        lambda cur: volumetria.ranking(
+            cur, grandeza, dimensao, de=de, ate=ate, filial=filial, cliente=cliente,
+            tipo_estoque=tipo_estoque, limite=limite,
+        ),
+    )
 
 
 @router.get("/volumetria/matriz")
@@ -146,15 +167,18 @@ def volumetria_matriz(
     filial: str | None = None,
     cliente: str | None = None,
     tipo_estoque: str | None = None,
-    pagina: int = 1,
-    tamanho_pagina: int = 20,
+    pagina: int = Query(1, ge=1),
+    tamanho_pagina: int = Query(20, ge=1, le=TETO_TAMANHO_PAGINA),
 ):
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                return volumetria.matriz(
-                    cur, grandeza, direcao, dimensao, de=de, ate=ate, filial=filial, cliente=cliente,
-                    tipo_estoque=tipo_estoque, pagina=pagina, tamanho_pagina=tamanho_pagina,
-                )
-    except _ERROS_VOLUMETRIA as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    parametros = {
+        "grandeza": grandeza, "direcao": direcao, "dimensao": dimensao, "de": de, "ate": ate,
+        "filial": filial, "cliente": cliente, "tipo_estoque": tipo_estoque,
+        "pagina": pagina, "tamanho_pagina": tamanho_pagina,
+    }
+    return _lido(
+        "volumetria.matriz", parametros,
+        lambda cur: volumetria.matriz(
+            cur, grandeza, direcao, dimensao, de=de, ate=ate, filial=filial, cliente=cliente,
+            tipo_estoque=tipo_estoque, pagina=pagina, tamanho_pagina=tamanho_pagina,
+        ),
+    )

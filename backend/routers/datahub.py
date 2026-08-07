@@ -6,6 +6,7 @@ from ..auth import exigir_login
 from ..config import ConfiguracaoGraphIncompletaError, obter_configuracao_graph
 from ..database import get_conn
 from ..services import (
+    cache_consulta,
     compatibilidade_medidas,
     entrada_mercadorias,
     filiais_datahub,
@@ -166,9 +167,16 @@ def processar(forcar: bool = Body(False, embed=True)):
     try:
         with get_conn() as conn:
             with conn.cursor() as cur:
-                return processamento_datahub.processar_todos(cur, forcar=forcar)
+                relatorio = processamento_datahub.processar_todos(cur, forcar=forcar)
     except processamento_datahub.ProcessamentoDatahubError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # V2.7: as leituras do Cockpit sao cacheadas com TTL curto -- depois de
+    # gravar medida nova, quem acabou de clicar "Processar" tem que ver o
+    # numero novo, nao esperar o TTL. Invalidacao DEPOIS do commit (o `with`
+    # fechou), nunca antes: invalidar dentro da transacao repovoaria o cache
+    # com o estado velho se ela abortasse.
+    cache_consulta.invalidar("processamento do DataHub")
+    return relatorio
 
 
 @router.get("/processamentos")

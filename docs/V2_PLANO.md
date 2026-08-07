@@ -47,9 +47,9 @@ o Laboratório explorando em cima dessa base já governada.
 | **V2.2** | Tipo de estoque como dimensão | **feito** (06/ago/2026) |
 | **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | **construído, revisado e verificado** (06–07/ago/2026) — revisão independente (2 críticos + 7 médios corrigidos), suíte **577 passed contra Postgres real**, migrations validadas via `alembic` CLI; falta só `scripts/verificar_v2.py` (precisa do stack da VM) e o deploy |
 | **V2.4** | Consultas de volumetria sob `/cockpit/` | **construído e verificado** (07/ago/2026) — mesma suíte verde contra Postgres real; falta `scripts/verificar_v2.py` (idem) e o deploy |
-| **V2.5** | Cockpit visual | não autorizado |
-| **V2.6** | Conciliação com o Power BI | não autorizado |
-| **V2.7** | Escala e operação | não autorizado |
+| **V2.5** | Cockpit visual | **construído e validado em navegador** (07/ago/2026) — plano em [`V2_5_PLANO_EXECUCAO.md`](V2_5_PLANO_EXECUCAO.md); falta deploy |
+| **V2.6** | Conciliação com o Power BI | **entregue no que não depende da VM** (07/ago/2026) — [`CONCILIACAO_POWERBI_V2.md`](CONCILIACAO_POWERBI_V2.md) + `scripts/conciliacao.py`; 5 pendências registradas, células de saída dependem do deploy |
+| **V2.7** | Escala e operação | **construído** (07/ago/2026) — plano em [`V2_7_PLANO_EXECUCAO.md`](V2_7_PLANO_EXECUCAO.md); backup/restore **com evidência fica pendente da VM** |
 | **V2.8** | Laboratório com gráficos | não autorizado |
 
 ---
@@ -680,16 +680,98 @@ de rodar pela primeira vez — **passaram de primeira**, sem nenhum ajuste.
 
 ---
 
+## Lotes V2.5, V2.6 e V2.7 (07/ago/2026)
+
+Autorizados pela Maria em 07/ago/2026: o V2.5 com plano apresentado em texto e
+confirmado, e **V2.6/V2.7 em sequência sem nova autorização por lote** — mesmo
+modo autônomo do V2.3/V2.4 (decisões de design seguem sem pausa, documentadas;
+perguntas bloqueantes vão para o relatório final). Meta declarada por ela:
+chegar no passo anterior ao Laboratório (V2.7 fechado) até as 12h. Pedido
+explícito de método: **validar contra o Postgres real de forma incremental**,
+conforme cada parte ficasse pronta, e **não repetir a auditoria Opus lote a
+lote** — reservá-la para o fechamento final.
+
+**Suíte ao fim dos três lotes: 598 passed, 0 failed** contra Postgres real (577
+no fechamento do V2.4 + 21 novos; nenhum removido). Cada lote tem plano de
+execução próprio, que é onde estão as decisões e as limitações declaradas:
+
+- **V2.5 — Cockpit visual**: [`V2_5_PLANO_EXECUCAO.md`](V2_5_PLANO_EXECUCAO.md).
+  Tema claro/escuro, filtro de tipo de estoque, cards das três grandezas com
+  entrada/saída/total/saldo, evolução combinada, dois rankings, matriz em
+  Tabulator com um nível de abertura e exportação CSV, estado de unidade fora do
+  ranking (três estados distintos), faixa de indicadores aprovados. Duas adições
+  pequenas de backend (`unidades_fora_do_ranking` e
+  `GET /laboratorio/aprovados`). **Validado em navegador de verdade** (Playwright
+  contra a app rodando com Postgres semeado) — foi essa validação que achou
+  quatro defeitos de tela que a leitura não pegou, o principal deles o seletor de
+  filial mostrando três unidades homônimas com rótulo idêntico.
+- **V2.6 — Conciliação**:
+  [`CONCILIACAO_POWERBI_V2.md`](CONCILIACAO_POWERBI_V2.md) + `scripts/conciliacao.py`
+  (somente leitura). 11 diferenças conhecidas com causa nomeada e **efeito
+  esperado no sinal**, 5 pendências registradas. A principal: o gap de 13,2 % tem
+  o **sinal contrário** ao que a decisão 6 previa. Nenhum número novo foi
+  inventado — as células que exigem a VM estão marcadas como pendentes.
+- **V2.7 — Escala e operação**: [`V2_7_PLANO_EXECUCAO.md`](V2_7_PLANO_EXECUCAO.md).
+  Cache de consulta com TTL curto (garantia declarada: desatualizado no máximo
+  um TTL) com invalidação nas escritas que a pessoa vê acontecer, teto de
+  `tamanho_pagina` casado com o teto da exportação CSV, top N **com bucket**
+  (nunca corte silencioso), log de consulta lenta sem valor de filtro no log.
+  **Backup/restore com evidência fica pendente da VM** — o roteiro do ensaio está
+  escrito, a execução não aconteceu.
+
+### Revisão independente dos três lotes (agente Opus separado, 07/ago/2026)
+
+Feita **uma vez, no fechamento**, como a Maria pediu (não lote a lote). Auditoria
+adversarial do diff inteiro, sem acesso à conversa que escreveu o código: **3
+críticos, 7 médios e 12 baixos**. Todos os que eram defeito real foram corrigidos
+antes de fechar. Os três críticos são a mesma família — **texto afirmando mais do
+que o código sabe**:
+
+| # | Sev. | O que estava errado | Correção |
+|---|---|---|---|
+| 1 | crítico | `sem_movimento_no_periodo` dizia "**é zero medido de verdade**", mas o estado é derivado de "tem célula em alguma competência" — nada consulta `processamentos_datahub`. Arquivo do período em `erro`, ou competência não publicada, produzem a mesma ausência: a tela afirmaria medição onde não houve, apagando a distinção que o V2.1.1 criou (`sem_dado` × `erro`) e contradizendo o próprio bloco "Qualidade" da mesma tela | a nota deixou de afirmar medição e manda conferir Qualidade antes de ler como zero; o quarto estado derivado de `processamentos_datahub` ficou registrado como melhoria |
+| 2 | crítico | **o CSV declarava filtro que não foi aplicado**: com `filial` + `cliente`, a matriz vira dimensão cliente (que recusa filtro de cliente), e o rodapé — montado dos filtros da tela, não dos enviados — afirmava `cliente=SAPORE` num arquivo com o armazém inteiro. Arquivo circula desacoplado da tela; quem abre não tem como descobrir | rodapé passou a ser montado do que foi de fato enviado, mais uma linha `# ATENCAO: o filtro ... NAO foi aplicado`. Conferido no navegador |
+| 3 | crítico | **`tipo_estoque` era ignorado em silêncio por dois blocos** (`/cockpit/resumo` e `/cockpit/qualidade`, da V1.7, não aceitam o parâmetro) — contra o aceite escrito "filtros globais afetam todos os visuais". Pior: dentro da mesma caixa, "Peso bruto (detalhado)" vinha filtrado e "Total de arquivos processados" não | aviso declarado acima dos cards, nomeando os dois blocos e o filtro ignorado |
+| 4 | médio | `fora_de_operacao` afirmava que a ausência **é** encerramento, mas `ativo` é estado de hoje, sem data de encerramento — falso para recorte anterior ao encerramento | nota passou a dizer "pode ser" e a mandar conferir o período |
+| 5 | médio | o **acumulado** de `evolucao` usava `saida=0.0` para período inteiramente fora do escopo (o mensal já usava `null`), publicando "Saída 0 · Saldo = entrada" sob o rótulo "total movimentado". Latente hoje (a entrada por item também só existe em 2026), real no dia em que houver entrada anterior | `saida`/`saldo` viram `None` quando `ate < 2026-01`, com dois testes (o caso e a contraprova dentro do escopo) |
+| 6 | médio | **escritas em `medidas` que não invalidavam o cache**: upload manual e reprocessamento de execução — contra o princípio declarado no próprio módulo | `invalidar()` nos dois, depois do commit. `scores/recalcular` **não** invalida, de propósito (escreve em `scores`, que o Cockpit não lê) |
+| 7 | médio | a matriz por cliente descartava o filtro de cliente **sem declarar** (o ranking análogo declarava) | mesma frase do ranking na nota da matriz |
+| 8 | médio | `scripts/conciliacao.py` anunciava "Recorte: unidade RMSPIV" no cabeçalho e a seção 2 listava todas as unidades — quem colasse ao lado de um print do BI filtrado compararia coisas diferentes | a seção declara que `--unidade` não se aplica a ela |
+| 9 | médio | docstring e plano citavam invalidação em "cadastrar cliente" — **endpoint que não existe** | corrigido; a pendência de cliente sai no próximo processamento, e isso está escrito |
+| 10 | médio | **"três filiais homônimas" são quatro** — RMSPIV também se chama "Barueri/SP", e é a `016`, a de maior volumetria e parte do agregado "RMSPII" do BI. O código sempre cobriu; o documento subdimensionava o risco que ele mesmo levanta | corrigido nos três documentos e na memória |
+| 11–22 | baixo | identificador cru de status na tela (`ok`/`erro`/`sem_dado` — a correção que o V2.1.1 fez no `/nuvem` e faltava aqui); variação com base zero rotulada "não medido" em vez de "não calculável"; `null` desenhando barra em zero no ranking; nome de parâmetro cru no log (linha de log forjável); truncamento sem reticência e `0` para cliente < 500 kg no script; teste cujo nome afirmava dois casos e exercitava um; contagens de teste erradas nos planos; enumeração incompleta de tabelas lidas; participação somando 99,9 %/100,1 % por arredondamento | todos corrigidos ou declarados com precisão |
+
+O verificador confirmou como **corretos**: a chave do cache cobrindo todos os
+parâmetros de cada endpoint (conferidos um a um contra a assinatura do serviço),
+erro não cacheado, a tradução para HTTP 400 sendo **superconjunto** da de antes,
+invalidação depois do commit nos três pontos originais, `escaparHtml` em todos os
+pontos que interpolam dado do banco, o CSV (separador, escape, célula vazia ×
+zero real, corte declarado), `total_linhas` medido antes do corte, o bucket
+tratando `saida=None` sem misturar linhas, `unidades_fora_do_ranking` usando o
+ranking completo, `linhagem.html` sobrevivendo à migração do rótulo, nenhuma
+regressão de contrato em `/cockpit/resumo` e `/cockpit/comparacao/*`, nenhum teste
+removido, nenhum número inventado no documento de conciliação (os 40 valores
+conferidos contra a memória), e nenhuma injeção de SQL no script.
+
+**Suíte depois das correções: 598 passed, 0 failed** (21 novos sobre os 577 do
+V2.4). A tela foi **reaberta no navegador** depois das correções: os avisos novos,
+a nota da matriz, os rótulos de status e o `# ATENCAO` do CSV conferidos no
+conteúdo, zero erro de JavaScript.
+
+---
+
 ## Próximo lote autorizado
 
-**Nenhum ainda — mas V2.3 e V2.4 estão bem perto de fechar.** Construídos,
+**Nenhum além do V2.7.** V2.8 (Laboratório com gráficos) segue não autorizado.
+
+Sobre V2.3 e V2.4: construídos,
 revisados de forma independente e agora **verificados contra Postgres real**
 (577 testes, migrations validadas via `alembic` CLI nos dois sentidos contra
 banco semeado). O que falta pro fechamento formal: `scripts/verificar_v2.py`
 na VM (precisa do stack `docker compose` real, com dado processado de
-verdade), o deploy em si, e a Maria avisada do resultado antes do commit —
-nenhuma dessas etapas depende mais de acesso a Postgres, só da VM. V2.5
-(cockpit visual) segue **não autorizado**.
+verdade) e o deploy em si — nenhuma dessas etapas depende mais de acesso a
+Postgres, só da VM. Eles foram commitados em 07/ago/2026 (`67bba8f`) e agora
+sobem junto com o V2.5/V2.6/V2.7 no mesmo deploy.
 
 V2.1, V2.1.1 e V2.2 foram deployados e validados juntos na VM em 06/ago/2026:
 `git pull` + `up -d --build` (migrations `0012`, `0013` e `0014` rodaram no

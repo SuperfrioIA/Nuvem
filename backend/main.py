@@ -1,4 +1,7 @@
 import logging
+import os
+import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 
@@ -22,6 +25,12 @@ from .services import inventario_datahub
 
 configurar_logging()
 logger = logging.getLogger("nuvem.app")
+
+# V2.7: acima disto a requisicao entra no log como consulta lenta. 1,5s e o
+# ponto em que a tela ja parece travada pra quem clicou -- nao e um SLA, e o
+# gatilho de "vale investigar". Configuravel por ambiente pra poder apertar na
+# VM sem mexer no codigo.
+LIMITE_CONSULTA_LENTA = float(os.environ.get("LIMITE_CONSULTA_LENTA", "1.5"))
 
 
 class _FrontendEstatico(StaticFiles):
@@ -93,9 +102,27 @@ async def requisicao_com_id_e_log(request: Request, call_next):
     # fim da pilha, independente de ContextVar.
     request.state.request_id = id_requisicao
     token = request_id_var.set(id_requisicao)
+    comecou_em = time.monotonic()
     try:
         response = await call_next(request)
         response.headers["X-Request-Id"] = id_requisicao
+        duracao = time.monotonic() - comecou_em
+        if duracao >= LIMITE_CONSULTA_LENTA:
+            # V2.7: log de consulta lenta. Nomes dos parametros presentes, NUNCA
+            # os valores -- `cliente`/`filial` em claro no log e exatamente o
+            # que o Bloco G/G2 tirou do access log do uvicorn. Saber QUAIS
+            # filtros estavam ativos basta pra reproduzir; o valor a pessoa
+            # informa depois, se precisar.
+            # sanitiza o NOME do parametro (achado da revisao independente): ele e
+            # conteudo controlado por quem chama, e ia cru pro formatter de texto
+            # do log -- `?%0A2026-08-07 ERROR fake=1` forjaria uma linha de log.
+            filtros = ",".join(
+                sorted(re.sub(r"[^\w.-]", "", nome)[:40] for nome in request.query_params.keys())
+            ) or "sem filtro"
+            logger.warning(
+                "consulta lenta: %s %s (%s) levou %.2fs",
+                request.method, request.url.path, filtros, duracao,
+            )
         if response.status_code >= 500:
             logger.error("%s %s -> %s", request.method, request.url.path, response.status_code)
         elif response.status_code >= 400:

@@ -32,6 +32,7 @@ import pytest
 
 from backend import migracao
 from backend.database import fechar_pool, init_db
+from backend.services import cache_consulta
 
 
 @pytest.fixture
@@ -41,8 +42,14 @@ def banco_vazio():
     Fecha o pool antes de derrubar o schema (V2.1): conexao pooled de um teste
     anterior fica ociosa no processo, e teste que zera o banco nao pode depender
     do estado dela. Sem isto a isolacao entre testes passaria a ter uma variavel
-    escondida que nao existia no tempo do connect-por-request."""
+    escondida que nao existia no tempo do connect-por-request.
+
+    Pelo MESMO motivo, zera o cache de consulta (V2.7): ele e um singleton de
+    modulo, chaveado so pelos parametros da consulta -- dois testes que chamam o
+    mesmo endpoint com os mesmos filtros e dados DIFERENTES receberiam a resposta
+    do primeiro. Zerar o schema tem que zerar o cache junto."""
     fechar_pool()
+    cache_consulta.invalidar("banco de teste zerado")
     conn = psycopg2.connect(os.environ["DATABASE_URL"])
     conn.autocommit = True
     with conn.cursor() as cur:

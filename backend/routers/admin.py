@@ -20,7 +20,7 @@ from ..auth import (
 )
 from ..conectores import upload_manual
 from ..database import get_conn
-from ..services import auditoria
+from ..services import auditoria, cache_consulta
 
 logger = logging.getLogger("nuvem.admin")
 
@@ -176,7 +176,11 @@ def criar_depara(
             },
             ip=ip_do_cliente(request),
         )
-        return {"id": novo_id}
+    # V2.7: o de-para novo apaga a pendencia -- sem invalidar, o admin que
+    # acabou de cadastrar continuaria vendo a pendencia no Cockpit por ate um
+    # TTL e concluiria que o cadastro nao funcionou.
+    cache_consulta.invalidar("de-para criado")
+    return {"id": novo_id}
 
 
 @router.delete("/depara/{depara_id}")
@@ -184,6 +188,7 @@ def apagar_depara(request: Request, depara_id: int):
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM depara_armazem WHERE id = %s", (depara_id,))
         auditoria.registrar(cur, "depara_apagado", detalhe={"depara_id": depara_id}, ip=ip_do_cliente(request))
+    cache_consulta.invalidar("de-para apagado")
     return {"ok": True}
 
 
@@ -339,6 +344,11 @@ async def upload_processar(
     with get_conn() as conn, conn.cursor() as cur:
         motor.calcular_scores(cur)
 
+    # V2.7 (achado da revisao independente): o upload manual grava em `medidas`
+    # (ingestao.gravar_agregados), entao o Cockpit tem que ver o numero novo
+    # assim que a resposta diz "linhas_gravadas: N" -- era o mesmo raciocinio do
+    # de-para, e este caminho tinha ficado de fora.
+    cache_consulta.invalidar("upload manual processado")
     return {
         "execucao_id": execucao_id,
         "modelo_id": modelo_id,
@@ -397,6 +407,8 @@ def reprocessar_execucao(execucao_id: int):
         with get_conn() as conn, conn.cursor() as cur:
             ingestao.finalizar_execucao(cur, nova_execucao_id, "erro", erro=str(e))
         raise HTTPException(status_code=400, detail=str(e))
+
+    cache_consulta.invalidar("execucao reprocessada")
 
     with get_conn() as conn, conn.cursor() as cur:
         motor.calcular_scores(cur)
