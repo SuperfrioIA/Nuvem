@@ -45,11 +45,11 @@ o Laboratório explorando em cima dessa base já governada.
 | **V2.1** | Cobertura e base — de-para, índices, pool, estado de família não integrada | **feito** (06/ago/2026, deployado na VM) |
 | **V2.1.1** | `sem_dado`: competência sem movimento não é erro | **feito** (06/ago/2026) — achado na primeira rodada real |
 | **V2.2** | Tipo de estoque como dimensão | **feito** (06/ago/2026) |
-| **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | **construído, revisado e verificado** (06–07/ago/2026) — revisão independente (2 críticos + 7 médios corrigidos), suíte **577 passed contra Postgres real**, migrations validadas via `alembic` CLI; falta só `scripts/verificar_v2.py` (precisa do stack da VM) e o deploy |
-| **V2.4** | Consultas de volumetria sob `/cockpit/` | **construído e verificado** (07/ago/2026) — mesma suíte verde contra Postgres real; falta `scripts/verificar_v2.py` (idem) e o deploy |
-| **V2.5** | Cockpit visual | **construído e validado em navegador** (07/ago/2026) — plano em [`V2_5_PLANO_EXECUCAO.md`](V2_5_PLANO_EXECUCAO.md); falta deploy |
+| **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | **feito e deployado** (06–07/ago/2026) — revisão independente (2 críticos + 7 médios corrigidos), suíte verde contra Postgres real, migrations validadas via `alembic` CLI. **Deploy na VM em 07/ago/2026, `verificar_v2.py` sem nenhuma falha.** Falta rodar `scripts/processar_saida.py` — a saída ainda não foi ingerida (ver abaixo) |
+| **V2.4** | Consultas de volumetria sob `/cockpit/` | **feito e deployado** (07/ago/2026) — mesma suíte verde contra Postgres real; `verificar_v2.py` sem falhas na VM |
+| **V2.5** | Cockpit visual | **feito e deployado** (07/ago/2026) — plano em [`V2_5_PLANO_EXECUCAO.md`](V2_5_PLANO_EXECUCAO.md); validado em navegador antes do deploy |
 | **V2.6** | Conciliação com o Power BI | **entregue no que não depende da VM** (07/ago/2026) — [`CONCILIACAO_POWERBI_V2.md`](CONCILIACAO_POWERBI_V2.md) + `scripts/conciliacao.py`; 5 pendências registradas, células de saída dependem do deploy |
-| **V2.7** | Escala e operação | **construído** (07/ago/2026) — plano em [`V2_7_PLANO_EXECUCAO.md`](V2_7_PLANO_EXECUCAO.md); backup/restore **com evidência fica pendente da VM** |
+| **V2.7** | Escala e operação | **feito e deployado** (07/ago/2026) — plano em [`V2_7_PLANO_EXECUCAO.md`](V2_7_PLANO_EXECUCAO.md); backup/restore **com evidência segue pendente de execução na VM** |
 | **V2.8** | Laboratório com gráficos | não autorizado |
 
 ---
@@ -757,6 +757,40 @@ conferidos contra a memória), e nenhuma injeção de SQL no script.
 V2.4). A tela foi **reaberta no navegador** depois das correções: os avisos novos,
 a nota da matriz, os rótulos de status e o `# ATENCAO` do CSV conferidos no
 conteúdo, zero erro de JavaScript.
+
+### Deploy dos lotes V2.3 a V2.7 na VM (07/ago/2026)
+
+`git push` + `git pull` na VM + `docker compose up -d --build` (migrations `0015`,
+`0016` e `0017`, do V2.3, aplicadas no startup — os lotes V2.5/V2.6/V2.7 não têm
+migration). **`scripts/verificar_v2.py` rodou sem nenhuma falha** — era a
+pendência aberta desde o V2.3, e é a primeira vez que os checks da saída (par
+entrada/saída de métricas, escopo D3, `layout_lido`) rodaram contra dado real.
+
+**Pendência aberta e com consequência visível na tela:**
+`scripts/processar_saida.py` **ainda não rodou**, então não existe nenhuma célula
+de `peso_bruto_saida`/`registros_saida` no banco de produção. O processamento da
+saída é por script de linha de comando, não pelo botão do painel (decisão D4 do
+V2.3), e ele nunca foi executado.
+
+Isso não é um estado neutro no Cockpit: competência de 2026 está **dentro** do
+escopo da saída, então a ausência de célula vira `saida = 0.0` **real** — os
+cards mostram "Saída 0" e "Saldo = entrada", e a matriz mostra `0`, sem nada
+declarando que a saída não foi ingerida. A limitação que a resposta traz é a do
+escopo D3 (períodos anteriores a 2026), que é outra coisa. Ou seja: até o script
+rodar, a tela apresenta "não medimos ainda" como "medimos e deu zero" — o
+defeito que este projeto mais persegue, aqui por dado faltando, não por código
+errado.
+
+Duas saídas, nesta ordem de preferência:
+
+1. **Rodar o processamento** —
+   `docker compose exec nuvem-app python scripts/processar_saida.py` (uma
+   partição por transação; 72 arquivos de 2026, ~616 MB). Resolve de fato.
+2. Se por algum motivo a ingestão da saída ficar para depois, **declarar na
+   tela** que a direção saída não tem arquivo processado no recorte — é a mesma
+   melhoria já registrada no V2.5 (o quarto estado derivado de
+   `processamentos_datahub`, achado 1 da revisão independente). Enquanto nenhuma
+   das duas acontecer, o número de saída do Cockpit não deve ser usado.
 
 ---
 
