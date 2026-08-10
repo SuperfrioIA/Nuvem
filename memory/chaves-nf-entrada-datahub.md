@@ -23,6 +23,15 @@ Conferido em 30/jul/2026 lendo o xlsx cru de `ENTRADA_MERCADORIAS_016_2607` e
 - **Guias canceladas existem e não têm linha de item.** Na 016/2607: 115 canceladas
   valendo R$ 9,8 mi, com zero interseção com o arquivo de mercadorias. KPI somado sobre
   os itens já exclui cancelado — mas filtrar `Status` ao usar GUIAS_ENTRADA sozinho.
+  **Medido em 07/ago/2026: é isto que explica a diferença de 13% contra o Power BI.**
+  Em jan-jun/26, RMSPII 001+016: 1.801 guias canceladas, 11.294,0 t de peso bruto e
+  R$ 171,0 mi — o cabeçalho da guia tem peso e valor, o DW conta esse movimento, e o
+  export de itens não publica nada. Excluir cancelado não é neutro: é a diferença
+  inteira entre somar item e somar movimento. Ver
+  [[conciliacao-rmspii-primeira-passada]].
+- **A filial 015 não tem `GUIAS_ENTRADA` nenhum** (só 001 e 016 publicam), então não dá
+  para medir cancelamento nem conferir valor por lá — conferido no inventário em
+  07/ago/2026.
 - **`Vlr. Total` (itens) é total de linha, não da nota**: igual a `Vlr. Unitário` ×
   `Volume` em 8.409 de 8.411 linhas. Somar linha a linha está correto, não duplica.
 
