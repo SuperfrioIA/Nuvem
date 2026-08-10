@@ -20,6 +20,15 @@ ranking por cliente agrupado pela raiz do CNPJ.
 > descarta D-2 e D-3. As seções 1 e 2 ficam como estão — são o registro da
 > primeira passada, e os números do BI que elas usam foram **confirmados** contra
 > o DW (SODEXO jan–jul: 38.779,3 t no fato contra 38.780 t no print).
+>
+> **Atualização de 10/ago/2026 (segunda passada do dia, sessão autônoma) — a
+> SAÍDA foi medida e os de-paras foram provados.** Ver a **seção 3.2** (saída:
+> gap de 8,1% com causa parcial), a **seção 3.3** (de-para de filial e a
+> descoberta MAQ/RPII) e a **seção 3.4** (de-para de cliente). Fecha P-4, P-5 e
+> a pendência D-7 (banda); dimensiona P-6; abre P-9, P-10 e P-11. Relatório
+> completo e planilha (12 abas):
+> `docs/Analise/saida/relatorio_conciliacao_volumetria_20260810.md` e
+> `docs/Analise/saida/conciliacao_slin_x_dw.xlsx`.
 
 ---
 
@@ -100,7 +109,7 @@ descobre que ainda falta explicação (seção 4).
 | D-4 | Balde "sem cliente identificado" | Cliente sem cadastro na Nuvem cai num balde próprio, exibido como número separado por causa (D5.1 do V2.3). No BI o valor está dentro do cliente | **por cliente**: Nuvem menor; **no total**: igual |
 | D-5 | RMRJ não tem coluna de cliente | O layout de 18 colunas da RJ não publica cliente (conferido no dado, 06/ago) — toda a RMRJ cai no balde, sem CNPJ para cadastrar | **por cliente**: Nuvem menor; **no total**: igual |
 | D-6 | RMSPV não tem cliente na **saída** | Layout de 34 colunas (conferido em 10 arquivos, 06/ago) | idem D-5, na direção saída |
-| D-7 | Banda escolhida na saída | A saída é lida na banda oficial *Separado Fisicamente*, não em *Corte Físico* nem nos totais da guia — decisão do V2.3, e a coluna do `Peso Bruto` muda de posição por unidade (31 com 36 colunas, 29 na SANCA) | depende de qual banda o BI usa — **a confirmar** |
+| D-7 | Banda escolhida na saída | A saída é lida na banda oficial *Separado Fisicamente*, não em *Corte Físico* nem nos totais da guia — decisão do V2.3, e a coluna do `Peso Bruto` muda de posição por unidade (31 com 36 colunas, 29 na SANCA) | ~~depende de qual banda o BI usa — a confirmar~~ **medido em 10/ago: a banda NÃO explica o gap da saída.** Jan–jun RMSPII: Solicitado 86.251,4 / Atendido 84.394,3 / Separado 85.150,1 t — 1,3% entre a maior e a menor, contra gap de 8,1% ante o DW. Trocar de banda move no máximo 1.101 t dos 7.544 t |
 | D-8 | Sem valor na saída | Não existe coluna de valor em `SAIDA_MERCADORIAS` em nenhuma unidade (decisão D1 do V2.3) | comparação de **valor** só existe na entrada |
 | D-9 | Escopo temporal da saída | Só 2026 (decisão D3 do V2.3). Competência anterior fica `null`, nunca zero | comparação de saída **só vale de jan/2026 em diante** |
 | D-10 | Nome de cliente | WYDA (BI) = CUCINARE PRO ALIMENTAÇÃO (Nuvem) — nome comercial × razão social, confirmado pela Maria. E a fonte tem a mesma raiz de CNPJ com até 3 grafias diferentes | some ao agrupar pela **raiz do CNPJ**, nunca pelo nome |
@@ -184,10 +193,85 @@ só. Fechar 1:1 exige extrato do DW no grão de GEM.
 
 ### Artefatos
 
-- `docs/Analise/saida/conciliacao_slin_x_dw.xlsx` — três abas (SLIN, DW,
-  Comparação) no grão competência × cliente, com o status por linha e o peso
-  cancelado como coluna explicativa. Fora do git (`docs/Analise/` é ignorada).
+- `docs/Analise/saida/conciliacao_slin_x_dw.xlsx` — **12 abas** desde 10/ago
+  (entrada, saída, bandas, guias sem item, de-paras), cada uma com grão e bloco
+  "como ler". Fora do git (`docs/Analise/` é ignorada).
 - `memory/conciliacao-rmspii-primeira-passada.md` e `memory/fato-volumetria-dw.md`.
+
+### Complemento de 10/ago (sessão autônoma) — a sobra de 1.634,4 t da entrada
+
+- **É toda SODEXO.** Resíduo por cliente após cancelado: SODEXO **+2.448,0 t**;
+  os demais entre −339,9 (SAPORE) e +4,6 t. Resíduos negativos = guia
+  cancelada-e-reemitida contada uma vez só no DW.
+- **A 015 é 100% SODEXO na entrada** (23.768,0 t; nenhum outro cliente tem
+  linha lá) e **não publica `GUIAS_ENTRADA` nem `GUIAS_SAIDA`** (inventário ao
+  vivo, 10/ago). A taxa de cancelamento da SODEXO medível em 001+016 (≈ 11,8%)
+  aplicada à 015 dá ≈ 3,2 kt — mesma ordem da sobra. Consistente, não provado
+  (P-6).
+- Resíduo mensal após cancelado: −0,5% a +4,0% do DW, sinal alternante.
+
+---
+
+## 3.2 A saída: gap de 8,1% com causa parcial (10/ago/2026)
+
+Jan–jun/2026, peso bruto: **Nuvem 85.150,1 × DW 92.694,3 → gap 7.544,2 t
+(8,1%)** (líquido: 6,9%). A leitura direta do SharePoint (36 arquivos, banda
+*Separado Fisicamente*) reproduziu o número do banco da VM **exato** — a
+ingestão da saída está fiel à fonte.
+
+O que foi medido e o que só dá para estimar:
+
+1. **Banda não é causa** — ver D-7 (fechada).
+2. **O mecanismo "guia sem item" existe na saída**: 402 canceladas + 125
+   cortadas integralmente (Corte Contábil=1) em 001+016. **Mas todas têm
+   `Peso Líq.` = 0 na fonte** — na saída o peso nasce na separação; a guia
+   cancelada não carrega peso no cabeçalho como na entrada. **A tonelagem
+   cancelada de saída não é mensurável com o que o SLIN publica.**
+3. **Estimativa** (contagem × peso médio da guia efetiva do mesmo cliente):
+   ≈ 3.014 t líq em 001+016, +≈ 643 t extrapolando a SODEXO da 015 → ≈ 3,7 kt
+   dos 7,5 kt. **SAPORE fecha em ~104%** (239 canceladas + 71 cortadas, maior
+   cancelador — espelho da entrada).
+4. **Anomalia de peso bruto na GR (lado DW)**: Expedição da GR com
+   bruto/líquido = **1,109** contra 1,022 na fonte e 1,022 no próprio DW na
+   entrada. No líquido o gap da GR cai de 18,6% para 11,6% — ≈ 1,1 kt do gap
+   é definição de peso, não volume (P-11).
+5. **Resíduo sem causa ≈ 2,6–3,0 kt (≈ 3% do DW)**, sistemático (positivo nos
+   seis meses): GR ≈ 1 kt, PIMENTA ≈ 0,6 kt (gap relativo 14–45% ao mês!),
+   SODEXO ≈ 0,6 kt, CUCINARE ≈ 0,3 kt → P-9.
+
+---
+
+## 3.3 De-para de filial: provado, com descoberta (10/ago/2026)
+
+- **Na fonte:** a coluna `Empresa` da `SAIDA_MERCADORIAS` tem um único valor
+  por pasta — `001/001`, `001/015`, `001/016` (3,3 mi de linhas). Pasta =
+  empresa/filial SLIN.
+- **No DW:** tudo isso vira **um** CNPJ (`06975242000187`, Log Frio 0001-87)
+  via instância `SLIN_RMSPII_PRD`. No Protheus, RMSPIII (008002 = 0002-68) e
+  RMSPIV (008003 = 0003-49) têm CNPJs próprios que **não existem no fato** — o
+  DW colapsa as três filiais físicas no 0001-87. O de-para correto continua
+  sendo *um CNPJ no DW ↔ três pastas na origem*, e a chave real é a
+  **instância**, não o CNPJ das filiais.
+- **Descoberta:** a mesma instância SLIN gera linhas no fato para **outras
+  filiais DW**: MAQ (57046955000369 = CEFRI Mairinque/MAQII — SODEXO 9.226,7 t
+  + ANGA ALIMENTAÇÃO 6.550,2 t em jan–jun), RPII (02060862000569 = SuperFrio
+  Ribeirão Preto — SAPORE 11.107,4 t) e **22 linhas com filial vazia** (SODEXO
+  668,4 t, mai–jun/26). Esse movimento fica **fora** do "RMSPII" do BI e
+  **fora** das pastas 001/015/016. Não afeta o gap medido, mas é ~27,5 kt que
+  qualquer comparação "tudo da RMSPII" encontraria (P-10).
+
+## 3.4 De-para de cliente: fechado (10/ago/2026)
+
+- **`NK_CLIENTE` (raiz do CNPJ) resolve 10/10 clientes do recorte na
+  `DIM_CLIENTE`** (`clientesDw.csv`, 61.182 registros) = 100% do peso.
+- `NK_WMS_CLIENTE` vem **vazio** no fato para 7/10 clientes (1.497 linhas,
+  40.474 t = 21,1% do peso) — e vazio **também na dim** para os mesmos 7. A dim
+  não recupera o nome do WMS; recupera razão social/fantasia/CNPJ pela raiz.
+- A razão social da dim **não é confiável** em 2 de 10: `04596502` = "WYDA"
+  (é CUCINARE PRO ALIMENTAÇÃO — nome comercial no campo de razão social) e
+  `60691250` = "50861-CARREFOUR TIETE - LCR" (nome de loja; na fonte é LC
+  ADMINISTRACAO DE RESTAURANTES). Reforça D-10: agrupar e nomear **sempre pela
+  raiz do CNPJ**.
 
 ---
 
@@ -201,16 +285,24 @@ só. Fechar 1:1 exige extrato do DW no grão de GEM.
 | P-1 | **A fonte do BI é a `FATO_VOLUMETRIA` do DW** (`docs/Analise/fato.csv`), operação `Recebimento`; os números do print conferem contra ela. O sinal contrário se explica pela guia cancelada, que o DW conta e o export de itens não publica |
 | P-2 | **Fechada pela correlação por cliente** (seção 3.1): o cancelamento acompanha o gap cliente a cliente, inclusive na FLV 7, que era o caso que derrubava D-1 |
 
+### Fechadas em 10/ago/2026 (segunda passada, sessão autônoma)
+
+| # | Como fechou |
+|---|---|
+| P-4 | **Saída comparada** (seção 3.2): Nuvem 85.150,1 × DW 92.694,3, gap 7.544,2 t (8,1%). Não dependeu da VM: leitura direta do SharePoint + `fato.csv`. A banda foi testada junto (D-7 fechada) |
+| P-5 | **O lado Nuvem foi confirmado pelo banco**: entrada 85.958,4 t e saída 85.150,0 t no `scripts/conciliacao.py` da VM = leitura direta do SharePoint (saída reproduzida em 10/ago com 85.150,1 t). Ingestão fiel à fonte nas duas direções |
+
 ### Abertas
 
 | # | Pendência | O que falta |
 |---|---|---|
 | P-3 | O botão "Operação" do relatório do BI **não mudou** o gráfico quando testado em 06/ago | Perdeu urgência: dá para comparar direto contra o `fato.csv`, sem depender do relatório. Ainda vale reproduzir com quem mantém o BI |
-| P-4 | Nenhuma comparação de **saída** foi feita ainda | Depende de `scripts/processar_saida.py` rodar na VM — sem ele não há célula de saída no banco. Checar antes qual banda o BI usa (D-7) |
-| P-5 | O lado Nuvem desta tabela veio da **planilha**, não do banco | Rodar `scripts/conciliacao.py` na VM e substituir. Se o número do banco divergir da soma da planilha, **isso é defeito nosso** e vira lote de correção |
-| P-6 | **A filial `015` não publica `GUIAS_ENTRADA`** — sem esse export não dá para medir o cancelamento dela, e é exatamente onde a SODEXO fica subcoberta (38 %). São as 1.634,4 t que sobram | Pedir o export de `GUIAS_ENTRADA` da 015 (e os arquivos de `ENTRADA_MERCADORIAS` dela de julho e agosto, que também não existem) |
-| P-7 | **Não está confirmado que o DW conte cada guia cancelada** — a conclusão vem de os números baterem | Extrato do DW no grão de documento (GEM), ou confirmação de quem mantém o relatório |
-| P-8 | **Decisão de produto ainda não tomada:** o que a Nuvem faz com a guia cancelada | Contar como o DW conta (vira lote de código) ou declarar a diferença na tela (vira nota no Cockpit). É decisão da Maria |
+| P-6 | **A filial `015` não publica `GUIAS_ENTRADA` nem `GUIAS_SAIDA`** (confirmado ao vivo em 10/ago) — e a 015 é **100% SODEXO** na entrada. A sobra de 1.634,4 t da entrada é toda SODEXO (+2.448,0 t de resíduo, compensado por resíduos negativos de reemissão); a taxa de cancelamento da SODEXO medível em 001+016 (≈ 11,8%) aplicada à 015 dá ≈ 3,2 kt — mesma ordem. Consistente, **não provado** | Pedir o export de `GUIAS_ENTRADA`/`GUIAS_SAIDA` da 015 (e os `ENTRADA_MERCADORIAS` dela de julho/agosto, que também não existem) |
+| P-7 | **Não está confirmado que o DW conte cada guia cancelada** — a conclusão vem de os números baterem. Procurado em 10/ago nos dicionários (`apartado/volumetriaExemploIce.csv`) e nas dimensões: **nada** sobre cancelamento; o fato não tem grão de documento nem flag. Reforço indireto: resíduo mensal da entrada após cancelado fica em −0,5% a +4,0% com sinal alternante, e coberturas >100% (SAPORE 106%, GR 113%) indicam reemissão contada uma vez | Extrato do DW no grão de documento (GEM/GSM), ou confirmação da lógica do ETL `wms_to_dw_volumetry_v04` com quem mantém o DW |
+| P-8 | **Decisão de produto ainda não tomada:** o que a Nuvem faz com a guia cancelada — agora vale também para a saída (cancelada + corte integral) | Contar como o DW conta (vira lote de código) ou declarar a diferença na tela (vira nota no Cockpit). É decisão da Maria |
+| P-9 | **Resíduo da saída sem causa: ≈ 2,6–3,0 kt (≈ 3% do DW)**, sistemático nos seis meses, concentrado em GR (≈ 1 kt), PIMENTA (≈ 0,6 kt; gap relativo 14–45% ao mês), SODEXO (≈ 0,6 kt) e CUCINARE (≈ 0,3 kt). A tonelagem de guia cancelada/cortada de saída tem `Peso Líq.` = 0 na fonte — só dá para **estimar** por contagem × peso médio (seção 3.2) | Extrato do DW no grão de GSM, ou o peso **solicitado** das guias canceladas/cortadas direto do WMS. Sensibilidade: se a guia cancelada for maior que a média, parte do resíduo desaparece |
+| P-10 | **A instância `SLIN_RMSPII_PRD` alimenta outras filiais do DW** — MAQ (CEFRI Mairinque: SODEXO 9,2 kt + ANGA 6,6 kt), RPII (SuperFrio Ribeirão Preto: SAPORE 11,1 kt) e **22 linhas com filial vazia** (SODEXO 0,7 kt, mai–jun/26) — fora do "RMSPII" do BI e fora das pastas 001/015/016 (seção 3.3) | Confirmar com a controladoria: esse movimento aparece em qual visão do BI? As linhas de filial vazia aparecem em algum lugar? Que filial SLIN as gera (002? outra)? |
+| P-11 | **Anomalia de peso bruto na GR (lado DW):** Expedição com bruto/líquido = 1,109 contra 1,022 na fonte e 1,022 no próprio DW na entrada da GR — ≈ 1,1 kt do gap da GR é definição de peso, não volume | Perguntar a quem mantém o DW de onde vem o `PESO_BRUTO` da Expedição (o da fonte? o da NF? calculado?) |
 
 ---
 

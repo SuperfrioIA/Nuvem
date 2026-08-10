@@ -55,6 +55,12 @@ competências têm parte única: o padrão de nome precisa aceitar 1..N partes.
 **`GUIAS_SAIDA` não serve para volumetria.** Cabeçalho na linha 2, 31 colunas, 0,2 MB
 — mas **não tem `Peso Bruto`** (só `Peso Líq.`) e **não tem CNPJ do cliente**, só o
 nome. Grão de guia. Serve para produtividade de separação, não para volumetria.
+**E não serve nem para medir cancelamento em toneladas** (conferido em 10/ago/2026,
+12 arquivos 001+016 jan–jun): TODA guia com `Status Separação = Cancelado` (402) ou
+cortada integralmente (`Corte Contábil = 1`, 125) tem `Peso Líq.` **zero** — na saída
+o peso nasce na separação, diferente da `GUIAS_ENTRADA`, onde o cabeçalho da guia
+cancelada mantém peso e valor. Só publica 001 e 016 (015 não tem). Ver
+[[conciliacao-saida-rmspii]].
 
 **Why:** o leitor de `ENTRADA_MERCADORIAS` busca coluna **por nome** com "primeira
 ocorrência ganha" (`backend/services/entrada_mercadorias.py`), o que nesta família

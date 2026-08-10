@@ -13,11 +13,10 @@ Graph, somente leitura.
 **Relação com o lote V2.6** (`docs/CONCILIACAO_POWERBI_V2.md`, entregue em
 07/ago): aquele documento fixou o método e registrou as pendências a partir dos
 números de 06/ago. Esta verificação **fecha P-0, P-1 e P-2 e descarta D-2/D-3**:
-não é balde de cliente sem CNPJ nem fonte extra — é guia cancelada. O documento
-do V2.6 ainda não reflete isto; atualizá-lo é a primeira coisa a fazer na próxima
-passada. Seguem abertas P-3 (botão "Operação" do relatório, agora menos
-importante — dá para comparar direto contra o `fato.csv`), P-4 (saída) e P-5 (o
-lado Nuvem vir do banco em vez da planilha).
+não é balde de cliente sem CNPJ nem fonte extra — é guia cancelada.
+**Atualização de 10/ago/2026:** o documento do V2.6 foi atualizado (§3.1–3.4);
+P-4 (saída — ver [[conciliacao-saida-rmspii]]) e P-5 (lado Nuvem confirmado pelo
+banco) fecharam; seguem P-3, P-6, P-7, P-8 e as novas P-9/P-10/P-11.
 
 **Causa identificada: guia de entrada cancelada.** Ela continua no WMS com
 cliente, NF, peso e valor no cabeçalho, e o DW conta esse movimento — mas **não
@@ -72,10 +71,15 @@ morta — e a direção do gap sempre foi a contrária à que ela previa.
   competência x data de movimento, alternariam.
 - **Filtro de operação:** a soma da Nuvem já inclui todas as operações.
 
-**Ainda aberto (1.634 t, 13% do gap):** a filial `015` **não tem export de
-`GUIAS_ENTRADA`** — sem ele não dá para medir as canceladas dela, e é exatamente
-onde a SODEXO fica subcoberta (38%). O `ENTRADA_MERCADORIAS` da 015 também para
-em junho (sem 2607/2608), o que puxa julho para baixo do lado da Nuvem.
+**A sobra de 1.634 t foi dimensionada em 10/ago/2026: é toda SODEXO.** Resíduo
+por cliente após cancelado: SODEXO **+2.448,0 t**, todos os demais entre −339,9
+(SAPORE) e +4,6 t — os negativos são a reemissão contada uma vez no DW. A 015 é
+**100% SODEXO na entrada** (23.768 t, nenhum outro cliente tem linha lá) e não
+publica `GUIAS_ENTRADA` **nem `GUIAS_SAIDA`** (inventário ao vivo, 10/ago); a
+taxa de cancelamento da SODEXO medível em 001+016 (≈ 11,8%) aplicada à 015 dá
+≈ 3,2 kt — mesma ordem da sobra. Consistente, não provado (P-6). O
+`ENTRADA_MERCADORIAS` da 015 também para em junho (sem 2607/2608), o que puxa
+julho para baixo do lado da Nuvem.
 
 **Resolvido antes:** `WYDA` (BI) e `CUCINARE PRO ALIMENTAÇÃO` (raiz `04596502`)
 são o mesmo cliente — nome comercial x razão social. E nomes de cliente vêm

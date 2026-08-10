@@ -25,6 +25,10 @@ sem depender de print.
   enquanto o DataHub publica três pastas de filial (001/015/016). O de-para certo
   é *um CNPJ no DW ↔ três códigos de filial na origem* — a leitura de 06/ago ("o
   BI agrega as três") está correta no efeito, mas imprecisa na forma.
+  **Provado em 10/ago** (coluna `Empresa` da fonte + cadastro Protheus) e com
+  ressalva nova: a MESMA instância também alimenta as filiais MAQ, RPII e uma
+  VAZIA no fato (~27,5 kt/semestre fora do BI-RMSPII) — ver
+  [[depara-filial-rmspii-dw]].
 - **Cobertura:** out/2021 a jul/2026, 24 filiais. **Julho/2026 está parcial** (o
   extrato é de 16/07) — nunca comparar jan-jul contra este arquivo sem dizer isso.
 
