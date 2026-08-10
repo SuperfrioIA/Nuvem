@@ -26,9 +26,21 @@ ranking por cliente agrupado pela raiz do CNPJ.
 > gap de 8,1% com causa parcial), a **seção 3.3** (de-para de filial e a
 > descoberta MAQ/RPII) e a **seção 3.4** (de-para de cliente). Fecha P-4, P-5 e
 > a pendência D-7 (banda); dimensiona P-6; abre P-9, P-10 e P-11. Relatório
-> completo e planilha (12 abas):
+> completo e planilha:
 > `docs/Analise/saida/relatorio_conciliacao_volumetria_20260810.md` e
 > `docs/Analise/saida/conciliacao_slin_x_dw.xlsx`.
+>
+> **Atualização de 10/ago/2026 (terceira rodada) — conciliação no grão de DIA e
+> mapa de comparabilidade.** A identidade `DW(dia, cliente) = itens(dia) +
+> canceladas(dia)` **fecha dia a dia** onde as guias existem (FLV7 126/126 dias
+> com resíduo < 1 t; CONVIDA 121/122; OG 112/114) — é a prova mais forte para
+> P-7, e localiza o resíduo da entrada em dias com movimento na 015
+> (SODEXO). A varredura de `docs/Analise/` confirmou que **não há extração com
+> grão de documento** (P-9 segue precisando do DW). A anomalia da GR (P-11) foi
+> detalhada mês a mês — inclusive meses com bruto MENOR que líquido na entrada
+> do DW. Tudo em **`docs/CONCILIACAO_COMPARABILIDADE.md`** (o que cada lado
+> tem, o que cruza, e os 5 impedimentos nomeados para o 99%+), e a aba
+> `ENTRADA_POR_DIA` na planilha (13 abas).
 
 ---
 
@@ -297,12 +309,12 @@ O que foi medido e o que só dá para estimar:
 | # | Pendência | O que falta |
 |---|---|---|
 | P-3 | O botão "Operação" do relatório do BI **não mudou** o gráfico quando testado em 06/ago | Perdeu urgência: dá para comparar direto contra o `fato.csv`, sem depender do relatório. Ainda vale reproduzir com quem mantém o BI |
-| P-6 | **A filial `015` não publica `GUIAS_ENTRADA` nem `GUIAS_SAIDA`** (confirmado ao vivo em 10/ago) — e a 015 é **100% SODEXO** na entrada. A sobra de 1.634,4 t da entrada é toda SODEXO (+2.448,0 t de resíduo, compensado por resíduos negativos de reemissão); a taxa de cancelamento da SODEXO medível em 001+016 (≈ 11,8%) aplicada à 015 dá ≈ 3,2 kt — mesma ordem. Consistente, **não provado** | Pedir o export de `GUIAS_ENTRADA`/`GUIAS_SAIDA` da 015 (e os `ENTRADA_MERCADORIAS` dela de julho/agosto, que também não existem) |
-| P-7 | **Não está confirmado que o DW conte cada guia cancelada** — a conclusão vem de os números baterem. Procurado em 10/ago nos dicionários (`apartado/volumetriaExemploIce.csv`) e nas dimensões: **nada** sobre cancelamento; o fato não tem grão de documento nem flag. Reforço indireto: resíduo mensal da entrada após cancelado fica em −0,5% a +4,0% com sinal alternante, e coberturas >100% (SAPORE 106%, GR 113%) indicam reemissão contada uma vez | Extrato do DW no grão de documento (GEM/GSM), ou confirmação da lógica do ETL `wms_to_dw_volumetry_v04` com quem mantém o DW |
+| P-6 | **A filial `015` não publica `GUIAS_ENTRADA` nem `GUIAS_SAIDA`** (inventário completo ao vivo em 10/ago: a 015 publica só `ENTRADA_MERCADORIAS` até 2606, a família `(UA)` até 2607 e `SAIDA_MERCADORIAS` até 2607 — **nenhuma família de guias**) — e a 015 é **100% SODEXO** na entrada. A conciliação por DIA (terceira rodada) fecha os outros clientes e concentra o resíduo (+2.448 t) em dias com movimento na 015. É o **impedimento nº 1** de `CONCILIACAO_COMPARABILIDADE.md` | Pedir a publicação das guias da 015 (`GUIAS_ENTRADA`, `GUIAS_SAIDA`, `CORTES`) e o `ENTRADA_MERCADORIAS` 015 de jul/ago. Nota: a família `(UA)` da 015 **tem** julho — dá para cobrir o buraco de jul da 015 na entrada com ela (mesmo total, grão de palete) |
+| P-7 | **Não está confirmado documentalmente que o DW conte cada guia cancelada** — dicionários e dimensões não trazem nada sobre cancelamento, e o fato não tem grão de documento nem flag. **Mas a evidência subiu de patamar na terceira rodada:** no grão de DIA, `DW = itens + canceladas` fecha dia a dia para os clientes onde as guias existem (FLV7 126/126 dias, resíduo total 0,8 t no semestre; CONVIDA 121/122; OG 112/114; NOVITA 120/129) — sem somar as canceladas, nenhum fecha. Falta só o 1:1 documental | Extrato do DW no grão de documento (GEM/GSM) de UM mês bastaria para calibrar, ou confirmação da lógica do ETL `wms_to_dw_volumetry_v04` |
 | P-8 | **Decisão de produto ainda não tomada:** o que a Nuvem faz com a guia cancelada — agora vale também para a saída (cancelada + corte integral) | Contar como o DW conta (vira lote de código) ou declarar a diferença na tela (vira nota no Cockpit). É decisão da Maria |
-| P-9 | **Resíduo da saída sem causa: ≈ 2,6–3,0 kt (≈ 3% do DW)**, sistemático nos seis meses, concentrado em GR (≈ 1 kt), PIMENTA (≈ 0,6 kt; gap relativo 14–45% ao mês), SODEXO (≈ 0,6 kt) e CUCINARE (≈ 0,3 kt). A tonelagem de guia cancelada/cortada de saída tem `Peso Líq.` = 0 na fonte — só dá para **estimar** por contagem × peso médio (seção 3.2) | Extrato do DW no grão de GSM, ou o peso **solicitado** das guias canceladas/cortadas direto do WMS. Sensibilidade: se a guia cancelada for maior que a média, parte do resíduo desaparece |
-| P-10 | **A instância `SLIN_RMSPII_PRD` alimenta outras filiais do DW** — MAQ (CEFRI Mairinque: SODEXO 9,2 kt + ANGA 6,6 kt), RPII (SuperFrio Ribeirão Preto: SAPORE 11,1 kt) e **22 linhas com filial vazia** (SODEXO 0,7 kt, mai–jun/26) — fora do "RMSPII" do BI e fora das pastas 001/015/016 (seção 3.3) | Confirmar com a controladoria: esse movimento aparece em qual visão do BI? As linhas de filial vazia aparecem em algum lugar? Que filial SLIN as gera (002? outra)? |
-| P-11 | **Anomalia de peso bruto na GR (lado DW):** Expedição com bruto/líquido = 1,109 contra 1,022 na fonte e 1,022 no próprio DW na entrada da GR — ≈ 1,1 kt do gap da GR é definição de peso, não volume | Perguntar a quem mantém o DW de onde vem o `PESO_BRUTO` da Expedição (o da fonte? o da NF? calculado?) |
+| P-9 | **Resíduo da saída sem causa: ≈ 2,5 kt no líquido (2,8% do DW)**, sistemático nos seis meses, concentrado em GR (≈ 1 kt), PIMENTA (≈ 0,6 kt; gap relativo 14–45% ao mês), SODEXO (≈ 0,6 kt) e CUCINARE (≈ 0,3 kt). A tonelagem de guia cancelada/cortada de saída tem `Peso Líq.` = 0 na fonte — só dá para **estimar** por contagem × peso médio (seção 3.2). **Varredura de 10/ago (3ª rodada): nenhuma extração em `docs/Analise/` tem grão de documento** — `data (2).xlsx` é export do visual do BI (mês × cliente × operação; o exemplo é RPI/Recebimento), serve como contraprova de leitura, não para fechar isto | Extrato do DW no grão de GSM, ou o peso **solicitado** das guias canceladas/cortadas direto do WMS (impedimentos 2 e 3 de `CONCILIACAO_COMPARABILIDADE.md`). Sensibilidade: se a guia cancelada for maior que a média, parte do resíduo desaparece |
+| P-10 | **A instância `SLIN_RMSPII_PRD` alimenta outras filiais do DW** — MAQ (CEFRI Mairinque: SODEXO 9,2 kt + ANGA 6,6 kt), RPII (SuperFrio Ribeirão Preto: SAPORE 11,1 kt) e **22 linhas com filial vazia** (SODEXO 0,7 kt, mai–jun/26) — fora do "RMSPII" do BI e fora das pastas 001/015/016 (seção 3.3). **Não afeta nenhum número desta conciliação**; só importa para quem comparar "tudo que o prédio movimenta" com o BI | Confirmar com a controladoria: esse movimento aparece em qual visão do BI? As linhas de filial vazia aparecem em algum lugar? Que filial SLIN as gera (002? outra)? |
+| P-11 | **`PESO_BRUTO` do DW com defeito nas linhas da GR** (detalhado mês a mês na 3ª rodada): na Expedição, bruto/líquido de **1,106–1,130** (jan–mai; normaliza para 1,039 em jun) contra 1,021–1,024 constantes na fonte; na Entrada do DW, **fev = 0,921 e jun = 0,898 — bruto MENOR que líquido, fisicamente impossível**. ≈ 1,1 kt do gap da GR na saída é peso, não volume. **Mitigação imediata: conciliar a GR em peso LÍQUIDO** (gap líquido da GR: 1.451,8 t = 11,6%) | Perguntar a quem mantém o ETL `wms_to_dw_volumetry_v04` de onde vem o `PESO_BRUTO` da GR (NF? cálculo? fallback?) |
 
 ---
 

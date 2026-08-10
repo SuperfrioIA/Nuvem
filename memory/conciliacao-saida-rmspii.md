@@ -29,10 +29,19 @@ peso bruto, RMSPII (pastas 001/015/016 ↔ CNPJ 06975242000187 no DW). Detalhe e
   1,022 na fonte e 1,022 no próprio DW na entrada — ≈ 1,1 kt do gap da GR é
   definição de peso bruto, não volume.
 
-**O que segue aberto (P-9):** resíduo sistemático de ≈ 2,6–3,0 kt (≈ 3% do DW),
-positivo nos seis meses: GR ≈ 1 kt, PIMENTA ≈ 0,6 kt (gap relativo 14–45% ao
-mês), SODEXO ≈ 0,6 kt, CUCINARE ≈ 0,3 kt. Fechar exige extrato do DW no grão de
-GSM ou o peso solicitado das guias canceladas/cortadas no WMS.
+**O que segue aberto (P-9):** resíduo sistemático de ≈ 2,5 kt no líquido (2,8%
+do DW), positivo nos seis meses: GR ≈ 1 kt, PIMENTA ≈ 0,6 kt (gap relativo
+14–45% ao mês), SODEXO ≈ 0,6 kt, CUCINARE ≈ 0,3 kt. Fechar exige extrato do DW
+no grão de GSM ou o peso solicitado das guias canceladas/cortadas no WMS —
+varrido em 10/ago: **nenhuma extração de `docs/Analise/` tem grão de
+documento** (a mais próxima, `data (2).xlsx`, é export do visual do BI no grão
+mês × cliente × operação).
+
+**Terceira rodada (10/ago): P-11 detalhada e recomendação.** O bruto/líquido da
+GR na Expedição do DW é 1,106–1,130 (jan–mai; 1,039 em jun) contra 1,021–1,024
+na fonte, e a Entrada do DW da GR tem meses com bruto MENOR que líquido (0,921
+fev, 0,898 jun — impossível). **Conciliar a GR em peso líquido** até o ETL ser
+explicado (gap líquido GR: 1.451,8 t = 11,6%).
 
 **Why:** sem este registro, a próxima passada tentaria de novo medir o cancelado
 de saída pelas guias (peso é zero, não dá) ou culparia a banda (já descartada).

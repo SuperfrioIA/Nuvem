@@ -92,6 +92,14 @@ Coberturas acima de 100% dizem que o DW não conta *todas* as canceladas
 (provavelmente guia cancelada e reemitida entra uma vez só). Fechar 1:1 exigiria
 extrato do DW no grão de GEM.
 
+**Upgrade de 10/ago (3ª rodada): a prova desceu para o grão de DIA.**
+`DW(dia, cliente) = itens(dia) + canceladas(dia)` fecha dia a dia onde as guias
+existem: FLV7 126/126 dias com resíduo < 1 t (0,8 t no semestre), CONVIDA
+121/122, OG 112/114, NOVITA 120/129. SAPORE/GR/PIMENTA têm ruído de ±1 dia que
+se anula (data de Solicitação × data do movimento). O resíduo líquido (+2.448 t)
+é SODEXO em dias com movimento na 015. Aba `ENTRADA_POR_DIA` da planilha;
+impedimentos nomeados em `docs/CONCILIACAO_COMPARABILIDADE.md`.
+
 **Why:** o V2.6 entregou o método com o gap ainda sem causa; a causa apareceu no
 dia seguinte, com número. Sem este registro a próxima passada repetiria hipóteses
 já mortas (balde de cliente, família UA, devolução).
