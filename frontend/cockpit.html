@@ -695,7 +695,9 @@ function formatarBaldePorDirecao(balde, rotulo) {
 function cardClientes(resumo) {
   const c = resumo.clientes_atendidos;
   if (!c) {
-    return `<div class="kpi-card vazio">Contagem de clientes não se aplica ao recorte filtrado (ver limitações).</div>`;
+    // nao aponta mais pra "limitações": o bloco cru saiu da tela executiva, e
+    // um "ver" que nao leva a nada e pior que nao dizer nada
+    return `<div class="kpi-card vazio">Contagem de clientes não se aplica quando há filtro de cliente ou de tipo de estoque.</div>`;
   }
   const balde = resumo.balde_sem_cliente || {};
   return `
@@ -706,6 +708,37 @@ function cardClientes(resumo) {
       ${formatarBaldePorDirecao(balde.entrada, "Entrada")}
       ${formatarBaldePorDirecao(balde.saida, "Saída")}
     </div>`;
+}
+
+// A tela executiva nao repassa `limitacoes` crua (Maria, 10/ago/2026): sao
+// strings de API -- sem acento, com codigo de decisao e nome de campo -- e parte
+// delas so repete o que o proprio card ja diz. Cada uma cai em um de tres
+// destinos: descartada (ja dita no visual, ou jargao de endpoint), reescrita em
+// uma linha de negocio, ou repassada como esta. O default e REPASSAR: limitacao
+// nova que o backend venha a declarar aparece na tela, nunca e engolida em
+// silencio -- silencio e como numero errado passa batido. O backend continua
+// declarando tudo (/nuvem, export CSV e a API nao mudam).
+function limitacoesExecutivas(lista) {
+  const saida = [];
+  (lista || []).forEach(l => {
+    // ja dito no card: o titulo vem "· so entrada", a linha de direcoes diz
+    // "sem par de saida na fonte" e a nota da grandeza repete
+    if (/nao tem par de saida/.test(l)) return;
+    // jargao de endpoint; o card vazio de clientes ja explica a ausencia
+    if (/clientes_atendidos/.test(l)) return;
+    // esta MUDA a leitura do numero -- periodo anterior ao escopo da saida sai
+    // so com entrada num card rotulado "total movimentado" -- entao fica. Sem
+    // codigo de decisao, e com a competencia lida da propria string pra tela
+    // nao divergir do COMPETENCIA_MINIMA_SAIDA do backend.
+    const escopo = l.match(/a partir de (\d{4}-\d{2})/);
+    if (escopo && /so cobre competencia/.test(l)) {
+      saida.push(`Saída medida a partir de ${competenciaCurta(escopo[1])}`
+        + " — no período anterior, o número traz só entrada.");
+      return;
+    }
+    saida.push(l);
+  });
+  return saida;
 }
 
 function renderizarCards(resumo) {
@@ -726,7 +759,7 @@ function renderizarCards(resumo) {
   }).join("");
 
   document.getElementById("cockpitCards").innerHTML = cards + cardClientes(resumo);
-  document.getElementById("cockpitLimitacoes").innerHTML = (resumo.limitacoes || []).map(l =>
+  document.getElementById("cockpitLimitacoes").innerHTML = limitacoesExecutivas(resumo.limitacoes).map(l =>
     `<div class="msg msg-info">${escaparHtml(l)}</div>`).join("");
 }
 
@@ -853,7 +886,7 @@ function renderizarEvolucao(evolucao) {
   const unidade = evolucao.unidade;
   const temSaida = pontos.some(p => p.saida !== null);
 
-  document.getElementById("notaEvolucao").innerHTML = (evolucao.limitacoes || [])
+  document.getElementById("notaEvolucao").innerHTML = limitacoesExecutivas(evolucao.limitacoes)
     .map(l => escaparHtml(l)).join(" · ");
 
   const series = [
@@ -1105,7 +1138,7 @@ function montarMatriz(dados, dimensao) {
   document.getElementById("matrizTitulo").textContent = dimensao === "unidade"
     ? `Matriz · unidade por competência · ${ROTULO_DIRECAO[f.direcao]}`
     : `Matriz · clientes da ${f.filial} por competência · ${ROTULO_DIRECAO[f.direcao]}`;
-  const notasMatriz = (dados.limitacoes || []).slice();
+  const notasMatriz = limitacoesExecutivas(dados.limitacoes);
   if (dimensao === "unidade") {
     notasMatriz.push("Clique na seta da unidade para abrir os clientes dela.");
   }
