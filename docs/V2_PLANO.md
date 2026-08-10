@@ -48,7 +48,7 @@ o Laboratório explorando em cima dessa base já governada.
 | **V2.3** | Saída (`SAIDA_MERCADORIAS`, banda *Separado Fisicamente*) | **feito e deployado** (06–07/ago/2026) — revisão independente (2 críticos + 7 médios corrigidos), suíte verde contra Postgres real, migrations validadas via `alembic` CLI. **Deploy na VM em 07/ago/2026, `verificar_v2.py` sem nenhuma falha.** Falta rodar `scripts/processar_saida.py` — a saída ainda não foi ingerida (ver abaixo) |
 | **V2.4** | Consultas de volumetria sob `/cockpit/` | **feito e deployado** (07/ago/2026) — mesma suíte verde contra Postgres real; `verificar_v2.py` sem falhas na VM |
 | **V2.5** | Cockpit visual | **feito e deployado** (07/ago/2026) — plano em [`V2_5_PLANO_EXECUCAO.md`](V2_5_PLANO_EXECUCAO.md); validado em navegador antes do deploy |
-| **V2.6** | Conciliação com o Power BI | **entregue no que não depende da VM** (07/ago/2026) — [`CONCILIACAO_POWERBI_V2.md`](CONCILIACAO_POWERBI_V2.md) + `scripts/conciliacao.py`; 5 pendências registradas, células de saída dependem do deploy |
+| **V2.6** | Conciliação com o Power BI | **entregue no que não depende da VM** (07/ago/2026) — [`CONCILIACAO_POWERBI_V2.md`](CONCILIACAO_POWERBI_V2.md) + `scripts/conciliacao.py`. **Segunda passada em 10/ago achou a causa do gap: guia de entrada cancelada** (seção 3.1 do documento) — P-0/P-1/P-2 fechadas, D-2/D-3 descartadas com número; seguem abertas P-3 a P-8, sendo P-8 uma decisão de produto da Maria. Células de saída dependem do `processar_saida.py` |
 | **V2.7** | Escala e operação | **feito e deployado** (07/ago/2026) — plano em [`V2_7_PLANO_EXECUCAO.md`](V2_7_PLANO_EXECUCAO.md); backup/restore **com evidência segue pendente de execução na VM** |
 | **V2.8** | Laboratório com gráficos | não autorizado |
 
