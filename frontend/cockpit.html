@@ -241,6 +241,13 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 .dados-tecnicos div { margin-bottom: 4px; }
 .pendenciasLista { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .pendenciasLista li { background: var(--card-3); border-left: 3px dashed var(--brand-azul-conexao); border-radius: var(--radius-sm); padding: 7px 10px; font-size: 12px; }
+/* procedencia do dado: primeira coisa que se le no bloco tecnico */
+.fonteDado {
+  background: var(--card-3); border-left: 3px solid var(--brand-azul-conexao);
+  border-radius: var(--radius-sm); padding: 9px 12px; margin: 0 0 12px;
+}
+.dados-tecnicos .fonteDado div { margin-bottom: 4px; }
+.dados-tecnicos .fonteDado div:last-child { margin-bottom: 0; }
 
 .linhagemLink {
   display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; font-size: 0.84rem; font-weight: 700;
@@ -288,7 +295,7 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
       <img class="brandLogo" src="/frontend/logo-superfrio.png" alt="IceStar | SuperFrio">
       <hr class="brandRule" aria-hidden="true">
     </div>
-    <span class="eyebrow">Visão oficial · DataHub persistido</span>
+    <span class="eyebrow">Visão oficial · SharePoint DataHub persistido</span>
     <h1 class="titulo" id="cockpit-titulo">Cockpit executivo</h1>
     <p class="intro">Volumetria integrada: quanto entrou, quanto saiu, total movimentado e saldo — por período, unidade, cliente e tipo de estoque. Os filtros abaixo valem para toda a tela.</p>
 
@@ -380,9 +387,14 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
       <div id="matriz"></div>
     </div>
 
-    <p class="subLabel">Indicadores aprovados no Laboratório</p>
-    <p class="subNota">Aprovar um insight gera <strong>especificação técnica</strong> para implementação humana — não publica indicador. Por isso estes cartões não trazem número.</p>
-    <div class="kpis-cards" id="cockpitLaboratorio"></div>
+    <!-- Bloco do Laboratorio escondido a pedido da Maria (10/ago/2026): o Lab
+         nao entra por enquanto. Nada foi removido -- a pagina /laboratorio
+         continua no ar. Reativar = `LAB_VISIVEL = true` no script abaixo. -->
+    <div id="blocoLaboratorio" hidden>
+      <p class="subLabel">Indicadores aprovados no Laboratório</p>
+      <p class="subNota">Aprovar um insight gera <strong>especificação técnica</strong> para implementação humana — não publica indicador. Por isso estes cartões não trazem número.</p>
+      <div class="kpis-cards" id="cockpitLaboratorio"></div>
+    </div>
 
     <p class="subLabel">Qualidade e origem dos dados</p>
     <div class="dados-tecnicos" id="cockpitQualidade"></div>
@@ -394,6 +406,11 @@ p.intro { max-width: 640px; color: var(--muted); font-size: 1rem; line-height: 1
 <script src="/frontend/comum.js"></script>
 <script>
 iniciarLoginPadrao(carregarCockpit);
+
+// Laboratorio fora do cockpit (Maria, 10/ago/2026): com a flag falsa o bloco
+// fica `hidden` no HTML e a tela nem chama `/laboratorio/aprovados` -- um
+// request a menos por refresh. Trocar pra true devolve bloco e chamada.
+const LAB_VISIVEL = false;
 
 const FONTE = "'Montserrat', sans-serif";
 const CAMPOS_DADOS = ["de", "ate", "filial", "cliente", "tipo_estoque"];
@@ -614,7 +631,7 @@ async function atualizarTudo() {
       api(`/cockpit/volumetria/resumo?${paramsDados(f)}`),
       api(`/cockpit/resumo?${paramsDados(f, ["tipo_estoque"])}`),
       api(`/cockpit/qualidade?${paramsDados(f, ["cliente", "tipo_estoque"])}`),
-      api("/laboratorio/aprovados"),
+      LAB_VISIVEL ? api("/laboratorio/aprovados") : Promise.resolve({ aprovados: [] }),
     ]);
     renderizarCards(volResumo);
     renderizarParticipacao(participacao);
@@ -741,6 +758,7 @@ function renderizarRecorteParcial(f) {
 }
 
 function renderizarAprovados(lista) {
+  if (!LAB_VISIVEL) return;  // bloco escondido: nao desenha nada
   const el = document.getElementById("cockpitLaboratorio");
   if (!lista.length) {
     el.innerHTML = `<div class="kpi-card vazio">Nenhum insight aprovado no Laboratório ainda.</div>`;
@@ -1273,12 +1291,19 @@ function renderizarQualidade(q, peso) {
     `<div><strong>${escaparHtml(ROTULO_STATUS_PROC[nome] || nome)}:</strong> ${s.arquivos} arquivo(s), ${s.linhas_validas} linha(s) válida(s), ${s.medidas_gravadas} medida(s) gravada(s)</div>`
   ).join("") || "<div>Nenhum processamento no recorte.</div>";
 
+  // Pendencia de filial continua item a item: cada origem sem de-para e volume
+  // que NAO entrou na conta, informacao de topo. Cliente sem cadastro virou uma
+  // linha contada e a lista de "Nome Estoque" nao classificado saiu do cockpit
+  // (Maria, 10/ago/2026): as duas sao pendencia de CADASTRO, a medida ja esta
+  // gravada e somada -- nome a nome nao decide nada aqui. As duas seguem
+  // detalhadas no /admin, que e onde se resolve.
   const pendFilial = (q.pendencias_filial || []).map(p =>
     `<li>Origem <strong>${escaparHtml(p.origem_na_fonte)}</strong> sem de-para de filial.</li>`).join("");
-  const pendCliente = (q.pendencias_cliente || []).map(p =>
-    `<li>Cliente <strong>${escaparHtml(p.nome_na_fonte || p.cliente_na_fonte)}</strong> sem cadastro (CNPJ raiz ${escaparHtml(p.cliente_na_fonte)}).</li>`).join("");
-  const pendTipoEstoque = (q.pendencias_tipo_estoque || []).map(p =>
-    `<li>Valor <strong>${escaparHtml(p.valor_na_fonte)}</strong> de "Nome Estoque" não classificado em nenhum tipo.</li>`).join("");
+  const qtdCliente = (q.pendencias_cliente || []).length;
+  const resumoCadastro = qtdCliente
+    ? `<div><strong>Pendências de cadastro:</strong> ${qtdCliente} cliente(s) sem cadastro`
+      + ` — o volume está somado; o detalhe e a resolução ficam no Admin.</div>`
+    : "";
 
   const pesoDetalhado = peso
     ? `<div><strong>Peso bruto (detalhado):</strong> entrada ${escaparHtml(formatarToneladasDetalhado(peso.entrada))}`
@@ -1288,12 +1313,19 @@ function renderizarQualidade(q, peso) {
     : "";
 
   document.getElementById("cockpitQualidade").innerHTML = `
+    <div class="fonteDado">
+      <div><strong>Fonte: SharePoint do DataHub</strong> (leitura somente) — famílias
+        <strong>ENTRADA_MERCADORIAS</strong> e <strong>SAIDA_MERCADORIAS</strong>, no grão de
+        item de nota. O sistema não escreve nada no SharePoint.</div>
+      <div><strong>Não contamos pelo relatório de UA:</strong> a família
+        <strong>ENTRADA_MERCADORIAS (UA)</strong> fica fora — é o mesmo movimento no grão de
+        palete, então somar as duas duplicaria o volume.</div>
+    </div>
     ${pesoDetalhado}
     <div><strong>Total de arquivos processados no recorte:</strong> ${q.total_arquivos}</div>
     ${linhas}
+    ${resumoCadastro}
     ${pendFilial ? `<ul class="pendenciasLista">${pendFilial}</ul>` : ""}
-    ${pendCliente ? `<ul class="pendenciasLista">${pendCliente}</ul>` : ""}
-    ${pendTipoEstoque ? `<ul class="pendenciasLista">${pendTipoEstoque}</ul>` : ""}
   `;
 }
 </script>
