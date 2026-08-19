@@ -75,12 +75,14 @@ def test_serie_mensal_anual_e_acumulado_por_filial(cursor):
 def test_filial_aceita_codigo_qualificado_do_datahub(cursor):
     """O codigo aceito e o QUALIFICADO pela unidade (migration 0008): o codigo
     nu deixou de identificar um armazem -- `016` sozinho nao diz de que unidade
-    da fonte veio."""
+    da fonte veio. Desde a correcao de 18/ago/2026 (migration
+    0018_corrige_sigla_rmspii), `RMSPII/016` resolve pro mesmo armazem que
+    `RMSPII` -- ver memory/filiais-catering-poc.md."""
     _semear(cursor)
-    por_sigla = serie_datahub.serie(cursor, "peso_bruto_entrada", filial="RMSPIV")
+    por_sigla = serie_datahub.serie(cursor, "peso_bruto_entrada", filial="RMSPII")
     por_codigo = serie_datahub.serie(cursor, "peso_bruto_entrada", filial="RMSPII/016")
     assert por_codigo["mensal"] == por_sigla["mensal"]
-    assert por_codigo["filtros"]["filial"] == "RMSPIV"
+    assert por_codigo["filtros"]["filial"] == "RMSPII"
 
     with pytest.raises(serie_datahub.SerieDatahubError, match="qualificado pela unidade"):
         serie_datahub.serie(cursor, "peso_bruto_entrada", filial="016")

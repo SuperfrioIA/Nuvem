@@ -65,7 +65,7 @@ def test_gerar_especificacao_combina_ia_com_parte_deterministica_do_perfil(monke
     assert especificacao["formula"] == _RASCUNHO["formula"]
     # do perfil (deterministico, nunca da IA)
     assert especificacao["fontes"][0]["arquivo"] == "ENTRADA_MERCADORIAS_016_2607.xlsx"
-    assert especificacao["fontes"][0]["origem"] == "RMSPII/016 (RMSPIV)"
+    assert especificacao["fontes"][0]["origem"] == "RMSPII/016 (RMSPII)"
     assert "peso_bruto_entrada" in especificacao["conceitos"]
     assert "kg" in especificacao["unidades"]
     assert especificacao["dimensoes"] == ["período", "filial", "cliente"]

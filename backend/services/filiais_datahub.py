@@ -21,8 +21,15 @@ seed e insert-only) -- CWB3/SANCA entraram pela 0012_depara_cwb3_sanca.
 SIGLA_POR_CODIGO = {
     # confirmadas pela Maria em 30/jul/2026 (memory/filiais-catering-poc.md)
     "RMSPII/001": "RMSPII",
-    "RMSPII/015": "RMSPIII",
-    "RMSPII/016": "RMSPIV",
+    # CORRIGIDO em 18/ago/2026 (migration 0018_corrige_sigla_rmspii): eram
+    # "RMSPIII"/"RMSPIV". O cadastro Protheus real tem 015 e 016 com CNPJ e
+    # codigo proprios (008002/0002-68 e 008003/0003-49, nao 008001) -- isso
+    # NAO mudou. A mudanca e decisao de negocio: a Maria confirmou que as tres
+    # (001/015/016) sao consideradas RMSPII na exibicao, igual a visao da
+    # controladoria (ja registrada em 30/jul/2026). Ver
+    # memory/filiais-catering-poc.md e memory/depara-filial-rmspii-dw.md.
+    "RMSPII/015": "RMSPII",
+    "RMSPII/016": "RMSPII",
     # decididas pela Maria em 06/ago/2026, aplicadas no lote V2.1. As duas tem
     # as 20 colunas que o leitor da familia exige -- conferido no dado, arquivo
     # por arquivo, antes de liberar (docs/V2_PLANO.md).

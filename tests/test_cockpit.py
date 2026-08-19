@@ -62,12 +62,12 @@ def _semear(cur):
 
 def _seed_processamentos(cur):
     """Tres arquivos de processamentos_datahub, pro teste de qualidade():
-    dois 'ok' em unidades/filiais distintas (RMSPII/001 e RMSPII/016, que
-    resolvem pras filiais RMSPII e RMSPIV) e um 'pendencia_depara' numa
+    dois 'ok' em unidades/filiais distintas (RMSPII/001 e SANCA/025, que
+    resolvem pras filiais RMSPII e RMSPV) e um 'pendencia_depara' numa
     origem sem de-para (CWB3/099)."""
     linhas = [
         ("item1", "ARQ1.xlsx", "RMSPII", "001", "ok", 10, 3),
-        ("item2", "ARQ2.xlsx", "RMSPII", "016", "ok", 20, 3),
+        ("item2", "ARQ2.xlsx", "SANCA", "025", "ok", 20, 3),
         ("item3", "ARQ3.xlsx", "CWB3", "099", "pendencia_depara", None, None),
     ]
     for item_id, arquivo, unidade, filial, status, validas, gravadas in linhas:
@@ -206,7 +206,7 @@ def test_qualidade_agrega_por_status(cursor):
 
 def test_qualidade_filtra_por_filial(cursor):
     _seed_processamentos(cursor)
-    resultado = cockpit.qualidade(cursor, de="2026-07", ate="2026-07", filial="RMSPIV")
+    resultado = cockpit.qualidade(cursor, de="2026-07", ate="2026-07", filial="RMSPV")
 
     assert resultado["total_arquivos"] == 1
     assert resultado["por_status"]["ok"] == {"arquivos": 1, "linhas_validas": 20, "medidas_gravadas": 3}

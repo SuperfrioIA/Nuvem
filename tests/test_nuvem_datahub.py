@@ -133,13 +133,14 @@ def test_extrai_filial_e_competencia_quando_bate_o_padrao():
     resumo = {"arquivos": [_arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx")]}
     arquivo = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"][0]
     assert arquivo["filial"] == "016"
-    assert arquivo["filial_sigla"] == "RMSPIV"
+    assert arquivo["filial_sigla"] == "RMSPII"
     assert arquivo["competencia"] == "2026-07"
 
 
 def test_depara_de_exibicao_cobre_as_tres_filiais_confirmadas():
-    # 001/015/016 confirmadas pela Maria em 30/jul/2026
-    # (memory/filiais-catering-poc.md; fonte unica: services/filiais_datahub.py)
+    # 001/015/016 confirmadas pela Maria em 30/jul/2026, sigla corrigida em
+    # 18/ago/2026 (memory/filiais-catering-poc.md; fonte unica:
+    # services/filiais_datahub.py) -- as tres sao RMSPII (Protheus 008001).
     resumo = {"arquivos": [
         _arquivo("ENTRADA_MERCADORIAS_001_2607.xlsx"),
         _arquivo("ENTRADA_MERCADORIAS_015_2605.xlsx"),
@@ -147,7 +148,7 @@ def test_depara_de_exibicao_cobre_as_tres_filiais_confirmadas():
     ]}
     arquivos = nuvem_datahub.montar_bolinhas(resumo)[0]["arquivos"]
     siglas = {a["filial"]: a["filial_sigla"] for a in arquivos}
-    assert siglas == {"001": "RMSPII", "015": "RMSPIII", "016": "RMSPIV"}
+    assert siglas == {"001": "RMSPII", "015": "RMSPII", "016": "RMSPII"}
 
 
 def test_mesmo_codigo_em_outra_unidade_nao_herda_a_sigla_da_rmspii():

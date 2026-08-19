@@ -1,9 +1,42 @@
 ---
 name: depara-filial-rmspii-dw
-description: De-para de filial RMSPII provado — pasta = empresa SLIN (001/001, 001/015, 001/016), tudo num CNPJ só no DW; e a MESMA instância SLIN alimenta MAQ, RPII e filial VAZIA no fato (fora do BI-RMSPII)
+description: De-para de filial RMSPII provado — pasta = empresa SLIN (001/001, 001/015, 001/016), tudo num CNPJ só no DW; e a MESMA instância SLIN alimenta MAQ, RPII e filial VAZIA no fato (fora do BI-RMSPII). 015/016 têm Protheus e CNPJ próprios (RMSPIII/RMSPIV) mas são EXIBIDAS como RMSPII por decisão de negócio de 18/ago/2026
 metadata:
   type: reference
 ---
+
+> **CONFLITO NOVO em 18/ago/2026, mesmo dia da "correção" abaixo.** O Luciano
+> extraiu do DW `volumetriaLucios.csv` (4.583 linhas, últimos 30 dias por
+> `DTHR_CONFIRM`, só entrada/Concluído). Nela, `NK_SLIN_FILIAL` `015` e `016`
+> (1.465 linhas) vêm com `NK_FILIAL` (CNPJ) = **`06975242000268`** — não
+> `06975242000187` como a correção abaixo diz que deveria ser. Só a pasta `001`
+> pura (614 linhas) vem com `...187`. Ou seja: **o cadastro Protheus que a
+> Maria trouxe hoje e o dado transacional que o Luciano extraiu hoje se
+> contradizem** sobre o CNPJ de `015`/`016`. Nenhum dos dois foi invalidado —
+> ficou em aberto, precisa confirmar com o Luciano qual dos dois o BI de fato
+> usa. Ver [[volumetria-lucios-checagem]].
+
+> **CORREÇÃO À CORREÇÃO, 18/ago/2026.** A tentativa de correção abaixo (mesmo
+> dia) tinha dito que "no Protheus as três têm CNPJs distintos" **estava
+> errado** — não estava. A Maria trouxe o print do cadastro Protheus real:
+> `015` = 008002/`...0002-68` (RMSPIII), `016` = 008003/`...0003-49` (RMSPIV),
+> cada uma com código e CNPJ próprios, exatamente como o parágrafo original
+> abaixo já dizia. O que muda não é o cadastro — é uma **decisão de negócio**:
+> a Maria confirmou que `001`/`015`/`016` são **consideradas RMSPII** na
+> exibição do projeto, replicando a visão da controladoria (já registrada em
+> [[filiais-catering-poc]] desde 30/jul/2026, só nunca tinha sido aplicada). O
+> de-para que a migration `0018_corrige_sigla_rmspii` aplicou (015/016 →
+> RMSPII) **continua correto** — só a justificativa documentada nela e em
+> `backend/services/filiais_datahub.py` foi corrigida para refletir isso.
+
+> **Conflito do Luciano — contexto, não bloqueio.** A extração dele
+> (`volumetriaLucios.csv`) mostra `015` **e** `016` vindo com CNPJ
+> `06975242000268` — bate com o CNPJ real de `015`, mas não explica por que
+> `016` aparece com o mesmo CNPJ em vez do seu próprio `...0003-49`. Isso é
+> uma pendência de investigação sobre o comportamento do DW, não uma
+> contradição da decisão de negócio acima (que é sobre como o Nuvem IA
+> **exibe** as três, não sobre qual CNPJ o DW usa por baixo). Ver
+> [[volumetria-lucios-checagem]].
 
 Provado em 10/ago/2026 com `fato.csv`, `filiais.csv` (MID_D_CROSS_REF), o
 cadastro Protheus (`Empresas Grupo Superfrio 5(Filiais Ativas).csv`) e a coluna

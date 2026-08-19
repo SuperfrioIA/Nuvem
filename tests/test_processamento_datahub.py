@@ -696,7 +696,7 @@ def test_arquivo_republicado_vazio_apaga_as_celulas_que_tinha_gravado(cursor, mo
     com_dado = _arquivo("ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016")
     _preparar(monkeypatch, [(com_dado, _xlsx([_linha()]))])
     processamento_datahub.processar_todos(cursor)
-    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == [("RMSPIV", 100.0)]
+    assert _medidas_por_armazem(cursor, "peso_bruto_entrada") == [("RMSPII", 100.0)]
 
     republicado = _arquivo(
         "ENTRADA_MERCADORIAS_016_2601.xlsx", "item-016",
@@ -831,7 +831,7 @@ def test_prune_remove_celula_de_grao_antigo_apos_reprocesso_v22(cursor, monkeypa
     # pro mesmo armazem/competencia/cliente
     cursor.execute("SELECT id FROM metricas WHERE nome = 'peso_bruto_entrada'")
     metrica_id = cursor.fetchone()[0]
-    cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPIV'")
+    cursor.execute("SELECT id FROM armazens WHERE sigla = 'RMSPII'")
     armazem_id = cursor.fetchone()[0]
     cursor.execute("SELECT id FROM clientes WHERE nk_erp = '67945071'")
     cliente_id = cursor.fetchone()[0]

@@ -1,9 +1,44 @@
 ---
 name: layout-entrada-por-unidade
-description: Conferido no dado em 06/ago/2026 — CWB3 e SANCA têm as 20 colunas da ENTRADA_MERCADORIAS, a RJ tem 18 (sem Cliente/Cliente CNPJ)
+description: Conferido no dado — na ENTRADA_MERCADORIAS CWB3/SANCA têm 20 colunas e a RJ 18; na família (UA) RMSPII/CWB3 têm 27, SANCA 28 e a RJ 25 — a RJ é sem cliente nas DUAS famílias
 metadata:
   type: project
 ---
+
+## Família `ENTRADA_MERCADORIAS (UA)` — conferido em 17/ago/2026
+
+Lido pelo Graph, somente leitura, ao virar a análise para o UA:
+
+| Unidade | Colunas (aba `SLIN`) | Cliente |
+|---|---:|---|
+| `RMSPII/001,015,016` | 27 | sim (`Cliente`, `Cliente CNPJ`) |
+| `CWB3/001` | 27 | sim |
+| `SANCA/025` | **28** | sim — tem `Data Confirmação` a mais |
+| `RJ/004-003` | **25** | **não** — confirmado em 2601, 2606 e 2608 |
+
+**O `docs/FONTES_DATAHUB.md` (linha ~93) está errado nisto:** afirma que a
+família `(UA)` está presente nas quatro unidades "com `Cliente` e
+`Cliente CNPJ`". Vale para três — a RJ não tem, igual à entrada por item. **A
+RJ é sem cliente nas duas famílias**, então trocar de família não resolve a
+decisão de produto pendente: peso e valor aparecem, decomposição por cliente
+não.
+
+**A série histórica do UA serve:** a RMSPII tem 121 arquivos, 50 competências
+de `2110` a `2608`, e o cabeçalho de out/2021 é **idêntico** ao de 2026 (27
+colunas, com cliente) — conferido em 2110, 2301, 2401, 2501. Mas a série tem
+buracos: 2110→2608 são 59 meses e só 50 existem (`2201` não existe). Contar
+meses antes de prometer série contínua; ver [[nao-ler-mes-parcial]].
+
+**Duas armadilhas de leitura que a entrada por item não tem:** o arquivo de
+2110 tem 4 abas (`Painel`, `Planilha2`, `SLIN`, `Planilha4`) e a **primeira não
+é a `SLIN`** — ler "a primeira aba" devolve vazio, sem erro. E o `016_2608` tem
+`SLIN` + `Apoio` + `Dashboard`, onde a `Apoio` é derivada, de grão diferente e
+com colunas de duplicidade (`Chave Duplicidade`, `Duplicada`) — somar junto
+duplica. Endereçar a aba `SLIN` explicitamente, sempre.
+
+---
+
+## Família `ENTRADA_MERCADORIAS` (grão de item) — conferido em 06/ago/2026
 
 Conferência somente leitura pelo Graph em 06/08/2026, arquivo por arquivo, antes de
 abrir o lote V2.1:

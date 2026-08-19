@@ -31,6 +31,28 @@ sem depender de print.
   [[depara-filial-rmspii-dw]].
 - **Cobertura:** out/2021 a jul/2026, 24 filiais. **Julho/2026 está parcial** (o
   extrato é de 16/07) — nunca comparar jan-jul contra este arquivo sem dizer isso.
+  Resolvido em 14/ago com uma segunda extração: `data/fato2.csv` (14/ago 07:39)
+  tem julho fechado + agosto parcial, mas só ~3,9 k linhas — é **corte delta**,
+  com histórico anterior incompleto (junho traz 82 linhas contra 2.353 no
+  original). Nenhum dos dois serve sozinho.
+
+### Unir duas extrações: por `PK_FATO_VOLUMETRIA`, a mais nova vencendo
+
+`PK_FATO_VOLUMETRIA` é chave primária estável entre extrações, então
+`{**antiga, **nova}` dá histórico longo + mês fechado sem dupla contagem
+(145.601 PKs a partir de 142.909 + 3.917, com 1.225 em comum). Três coisas que
+essa união revelou e que valem para qualquer extração futura:
+
+- **O último dia de uma extração é sempre parcial.** As 3 linhas da RMSPII que
+  mudaram entre as duas extrações são *todas* de 16/07, o dia em que a primeira
+  rodou (16:33). Uma delas quase dobrou: PIMENTA VERDE, recebimento de 17,0 t →
+  31,8 t. Descartar o último dia, ou declará-lo.
+- **O DW revisa número para baixo, retroativamente.** 111 PKs mudaram de medida;
+  as maiores são MDLZ_PRD/CWBII com **−846,9 t** num único dia. Número do DW não
+  é imutável depois de publicado.
+- **`NOME_FANTASIA` em `clientesDw.csv` é truncado em 20 caracteres**
+  ("SODEXO DO BRASIL COM", "GR SERVICOS E ALIMEN"). Quando `len(fant) >= 20`,
+  usar `RAZAO_SOCIAL` — é a única versão completa.
 
 **Why:** economiza o caminho inteiro de "pedir print para a controladoria" e
 elimina o erro de ler número de imagem, que já causou a comparação

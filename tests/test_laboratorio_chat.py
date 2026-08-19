@@ -43,7 +43,7 @@ def test_origem_do_arquivo_com_de_para_confirmado():
     origem = laboratorio_chat.origem_do_arquivo(
         {"caminho": "RMSPII/ENTRADA/ENTRADA MERCADORIAS/x.xlsx", "filial": "016"}
     )
-    assert origem == "RMSPII/016 (RMSPIV)"
+    assert origem == "RMSPII/016 (RMSPII)"
 
 
 def test_origem_do_arquivo_sem_de_para_confirmado():
@@ -70,7 +70,7 @@ def test_montar_contexto_mascara_cliente_e_leva_unidade_mais_filial(monkeypatch,
 
     assert "SAPORE" not in str(contexto)
     arquivo = contexto["arquivos"][0]
-    assert arquivo["origem"] == "RMSPII/016 (RMSPIV)"
+    assert arquivo["origem"] == "RMSPII/016 (RMSPII)"
     assert arquivo["clientes"]["top"][0]["valor"] == "CLIENTE_1"
     # coluna que soma continua com o total certo -- mascaramento nao toca em numero
     peso = next(c for c in arquivo["colunas"] if c["nome"] == "Peso Bruto")

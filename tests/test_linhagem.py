@@ -103,7 +103,7 @@ def test_celulas_lista_filtrada_por_metrica_e_competencia(cursor, monkeypatch):
     assert resultado["filtros"]["competencia"] == "2026-07"
     por_cliente = {c["cliente"]: c for c in resultado["celulas"]}
     assert por_cliente["Sapore"]["valor"] == 100.0
-    assert por_cliente["Sapore"]["filial"] == "RMSPIV"
+    assert por_cliente["Sapore"]["filial"] == "RMSPII"
     assert por_cliente["Sapore"]["tem_origem_rastreavel"] is True
     assert por_cliente["Sem cliente identificado"]["valor"] == 7.0
 
@@ -130,7 +130,7 @@ def test_celulas_filtra_por_filial_e_cliente(cursor, monkeypatch):
     so_sapore = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07", cliente="67945071")
     assert len(so_sapore["celulas"]) == 1
 
-    outra_filial = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07", filial="RMSPII")
+    outra_filial = linhagem.celulas(cursor, "peso_bruto_entrada", "2026-07", filial="RMSPIII")
     assert outra_filial["celulas"] == []
 
 
@@ -155,7 +155,7 @@ def test_origem_da_celula_cadeia_completa(cursor, monkeypatch):
     assert origem["execucao"]["caminho"] == arquivo["caminho"]
     assert origem["arquivo"]["item_id"] == "item-016"
     assert origem["arquivo"]["web_url"] == "https://exemplo/nf016"
-    assert origem["arquivo"]["filial_sigla"] == "RMSPIV"
+    assert origem["arquivo"]["filial_sigla"] == "RMSPII"
 
 
 def test_origem_da_celula_legado_declara_limitacao(cursor):

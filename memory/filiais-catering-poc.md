@@ -1,9 +1,28 @@
 ---
 name: filiais-catering-poc
-description: De-para das filiais 001/015/016 do DataHub (CNPJ, código Protheus, sigla oficial RMSPII/III/IV) — confirmado pela Maria em 30/jul/2026; desde 02/ago/2026 a chave é qualificada pela unidade (RMSPII/001)
+description: De-para das filiais 001/015/016 do DataHub — 015 e 016 TÊM Protheus e CNPJ próprios (RMSPIII/RMSPIV, cadastro confirmado por print em 18/ago/2026), mas desde 18/ago/2026 são EXIBIDAS como RMSPII por decisão de negócio, não por serem tecnicamente RMSPII; desde 02/ago/2026 a chave é qualificada pela unidade (RMSPII/001)
 metadata:
   type: reference
 ---
+
+> **CORRIGIDO em 18/ago/2026** (e uma correção à correção, mesmo dia). A
+> tabela abaixo continua certa: `015` e `016` **têm** Protheus e CNPJ próprios
+> (`RMSPIII`/`008002`/`...0002-68` e `RMSPIV`/`008003`/`...0003-49`) — a Maria
+> confirmou isso por print do cadastro Protheus real. O que muda é a
+> "Decisão de 30/jul/2026" logo abaixo: ali o projeto tinha optado por manter
+> as três **separadas** na exibição, mesmo sabendo que "a controladoria
+> enxerga as três juntas como RMSPII". Em 18/ago/2026 a Maria decidiu
+> **reverter essa escolha**: `001`/`015`/`016` passam a ser **exibidas** como
+> RMSPII, replicando a visão da controladoria. De-para corrigido:
+> `RMSPII/015 → RMSPII` e `RMSPII/016 → RMSPII` (migration
+> `0018_corrige_sigla_rmspii`, `backend/services/filiais_datahub.py`). As
+> siglas `RMSPIII`/`RMSPIV` continuam cadastradas em `backend/seed_depara.py`
+> com seu Protheus/CNPJ reais (RMSPIII tem uso real em ocupação/capacidade,
+> `FK_FILIAL=46`) — só deixam de ser o destino do de-para dessas duas origens
+> no DataHub. Não muda nenhum total já reconciliado: a agregação "RMSPII" do
+> BI sempre somou 001+015+016 juntos (`docs/CONCILIACAO_POWERBI_V2.md` §1).
+> Muda só o rótulo — `016 · RMSPIV` vira `016 · RMSPII`. Ver
+> [[depara-filial-rmspii-dw]].
 
 Filiais que aparecem nos exports do DataHub (`ENTRADA_MERCADORIAS`, `GUIAS_ENTRADA`,
 `CORTES_PRODUTOS`, `GUIAS_SAIDA`, `SAIDA_MERCADORIAS`, `ESTOQUE_POR_LOTE`):
@@ -11,7 +30,7 @@ Filiais que aparecem nos exports do DataHub (`ENTRADA_MERCADORIAS`, `GUIAS_ENTRA
 | Filial (nome do arquivo) | CNPJ | Protheus | Sigla oficial (`armazens.sigla`) | Observação |
 |---|---|---|---|---|
 | `001` | 06.975.242/0001-87 | 008001 | `RMSPII` | — |
-| `015` | 06.975.242/0002-68 | 008002 | `RMSPIII` | SECO da Sodexo — **operação encerrada no mês anterior a 30/jul/2026**. Só existe na base pra trás; não deve aparecer em competências a partir de agosto/2026 em diante. |
+| `015` | 06.975.242/0002-68 | 008002 | `RMSPIII` | SECO da Sodexo — **operação encerrada no mês anterior a 30/jul/2026**. Só existe na base pra trás; não deve aparecer em competências a partir de agosto/2026 em diante. Confirmado no cadastro Protheus (print, 18/ago/2026): esse CNPJ **só aceita SECO**. |
 | `016` | 06.975.242/0003-49 | 008003 | `RMSPIV` | Apelido interno "Rodoanel" (não é o `nome`/`sigla` oficial, só referência de conversa) — é a filial de maior volumetria da POC (concentração da SAPORE, ver [[concentracao-sapore-016]]). |
 
 Os códigos batem **exatamente** com o de-para oficial já existente em

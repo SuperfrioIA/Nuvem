@@ -47,7 +47,11 @@ ranking por cliente agrupado pela raiz do CNPJ.
 ## 1. A armadilha que precisa ser dita antes de qualquer número
 
 **No Power BI, o filtro "Unidade: RMSPII" agrega três filiais físicas** — `001`,
-`015` e `016`, que na Nuvem são RMSPII, RMSPIII e RMSPIV. Comparar a RMSPII da
+`015` e `016`, que na Nuvem são RMSPII, RMSPIII e RMSPIV — cada uma com
+Protheus e CNPJ próprios. *(Nota de 18/ago/2026: desde essa data as três são
+**exibidas** como RMSPII por decisão de negócio, igual à visão da
+controladoria; ver `memory/filiais-catering-poc.md`. Não muda os totais
+abaixo, que já somavam as três juntas.)* Comparar a RMSPII da
 Nuvem com a "RMSPII" do BI dá **2,68× de diferença** (40.490 t contra 108.525 t)
 e manda todo mundo procurar um defeito que não existe.
 

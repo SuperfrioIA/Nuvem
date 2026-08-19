@@ -109,7 +109,7 @@ def test_fontes_lista_familias_com_item_id_e_perfilavel(monkeypatch, banco_migra
     assert integrada["linha_cabecalho"] == 1
     assert integrada["arquivos"][0]["item_id"] == "item-016"
     assert integrada["arquivos"][0]["perfilavel"] is True
-    assert integrada["arquivos"][0]["filial_sigla"] == "RMSPIV"
+    assert integrada["arquivos"][0]["filial_sigla"] == "RMSPII"
     # PDF aparece, mas desabilitado -- nao some da lista sem explicacao
     assert por_familia["PALLETS_EXCEDENTES"]["arquivos"][0]["perfilavel"] is False
     assert fontes["limites"]["max_arquivos"] == laboratorio.MAX_ARQUIVOS

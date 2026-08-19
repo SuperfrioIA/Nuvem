@@ -90,7 +90,7 @@ def test_pipeline_ate_cockpit_e_linhagem(cliente, cursor, monkeypatch):
     cursor.connection.commit()
 
     resumo = cliente.get(
-        "/api/admin/cockpit/resumo", params={"de": "2026-07", "ate": "2026-07", "filial": "RMSPIV"}
+        "/api/admin/cockpit/resumo", params={"de": "2026-07", "ate": "2026-07", "filial": "RMSPII"}
     )
     assert resumo.status_code == 200
     kpis = {k["chave"]: k["valor"] for k in resumo.json()["kpis"]}
@@ -102,8 +102,8 @@ def test_pipeline_ate_cockpit_e_linhagem(cliente, cursor, monkeypatch):
     )
     assert ranking.status_code == 200
     por_filial = {r["rotulo"]: r for r in ranking.json()["ranking"]}
-    assert por_filial["RMSPIV"]["valor"] == 107.0
-    assert por_filial["RMSPIV"]["percentual"] == 100.0
+    assert por_filial["RMSPII"]["valor"] == 107.0
+    assert por_filial["RMSPII"]["percentual"] == 100.0
 
     celulas = cliente.get(
         "/api/admin/linhagem/celulas",
@@ -126,15 +126,20 @@ def test_pipeline_ate_cockpit_e_linhagem(cliente, cursor, monkeypatch):
 def test_pipeline_duas_filiais_nao_mistura_origem(cliente, cursor, monkeypatch):
     """Dois arquivos, duas filiais, mesma competencia: o cockpit soma as duas
     no total mas discrimina o ranking por filial; a linhagem de cada celula
-    aponta pro arquivo certo, sem misturar origem entre filiais."""
-    arquivo_016 = _arquivo("ENTRADA_MERCADORIAS_016_2607.xlsx", "item-016")
+    aponta pro arquivo certo, sem misturar origem entre filiais.
+
+    Usa RMSPII/001 e SANCA/025 (RMSPV) -- desde a correcao de 18/ago/2026
+    (migration 0018_corrige_sigla_rmspii), RMSPII/016 deixou de ser um
+    armazem distinto de RMSPII/001, entao nao serve mais pra provar que o
+    pipeline nao mistura origens de armazens diferentes."""
+    arquivo_025 = _arquivo("ENTRADA_MERCADORIAS_025_2607.xlsx", "item-025", unidade="SANCA")
     arquivo_001 = _arquivo("ENTRADA_MERCADORIAS_001_2607.xlsx", "item-001")
     _preparar(monkeypatch, [
-        (arquivo_016, _xlsx([_linha(peso_bruto=100.0, vlr_total=10.0)])),
+        (arquivo_025, _xlsx([_linha(peso_bruto=100.0, vlr_total=10.0)])),
         (arquivo_001, _xlsx([_linha(peso_bruto=40.0, vlr_total=4.0)])),
     ])
 
-    processamento_datahub.processar_arquivo(cursor, "item-016")
+    processamento_datahub.processar_arquivo(cursor, "item-025")
     processamento_datahub.processar_arquivo(cursor, "item-001")
     cursor.connection.commit()
 
@@ -144,19 +149,19 @@ def test_pipeline_duas_filiais_nao_mistura_origem(cliente, cursor, monkeypatch):
     )
     assert ranking.status_code == 200
     por_filial = {r["rotulo"]: r["valor"] for r in ranking.json()["ranking"]}
-    assert por_filial["RMSPIV"] == 100.0
+    assert por_filial["RMSPV"] == 100.0
     assert por_filial["RMSPII"] == 40.0
     assert ranking.json()["total"] == 140.0
 
-    celulas_016 = cliente.get(
+    celulas_025 = cliente.get(
         "/api/admin/linhagem/celulas",
-        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07", "filial": "RMSPIV"},
+        params={"metrica": "peso_bruto_entrada", "competencia": "2026-07", "filial": "RMSPV"},
     )
-    assert celulas_016.status_code == 200
-    (celula_016,) = celulas_016.json()["celulas"]
-    origem_016 = cliente.get(f"/api/admin/linhagem/celulas/{celula_016['medida_id']}")
-    assert origem_016.json()["arquivo"]["item_id"] == "item-016"
-    assert origem_016.json()["arquivo"]["filial_sigla"] == "RMSPIV"
+    assert celulas_025.status_code == 200
+    (celula_025,) = celulas_025.json()["celulas"]
+    origem_025 = cliente.get(f"/api/admin/linhagem/celulas/{celula_025['medida_id']}")
+    assert origem_025.json()["arquivo"]["item_id"] == "item-025"
+    assert origem_025.json()["arquivo"]["filial_sigla"] == "RMSPV"
 
     celulas_001 = cliente.get(
         "/api/admin/linhagem/celulas",

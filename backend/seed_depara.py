@@ -101,6 +101,14 @@ ARMAZENS = [
      "apelidos": ["CWBIV", "001034", "02060862003401"]},
     {"sigla": "RMSPII", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPII", "008001", "06975242000187", "45"]},
+    # CORRIGIDO em 18/ago/2026: nao e mais destino do de-para de RMSPII/015.
+    # O Protheus dela continua sendo o proprio 008002/CNPJ ...0002-68 (o
+    # cadastro nao mudou) -- decisao de negocio da Maria e que a exibicao do
+    # projeto trata 001/015/016 todas como RMSPII, igual a visao da
+    # controladoria. RMSPIII continua cadastrada (uso real em
+    # ocupacao/capacidade, FK_FILIAL=46). Observacao do cadastro Protheus:
+    # esse CNPJ (...0002-68) so aceita SECO -- bate com "SECO da Sodexo" ja
+    # registrado, e a operacao encerrou no mes anterior a 30/jul/2026.
     {"sigla": "RMSPIII", "nome": "Barueri/SP", "ativo": False,
      "apelidos": ["RMSPIII", "008002", "06975242000268", "46"]},
     {"sigla": "RMRJ", "nome": "Duque de Caxias/RJ", "ativo": True,
@@ -135,6 +143,11 @@ ARMAZENS = [
     # 30/jul/2026 -- corrigida pra ativo=False (estava True desde o Lote 7).
     {"sigla": "RMSPV", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPV", "008009", "06975242000934"]},
+    # CORRIGIDO em 18/ago/2026: nao e mais destino do de-para de RMSPII/016.
+    # O Protheus dela continua sendo o proprio 008003/CNPJ ...0003-49 (o
+    # cadastro nao mudou) -- decisao de negocio da Maria e que a exibicao do
+    # projeto trata 001/015/016 todas como RMSPII, igual a visao da
+    # controladoria.
     {"sigla": "RMSPIV", "nome": "Barueri/SP", "ativo": True,
      "apelidos": ["RMSPIV", "008003", "06975242000349"]},
 ]
