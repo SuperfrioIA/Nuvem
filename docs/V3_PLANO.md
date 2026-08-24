@@ -3,8 +3,9 @@
 **Este documento é a fonte única do status da V3.** Criado em 24/ago/2026, na
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
-**Nenhum lote da V3 está autorizado.** A divisão em lotes na seção final é
-proposta, não plano em execução. Autorização é por lote, como na V1 e na V2.
+**Autorizados e feitos até agora: V3.0 e V3.1** (24/ago/2026). Do V3.2 em
+diante a divisão em lotes na seção final é proposta, não plano em execução —
+autorização é por lote, como na V1 e na V2.
 
 > **Cuidado com o nome:** `docs/proposta_v3_volumetria.md` **não** é deste
 > documento — é a especificação da **V2**, e se chama "v3" por acidente
@@ -195,7 +196,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | lote | o quê | depende do DW? |
 |---|---|---|
 | **V3.0** | Contrato e schema: fato no grão do DW, migrations, sem carga — **feito em 24/ago/2026**, ver seção abaixo | não |
-| **V3.1** | Carregador contra os CSVs, idempotente por PK, com registro de rodada; suíte nova | não |
+| **V3.1** | Carregador contra os CSVs, idempotente pela **chave natural** (não pela PK do DW — ver V3.0), com registro de rodada; suíte nova — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.2** | Filtros + Matriz. **Aceite: mesmo número dos CSVs agregados por `nk_calendario`**, célula por célula — ver ressalva abaixo | não |
 | **V3.3** | Planilha aberta (100 linhas, paginação no servidor) + download do recorte em streaming; auditoria de download | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso | não |
@@ -380,6 +381,139 @@ wsl -d Ubuntu-24.04 -e docker exec nuvem-teste-db psql -U nuvem -d nuvem_teste  
 ```
 
 Os dois achados estão em `memory/suite-testes-local.md`.
+
+---
+
+## Lote V3.1 — O carregador (feito, 24/ago/2026)
+
+Autorizado pela Maria em 24/ago/2026. Entregou o pacote `catering/carga/`, a
+migration `0020_cat_cargas_fonte` e a suíte própria. **Sem Oracle, sem
+agendamento, sem tela, sem login** — e sem tocar em `backend/`, `frontend/`
+nem nas migrations antigas.
+
+### A costura, que é o ponto do lote
+
+```text
+extrair(movimento, desde)   <- fonte_csv.py     (o ÚNICO que conhece a fonte)
+transformar(linha)          <- transformacao.py (não sabe de onde veio)
+gravar(cur, lote)           <- destino.py       (não sabe de onde veio)
+```
+
+Duas coisas fazem a troca do V3.5 ser adaptador de verdade, e não promessa:
+
+1. **O `desde` já está na assinatura.** No CSV filtra em Python por
+   `DW_DATA_ALTERACAO`; no Oracle vira `WHERE`. Se o parâmetro só aparecesse
+   no V3.5, a troca mexeria na assinatura de todos e deixaria de ser adaptador.
+2. **`extrair()` devolve a linha crua** e a coerção aceita **texto e valor
+   nativo** — o CSV entrega `'25290.217'`, o `oracledb` entrega `Decimal`, e
+   os dois passam pelo mesmo funil. Se a fonte já entregasse tipado, cada
+   adaptador teria sua própria cópia da coerção, que é exatamente o que
+   afunda a promessa. Há teste passando os dois lados
+   (`test_coercao_aceita_texto_e_valor_nativo`).
+
+A `FonteFalsa` da suíte é a segunda prova: ela tem a mesma interface e alimenta
+os testes de banco. Se `transformar` ou `gravar` espiassem a fonte, ela não
+funcionaria.
+
+### O que rodou de verdade
+
+Carga completa das duas extrações de 21/ago/2026, em Postgres real:
+
+| rodada | resultado |
+|---|---|
+| 1ª | rec **36.300 inseridas**, exp **42.468 inseridas** — 18s no total |
+| 2ª (mesma fonte) | **0 inseridas, 0 atualizadas**, 78.768 iguais, `carga_id` intocado |
+| 3ª (`--incremental`) | `sem_dado` nos dois — nada com `dw_data_alteracao` acima da marca d'água |
+| dimensões | 6 unidades, 40 nomes de estoque, 14 raízes de cliente (7 com mais de uma grafia) |
+
+### Decisões deste lote
+
+- **Falha derruba a rodada inteira, com rollback** (Maria, 24/ago/2026).
+  Rollback é barato aqui: o upsert não apaga nada, então o dado da rodada
+  anterior continua no banco e na tela — o custo máximo de uma falha é meio dia
+  de frescor. Carga **parcial** custaria um furo silencioso permanente: a
+  Matriz mostraria um número quase certo e ninguém saberia quais linhas faltam.
+- **Fora de escopo não é malformado.** Instância não-SLIN é outro negócio: é
+  pulada, contada e logada, sem derrubar nada. Medido: **zero** linha nessa
+  situação nos dois CSVs (as 4 instâncias são SLIN), então a guarda é tripwire.
+- **Update só quando o conteúdo mudou** — `DO UPDATE ... WHERE (colunas do
+  contrato) IS DISTINCT FROM (EXCLUDED...)`, com a lista gerada de
+  `contrato.colunas()`. Update incondicional reescreveria 78 mil linhas por
+  rodada e reportaria "36.300 atualizadas" sempre, número que esconde mudança
+  real em vez de mostrar.
+- **A comparação inclui a procedência** (`pk_dw`, `dw_data_*`). Consequência
+  que vale saber de antemão: se o processo do DW **reconstruir** a tabela, a
+  `PK_FATO_VOL_*_CAT` muda para toda linha e a rodada reporta tudo como
+  atualizado. Isso é o alarme que o `contrato.py` pediu ao registrar que a PK
+  do DW não é identidade estável — ignorar a procedência na comparação
+  guardaria uma `pk_dw` velha afirmando que nada mudou.
+- **`carga_id` = a última rodada que escreveu a linha.** A 0019 tem uma coluna
+  só; entre "quem inseriu" e "quem atualizou por último", a segunda responde a
+  pergunta da tela: *de quando é esse número?*
+- **`linhas_lidas` conta o que entrou na carga** (dentro do escopo), para que
+  `lidas − inseridas − atualizadas` continue sendo exatamente as linhas que a
+  fonte reapresentou sem mudança. O total que a fonte entregou fica no log.
+- **`janela_de`/`janela_ate` ficam NULL na carga por CSV.** A coluna significa
+  "o recorte pedido ao Oracle", e no CSV nada foi pedido — preenchê-la com o
+  período observado mudaria o sentido da coluna. O V3.5 a preenche.
+- **`cat_cargas` é escrito em conexão própria**, para o registro da falha
+  sobreviver ao rollback do lote. Rodada que morreu fica no histórico com
+  `status='erro'` e a mensagem nomeando linha e coluna.
+- **Dimensões recalculadas do banco, não do lote**, uma vez, depois dos dois
+  fatos. A canonização do cliente escolhe a razão social pela grafia de maior
+  peso: olhando só o delta da rodada, o rótulo trocaria conforme o que veio no
+  dia. Não geram linha em `cat_cargas` — os contadores da tabela descrevem
+  leitura de fato, e forçar encaixe poluiria o histórico.
+- **Nada é apagado nas dimensões.** O DW insere e altera, nunca apaga, então
+  desaparecimento significaria erro nosso, e apagar destruiria a evidência.
+- **Sem `statement_timeout` na conexão do carregador.** O app web usa 30s
+  porque request presa trava tela; interromper carga em lote no meio só
+  transforma rodada lenta em rodada perdida. É uma das razões de não reusar o
+  pool do app.
+- **Número inválido é erro, nunca zero.** O `num()` do loader do artefato
+  devolve `0.0` — atalho aceitável em laboratório, inaceitável num carregador,
+  porque viraria peso faltando sem ninguém notar.
+- **Medida vazia é NULL, nunca zero.** Mantém a guia cancelada distinguível de
+  "pesou zero" — é uma das duas limitações que a tela tem que declarar.
+
+### Migration 0020
+
+Uma coluna: `cat_cargas.fonte TEXT NOT NULL DEFAULT 'csv'`, com CHECK
+aceitando `csv` e `oracle`. `tabela_origem` diz `FATO_VOL_REC_CAT` tanto vindo
+do CSV quanto do Oracle, e a partir do V3.5 as duas coisas convivem no mesmo
+histórico — sem a coluna, olhar `cat_cargas` não responde "esse número veio do
+banco de verdade ou do CSV que usamos pra construir?". O CHECK já aceita
+`oracle`, então o V3.5 não precisa de migration para isso.
+
+### Como rodar
+
+```
+python -m catering.carga --de docs/Analise
+python -m catering.carga --de docs/Analise --incremental
+python -m catering.carga --de docs/Analise --movimento rec
+```
+
+Sai com código 1 quando a rodada falha — agendador que não vê falha não serve
+de agendador.
+
+### Arquivos
+
+- `catering/carga/{__init__,fonte_csv,transformacao,destino,dimensoes,__main__}.py`
+- `alembic/versions/0020_cat_cargas_fonte.py`
+- `tests/test_catering_carga.py` (18 testes)
+
+### Nota sobre a suíte: um teste que pula de propósito
+
+`docs/Analise/` é gitignored — dado real de operação não vai pro Git. Então os
+três testes que leem as extrações de verdade (`@tem_extracao`) **pulam** onde o
+arquivo não existe, dizendo por quê. Falhar por dado ausente transformaria a
+suíte em alarme falso na VM e em qualquer outra máquina; os outros 15 testes
+não dependem do arquivo e cobrem a lógica inteira com fonte sintética.
+
+### O que este lote NÃO fez
+
+Oracle, agendamento, consulta, Matriz, tela, endpoint, login, deploy. E nada da
+V1/V2 foi apagado ou alterado.
 
 ---
 
