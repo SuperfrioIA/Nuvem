@@ -218,8 +218,3 @@ def transformar(linha, movimento) -> dict:
             )
         saida[nome] = valor
     return saida
-
-
-def identidade(linha_tipada) -> str:
-    """A chave natural em texto, para a mensagem de erro dizer QUAL linha."""
-    return "/".join(str(linha_tipada.get(c, "")) for c in contrato.CHAVE_NATURAL)
