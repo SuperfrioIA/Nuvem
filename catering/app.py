@@ -35,11 +35,11 @@ from decimal import Decimal
 from pathlib import Path
 
 import psycopg2
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from catering import contrato
-from catering.consulta import matriz
+from catering import auditoria, contrato
+from catering.consulta import download, matriz, planilha, recorte
 
 AQUI = Path(__file__).resolve().parent
 WEB = AQUI / "web"
@@ -56,6 +56,24 @@ def _conexao():
     real para justificar -- adiantar isso agora seria copiar a resposta da V2
     para uma pergunta que a V3 ainda nao fez."""
     return psycopg2.connect(os.environ["DATABASE_URL"])
+
+
+def _filtros(de, ate, movimento, lente, faixa, pagina,
+             unidade, cliente, tipo_estoque, operacao):
+    """Monta e valida o recorte. Um lugar so para os tres endpoints -- se cada
+    um montasse o seu, a tela mostraria um recorte e baixaria outro.
+
+    Filtro invalido e **400**, nao 500: 500 esconderia erro do chamador atras de
+    erro do servidor, e manda quem esta depurando olhar o lugar errado."""
+    filtros = recorte.Filtros(
+        de=de, ate=ate, movimento=movimento, lente=lente, faixa=faixa,
+        pagina=pagina, unidades=tuple(unidade), clientes=tuple(cliente),
+        tipos_estoque=tuple(tipo_estoque), operacoes=tuple(operacao),
+    )
+    try:
+        return filtros.validar()
+    except recorte.FiltroInvalido as erro:
+        raise HTTPException(status_code=400, detail=str(erro)) from None
 
 
 def _json(valor):
@@ -192,18 +210,9 @@ def api_matriz(
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
 ):
-    """A Matriz do recorte. Filtro invalido devolve 400 com a razao -- 500 aqui
-    esconderia erro do chamador atras de erro do servidor."""
-    filtros = matriz.Filtros(
-        de=de, ate=ate, movimento=movimento, lente=lente, faixa=faixa,
-        pagina=pagina, unidades=tuple(unidade), clientes=tuple(cliente),
-        tipos_estoque=tuple(tipo_estoque), operacoes=tuple(operacao),
-    )
-    try:
-        filtros.validar()
-    except matriz.FiltroInvalido as erro:
-        raise HTTPException(status_code=400, detail=str(erro)) from None
-
+    """A Matriz do recorte."""
+    filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
+                       unidade, cliente, tipo_estoque, operacao)
     conn = _conexao()
     try:
         with conn.cursor() as cur:
@@ -211,6 +220,87 @@ def api_matriz(
     finally:
         conn.close()
     return _json(resultado)
+
+
+@app.get("/api/planilha")
+def api_planilha(
+    de: str = Query(..., description="mes inicial, AAAA-MM"),
+    ate: str = Query(..., description="mes final, AAAA-MM"),
+    movimento: str = Query("rec"),
+    lente: str = Query("liq"),
+    faixa: str = Query("solicitado"),
+    pagina: int = Query(1, ge=1),
+    unidade: list[str] = Query(default=[]),
+    cliente: list[str] = Query(default=[]),
+    tipo_estoque: list[str] = Query(default=[]),
+    operacao: list[str] = Query(default=[]),
+):
+    """Linhas cruas do recorte, 100 por pagina, paginadas no servidor."""
+    filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
+                       unidade, cliente, tipo_estoque, operacao)
+    conn = _conexao()
+    try:
+        with conn.cursor() as cur:
+            return _json(planilha.planilha(cur, filtros))
+    finally:
+        conn.close()
+
+
+@app.get("/api/download")
+def api_download(
+    request: Request,
+    de: str = Query(..., description="mes inicial, AAAA-MM"),
+    ate: str = Query(..., description="mes final, AAAA-MM"),
+    formato: str = Query("csv"),
+    movimento: str = Query("rec"),
+    lente: str = Query("liq"),
+    faixa: str = Query("solicitado"),
+    unidade: list[str] = Query(default=[]),
+    cliente: list[str] = Query(default=[]),
+    tipo_estoque: list[str] = Query(default=[]),
+    operacao: list[str] = Query(default=[]),
+):
+    """O recorte inteiro, em CSV (streaming) ou xlsx (sob teto).
+
+    **Sempre no recorte dos filtros da tela** (contrato): os mesmos parametros
+    da Matriz e da planilha, e a auditoria registra exatamente qual recorte
+    saiu. `pagina` nao entra de proposito -- download de uma pagina so nao e
+    download do recorte.
+    """
+    if formato not in ("csv", "xlsx"):
+        raise HTTPException(status_code=400, detail=f"formato: {formato!r}")
+    filtros = _filtros(de, ate, movimento, lente, faixa, 1,
+                       unidade, cliente, tipo_estoque, operacao)
+
+    ip = request.client.host if request.client else None
+    # `usuario` fica nulo: login e o V3.4. Ver catering/auditoria.py.
+    registro = auditoria.abrir(
+        "download", recorte=filtros.como_dict(), formato=formato, ip=ip
+    )
+
+    nome = download.nome_do_arquivo(filtros, formato)
+    cabecalhos = {"Content-Disposition": f'attachment; filename="{nome}"'}
+
+    if formato == "csv":
+        # o gerador e dono da conexao: o corpo dele roda DEPOIS de a resposta
+        # comecar, quando um `with` daqui ja teria fechado tudo
+        return StreamingResponse(
+            download.gerar_csv(filtros, registro),
+            media_type="text/csv; charset=utf-8",
+            headers=cabecalhos,
+        )
+
+    try:
+        conteudo = download.gerar_xlsx(filtros, registro)
+    except download.DownloadGrandeDemais as erro:
+        raise HTTPException(status_code=400, detail=str(erro)) from None
+    return Response(
+        content=conteudo,
+        media_type=(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        ),
+        headers=cabecalhos,
+    )
 
 
 @app.get("/")

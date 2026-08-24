@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 
 from catering import contrato
 from catering.app import app
+from tests.conftest import consultar
 from tests.test_catering_matriz import _semear_entrada, _semear_saida
 
 
@@ -204,3 +205,98 @@ def test_app_da_v3_nao_depende_do_app_da_v2():
     # nenhuma rota da V2 foi arrastada para dentro deste app
     for rota_v2 in ("/admin", "/cockpit", "/nuvem", "/laboratorio", "/linhagem"):
         assert rota_v2 not in caminhos, f"{rota_v2} nao pertence ao app da V3"
+
+
+# ====================================================== V3.3: planilha
+def test_planilha_pela_api(cliente_v3, cursor):
+    semear(cursor, _semear_entrada, peso="12.500")
+    corpo = cliente_v3.get(
+        "/api/planilha",
+        params={"de": "2026-01", "ate": "2026-01", "movimento": "rec", "lente": "liq"},
+    ).json()
+
+    assert [c["chave"] for c in corpo["colunas"]] == [
+        "dia", "unidade", "cliente", "guia", "operacao", "tipo_estoque", "valor"
+    ]
+    assert corpo["paginacao"]["por_pagina"] == 100
+    assert corpo["paginacao"]["total_linhas"] == 1
+    linha = corpo["linhas"][0]
+    assert linha["guia"] == "0000000001"
+    assert linha["valor"] == "12.500", "medida vai como texto, para nao perder precisao"
+    # o recorte volta ecoado, como na Matriz
+    assert corpo["filtros"]["de"] == "2026-01"
+
+
+def test_planilha_e_matriz_usam_o_mesmo_recorte(cliente_v3, cursor):
+    """Se a planilha e a Matriz discordassem sobre quais linhas estao no
+    recorte, a tela mostraria um numero e baixaria outro."""
+    semear(cursor, _semear_entrada, sigla="RMSPII", peso="10.000")
+    semear(cursor, _semear_entrada, sigla="CWBIII", gem="0000000002", peso="20.000")
+
+    params = {"de": "2026-01", "ate": "2026-01", "movimento": "rec",
+              "lente": "liq", "unidade": ["RMSPII"]}
+    da_matriz = cliente_v3.get("/api/matriz", params=params).json()
+    da_planilha = cliente_v3.get("/api/planilha", params=params).json()
+
+    assert da_matriz["total"]["2026-01"] == "10.000"
+    assert da_planilha["paginacao"]["total_linhas"] == 1
+    assert da_planilha["linhas"][0]["valor"] == "10.000"
+
+
+# ====================================================== V3.3: download
+def test_download_csv_pela_api(cliente_v3, cursor):
+    semear(cursor, _semear_entrada, peso="1234.567")
+    resposta = cliente_v3.get(
+        "/api/download",
+        params={"de": "2026-01", "ate": "2026-01", "movimento": "rec",
+                "formato": "csv"},
+    )
+    assert resposta.status_code == 200
+    assert resposta.headers["content-type"].startswith("text/csv")
+    assert "catering_entrada_2026-01_a_2026-01.csv" in \
+        resposta.headers["content-disposition"]
+
+    texto = resposta.content.decode("utf-8-sig")
+    assert resposta.content.startswith(b"\xef\xbb\xbf"), "faltou o BOM"
+    linhas = texto.strip().splitlines()
+    assert len(linhas) == 2
+    assert "1234,567" in linhas[1], "decimal deveria sair com virgula"
+
+    # e ficou auditado, com o recorte
+    registro = consultar(
+        "SELECT formato, linhas, status, recorte->>'movimento'"
+        " FROM cat_auditoria ORDER BY id DESC LIMIT 1"
+    )[0]
+    assert registro == ("csv", 1, "ok", "rec")
+
+
+def test_download_xlsx_pela_api(cliente_v3, cursor):
+    semear(cursor, _semear_entrada, gem="0000000609")
+    resposta = cliente_v3.get(
+        "/api/download",
+        params={"de": "2026-01", "ate": "2026-01", "formato": "xlsx"},
+    )
+    assert resposta.status_code == 200
+    assert "spreadsheetml" in resposta.headers["content-type"]
+    assert resposta.content[:2] == b"PK", "xlsx e um zip"
+
+
+def test_download_ignora_pagina_e_recusa_formato_desconhecido(cliente_v3, cursor):
+    """O download e SEMPRE o recorte inteiro (contrato) -- `pagina` nao entra:
+    baixar uma pagina so nao e baixar o recorte."""
+    for i in range(1, 4):
+        semear(cursor, _semear_entrada, gem=f"{i:010d}")
+
+    resposta = cliente_v3.get(
+        "/api/download",
+        params={"de": "2026-01", "ate": "2026-01", "formato": "csv", "pagina": 2},
+    )
+    linhas = resposta.content.decode("utf-8-sig").strip().splitlines()
+    assert len(linhas) == 4, "o download deveria trazer as 3 linhas, nao uma pagina"
+
+    ruim = cliente_v3.get(
+        "/api/download",
+        params={"de": "2026-01", "ate": "2026-01", "formato": "pdf"},
+    )
+    assert ruim.status_code == 400
+    assert "formato" in ruim.json()["detail"]

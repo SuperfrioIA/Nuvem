@@ -100,6 +100,30 @@ tfoot td.rotulo{background:var(--brand-azul-corporativo)}
 .paginacao{display:flex;gap:10px;align-items:center;justify-content:flex-end;
   margin-top:10px;font-size:11px}
 
+/* ---------- a planilha ---------- */
+/* Cliente e Operacao sao largas (`NAO TROCA NOTA DE ARMAZENAGEM`) e empurravam
+   a coluna da MEDIDA fora da tela -- numa tela cujo principio e mostrar o
+   numero, isso e defeito. Teto com reticencias, e o texto inteiro no title. */
+/* A primeira coluna da planilha NAO usa `.rotulo` da Matriz: aquela tem
+   min-width 320px (nome de cliente com hierarquia), e aqui e a data -- 320px
+   empurravam a coluna do numero fora da tela. */
+table.planilha th.primeira,table.planilha td.primeira{text-align:left;
+  position:sticky;left:0;z-index:2;min-width:92px;white-space:nowrap}
+table.planilha td.primeira{background:var(--brand-branco)}
+table.planilha th.primeira{z-index:4}
+table.planilha tbody tr:hover td.primeira{background:#EEF3FB}
+table.planilha td.texto{max-width:230px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+table.planilha td.numero{font-variant-numeric:tabular-nums;font-weight:600}
+table.planilha th{white-space:nowrap}
+
+/* ---------- baixar o recorte ---------- */
+.baixar{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.baixar-rotulo{font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+.nota{font-size:11px;color:var(--brand-azul-corporativo);opacity:.85;
+  max-width:640px;line-height:1.45}
+
 /* ---------- fontes & metodo: um lugar so ---------- */
 details.metodo{margin-top:22px;background:var(--brand-branco);
   border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-md);
@@ -166,6 +190,10 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
     <label for="operacao">Operação</label>
     <select id="operacao" multiple></select>
   </div>
+  <div class="campo">
+    <label>Visão</label>
+    <div class="grupo" id="visao"></div>
+  </div>
   <div class="acoes">
     <button class="secundario" id="limpar">Limpar</button>
     <button class="primario" id="aplicar">Aplicar</button>
@@ -178,6 +206,13 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
   <div id="avisos"></div>
   <div class="rolagem"><div class="carregando" id="corpo">Carregando…</div></div>
   <div class="paginacao" id="paginacao"></div>
+
+  <div class="baixar">
+    <span class="baixar-rotulo">Baixar o recorte</span>
+    <button class="secundario" id="baixar-csv">CSV</button>
+    <button class="secundario" id="baixar-xlsx">Excel (xlsx)</button>
+    <span class="nota" id="nota-download"></span>
+  </div>
 
   <details class="metodo">
     <summary>Fontes &amp; método</summary>
@@ -194,7 +229,8 @@ const ROTULO_NIVEL = {unidade:'Unidade', cliente:'Cliente', faixa:'Faixa',
 const trilha = niveis => niveis.map(n => ROTULO_NIVEL[n] || n).join(' › ');
 
 let OPCOES = null, ESTADO = {
-  movimento:'rec', lente:'liq', faixa:'solicitado', pagina:1, abertos:new Set()
+  visao:'matriz', movimento:'rec', lente:'liq', faixa:'solicitado',
+  pagina:1, abertos:new Set()
 };
 
 const fmt = (valor, unidade) => {
@@ -232,6 +268,13 @@ function desenhaBotoes(){
 
   botoes('#faixa', OPCOES.faixas.map(f => ({chave:f.chave, rotulo:f.rotulo})), 'faixa');
   $('#campo-faixa').style.display = ESTADO.movimento === 'exp' ? '' : 'none';
+
+  // Trocar de visao reseta a pagina: a Matriz pagina UNIDADE (12) e a planilha
+  // pagina LINHA (100) -- carregar a pagina 7 da planilha na Matriz mostraria
+  // vazio e pareceria defeito.
+  botoes('#visao', [
+    {chave:'matriz', rotulo:'Matriz'}, {chave:'planilha', rotulo:'Planilha'}
+  ], 'visao', () => { ESTADO.pagina = 1; });
 }
 
 function opcoesSelect(alvo, itens){
@@ -389,7 +432,17 @@ function metodo(d){
     </div>`;
 }
 
+function urlDownload(formato){
+  // O download e SEMPRE o recorte inteiro dos filtros -- `pagina` sai de
+  // proposito: baixar uma pagina so nao e baixar o recorte (contrato).
+  const p = parametros();
+  p.delete('pagina');
+  p.set('formato', formato);
+  return '/api/download?' + p.toString();
+}
+
 async function carrega(){
+  if (ESTADO.visao === 'planilha') return carregaPlanilha();
   // `.rolagem` e o container ESTAVEL: o `#corpo` inicial e substituido
   // pela tabela no primeiro desenho e deixa de existir.
   const alvo = $('.rolagem');
@@ -415,6 +468,104 @@ async function carrega(){
   redesenha(); paginacao(d.paginacao); metodo(d);
 }
 
+// --------------------------------------------------------------- planilha
+function desenhaPlanilha(d){
+  const tabela = document.createElement('table');
+  tabela.className = 'planilha';
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  d.colunas.forEach((c, i) => {
+    const th = document.createElement('th');
+    if (i === 0) th.className = 'primeira';
+    th.textContent = c.rotulo;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh); tabela.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  if (!d.linhas.length){
+    const tr = document.createElement('tr'); const td = document.createElement('td');
+    td.colSpan = d.colunas.length; td.className = 'primeira';
+    td.innerHTML = '<span class="vazio">Nenhuma linha no recorte.</span>';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  const numericas = new Set(['valor','solicitado','atendido','separado']);
+  d.linhas.forEach(linha => {
+    const tr = document.createElement('tr');
+    d.colunas.forEach((c, i) => {
+      const td = document.createElement('td');
+      if (i === 0) td.className = 'primeira';
+      const valor = linha[c.chave];
+      if (numericas.has(c.chave)){
+        td.innerHTML = fmt(valor, d.lente.unidade);
+        td.classList.add('numero');
+      } else if (c.chave === 'dia'){
+        td.textContent = valor ? formataDia(valor) : '';
+      } else {
+        const texto = valor === null || valor === undefined ? '' : String(valor);
+        td.textContent = texto;
+        // o texto inteiro fica no title: cortar na tela nao pode esconder dado
+        td.title = texto;
+        td.style.textAlign = 'left';
+        if (c.chave === 'cliente' || c.chave === 'operacao') td.classList.add('texto');
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tabela.appendChild(tbody);
+
+  const alvo = $('.rolagem');
+  alvo.innerHTML = ''; alvo.appendChild(tabela);
+}
+
+// A API manda a data como AAAA-MM-DD; a tela mostra no formato de quem le.
+const formataDia = iso => iso.split('-').reverse().join('/');
+
+function paginacaoPlanilha(p){
+  const el = $('#paginacao');
+  el.innerHTML = '';
+  const info = document.createElement('span');
+  const total = Number(p.total_linhas).toLocaleString('pt-BR');
+  info.textContent = p.paginas <= 1
+    ? `${total} linha(s)`
+    : `Página ${p.pagina} de ${p.paginas} — ${total} linhas, ${p.por_pagina} por página`;
+  el.appendChild(info);
+  if (p.paginas <= 1) return;
+  const anterior = document.createElement('button');
+  anterior.className = 'secundario'; anterior.textContent = '‹ Anterior';
+  anterior.disabled = p.pagina <= 1;
+  anterior.onclick = () => { ESTADO.pagina--; carrega(); };
+  const proxima = document.createElement('button');
+  proxima.className = 'secundario'; proxima.textContent = 'Próxima ›';
+  proxima.disabled = p.pagina >= p.paginas;
+  proxima.onclick = () => { ESTADO.pagina++; carrega(); };
+  el.append(anterior, proxima);
+}
+
+async function carregaPlanilha(){
+  const alvo = $('.rolagem');
+  alvo.innerHTML = '<div class="carregando">Carregando…</div>';
+  let resposta;
+  try { resposta = await fetch('/api/planilha?' + parametros().toString()); }
+  catch (e) { alvo.innerHTML = `<div class="erro">Falha de rede: ${e}</div>`; return; }
+  if (!resposta.ok){
+    let detalhe = resposta.statusText;
+    try { detalhe = (await resposta.json()).detail || detalhe; } catch (e) {}
+    alvo.innerHTML = `<div class="erro">Recorte recusado: ${detalhe}</div>`;
+    return;
+  }
+  const d = await resposta.json();
+  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
+  $('#titulo').textContent = `Planilha — ${mov}, ${d.lente.nome}`;
+  $('#desc').textContent =
+    `Uma linha por registro do DW, no mesmo recorte da Matriz. ${d.lente.nome} em ${d.lente.unidade}.`;
+  $('#avisos').innerHTML = (d.avisos || []).map(a => `<p class="aviso">${a}</p>`).join('');
+  desenhaPlanilha(d); paginacaoPlanilha(d.paginacao);
+  metodo({niveis: ESTADO.movimento === 'exp'
+    ? ['unidade','cliente','faixa','operacao'] : ['unidade','cliente','operacao']});
+}
+
 async function inicia(){
   OPCOES = await (await fetch('/api/opcoes')).json();
   $('#de').value = OPCOES.periodo.de || '2026-01';
@@ -425,6 +576,16 @@ async function inicia(){
   preencheOperacoes();
   desenhaBotoes();
   $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
+
+  // O aviso do zero a esquerda fica no controle do CSV, nao numa parede de
+  // texto: e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela
+  // e lida. O xlsx nao tem o problema, e a nota diz por que.
+  $('#nota-download').textContent =
+    'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
+    + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
+    + 'identificador, baixe em Excel (xlsx), que preserva.';
+  $('#baixar-csv').onclick = () => { window.location = urlDownload('csv'); };
+  $('#baixar-xlsx').onclick = () => { window.location = urlDownload('xlsx'); };
   $('#limpar').onclick = () => {
     ['#unidade','#cliente','#tipo','#operacao'].forEach(s =>
       Array.from($(s).options).forEach(o => o.selected = false));

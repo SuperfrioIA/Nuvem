@@ -3,8 +3,8 @@
 **Este documento é a fonte única do status da V3.** Criado em 24/ago/2026, na
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
-**Autorizados e feitos até agora: V3.0, V3.1 e V3.2** (24/ago/2026). Do V3.3 em
-diante a divisão em lotes na seção final é proposta, não plano em execução —
+**Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026). Do
+V3.4 em diante a divisão em lotes na seção final é proposta, não plano em execução —
 autorização é por lote, como na V1 e na V2.
 
 > **Cuidado com o nome:** `docs/proposta_v3_volumetria.md` **não** é deste
@@ -180,12 +180,12 @@ Nenhum dos dois é defeito da V3. Os dois precisam estar **declarados na tela**.
 |---|---|---|
 | A-1 | ~~O `linhagem` morre junto com o admin?~~ — **sim** (Maria, 24/ago/2026). Mesmo tratamento do admin: parqueado no repo agora, sai da VM só depois da tela nova de pé | fechada |
 | A-2 | ~~Auditoria de acesso: só login, ou toda consulta?~~ — **só login e download** (Maria, 24/ago/2026) | fechada |
-| A-3 | Usuário `integracao_dados_catering` — pedido em aberto na Valcann. Falta: versão do Oracle (decide se a VM precisa do Instant Client), `service name` x SID, schema/owner das tabelas, política de expiração de senha | Valcann / Maria |
+| A-3 | **Acesso concedido** (Maria, 24/ago/2026) — o usuário existe. As quatro incógnitas seguem abertas e só a conexão real responde: versão do Oracle (decide se a VM precisa do Instant Client), `service name` x SID, schema/owner das tabelas, política de expiração de senha. As três primeiras são fatos de **infra com consequência no deploy**: descobrir no V3.6 que a VM precisa do Instant Client trava a subida. Resolver com um **bloco somente leitura que a Maria executa** — a IA não conecta em produção. Credenciais vão para `.env` (gitignored), nunca no chat nem em commit | Maria |
 | A-4 | ~~Nome do pacote novo no repo~~ — **decidido em 24/ago/2026: `catering/`**, pelo escopo do negócio e não pela métrica (já existe dado de ocupação e capacidade no projeto, que um dia pode entrar como outra métrica do mesmo escopo) | fechada |
 | A-5 | ~~Qual data a Matriz agrega~~ — **`nk_calendario`** (Maria, 24/ago/2026): *"conta como expedida em fevereiro. Calendário."* A data que vale é a do **movimento**, não a do pedido | fechada |
 | A-6 | **Parcialmente fechada** (Maria, 24/ago/2026): `CONG` conta como congelado, `RESFRIADO` é classe nova, `AGUA / CARVAO` é seco — implementado, e o não-classificado caiu de 3,2% para **1,3%** do peso. **Segue aberto:** `CONSOLIDADOR` e `CONSOLIDADOR - 14025`, **3.872,5 t**, que são 97% do que restou e não foram perguntados | Maria |
 
-O A-3 é o único que bloqueia lote, e bloqueia **apenas** o V3.5. O A-6 não
+O A-3 deixou de bloquear (o acesso existe); o que resta dele é a sondagem de infra, que **não** bloqueia lote nenhum antes do V3.5. O A-6 não
 bloqueia o schema (a sentinela já existe), mas o resíduo do `CONSOLIDADOR`
 aparece na tela como categoria própria até ser decidido.
 
@@ -210,7 +210,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.0** | Contrato e schema: fato no grão do DW, migrations, sem carga — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.1** | Carregador contra os CSVs, idempotente pela **chave natural** (não pela PK do DW — ver V3.0), com registro de rodada; suíte nova — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.2** | Filtros + Matriz, com aceite célula por célula contra os CSVs agregados por `nk_calendario` — **feito em 24/ago/2026**, ver seção abaixo | não |
-| **V3.3** | Planilha aberta (100 linhas, paginação no servidor) + download do recorte em streaming; auditoria de download | não |
+| **V3.3** | Planilha aberta + download em streaming e auditoria — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento 07h05/15h05 | **sim** |
 | **V3.6** | Deploy na VM; desmonte do admin e do linhagem em produção | não |
@@ -644,6 +644,121 @@ do login.
 Planilha aberta e download (V3.3), login (V3.4), Oracle e agendamento (V3.5),
 deploy e compose (V3.6). O `CONSOLIDADOR` da A-6 aparece na tela como
 `NAO_CLASSIFICADO` até ser decidido.
+
+---
+
+## Lote V3.3 — Planilha aberta, download e auditoria (feito, 24/ago/2026)
+
+Autorizado pela Maria em 24/ago/2026. Entregou a planilha paginada no servidor,
+o download do recorte em CSV (streaming) e xlsx (sob teto), e a auditoria de
+download. **Sem login** (V3.4), sem Oracle (V3.5), sem deploy (V3.6).
+
+### Uma definição de recorte, não três
+
+O lote começou extraindo `catering/consulta/recorte.py` — filtros, período e o
+`WHERE`. A Matriz, a planilha e o download **leem o mesmo `de_para_where()`**.
+Se cada uma montasse o seu, o dia em que um filtro mudasse de comportamento numa
+e não na outra a tela mostraria um número e baixaria outro, e ninguém
+descobriria por um bom tempo, porque os dois parecem plausíveis sozinhos.
+
+A refatoração foi verificada preservando comportamento: os 20 testes do V3.2
+passaram sem alteração.
+
+### A planilha
+
+- **100 linhas por página, paginação no servidor** (contrato).
+- **Ordenação determinística.** `ORDER BY nk_calendario DESC` sozinho **não**
+  basta: em empate o Postgres não promete ordem estável entre execuções, e a
+  página 2 poderia repetir linha da 1 e omitir outra **sem erro nenhum**. A
+  ordenação termina na chave natural, que é única por construção (V3.0).
+- **Estreita na tela, completa no arquivo.** A tela mostra dia, unidade,
+  cliente, guia, operação, tipo de estoque e a lente escolhida (na saída, as 3
+  faixas dela). As 16 medidas da expedição seriam o "indo pro lado" de novo.
+- **A guia aparece aqui**, e não na Matriz: lá seria `COUNT(DISTINCT)` num pivô;
+  aqui é coluna de uma linha.
+
+### O download
+
+- **Streaming nos dois lados.** `StreamingResponse` resolve metade; a outra
+  metade é o banco — com cursor comum o psycopg2 traz tudo para a memória antes
+  de a primeira linha sair, e o "nunca montado em memória" do contrato vira só
+  aparência. Usa **cursor nomeado** (server-side) com `itersize`. Consequência
+  de desenho: o gerador **é dono da conexão**, porque o corpo dele roda depois
+  de a resposta começar, quando um `with` do chamador já teria fechado.
+- **Sempre o recorte inteiro.** `pagina` não entra: baixar uma página só não é
+  baixar o recorte. Tem teste.
+- **A linha inteira, com procedência:** as colunas derivadas (dia, unidade
+  exibida, cliente canonizado, tipo de estoque) **e** todas as do contrato,
+  cruas — 40 colunas na entrada, 50 na saída. Parece redundante e não é: é o que
+  permite conferir "o DW diz `RMSPV`, a tela mostra `RMSPIV`" sem abrir o banco.
+- **Formato Excel-first:** `;`, **UTF-8 com BOM**, decimal com vírgula, data
+  `DD/MM/AAAA`. Sem o BOM o Excel estraga os acentos no duplo clique — e duplo
+  clique é como o arquivo vai ser aberto.
+
+#### O zero à esquerda, que o CSV não consegue proteger
+
+`num_gem` é `0000000609`. O Excel **come o zero à esquerda** ao abrir CSV, e não
+há aspas nem truque de CSV que impeça isso de forma confiável — e a política do
+projeto proíbe exportação que deforme identificador. A saída honesta:
+
+- o **CSV** leva o valor correto, e a tela avisa, **no próprio controle de
+  download**, que o Excel vai truncar identificador no duplo clique;
+- o **xlsx** escreve essas colunas como **texto** (`number_format='@'`), e é a
+  opção certa quando o que importa é a guia. Verificado: `num_gem` volta como
+  `str`, e a medida continua número para o Excel poder somar.
+
+A lista de colunas protegidas sai de `contrato.IDENTIFICADORES_TEXTO`, que existe
+desde o V3.0 exatamente por isso — não é lista escrita à mão.
+
+**Teto do xlsx: 150.000 linhas.** xlsx não streama nem em `write_only`. O
+período medido hoje tem 78.768 e um ano projeta ~120.000, então cobre um ano com
+margem; acima disso a mensagem manda para o CSV, em vez de o servidor morrer sem
+explicação.
+
+### A auditoria (migration 0021)
+
+`cat_auditoria (criado_em, terminado_em, evento, usuario, recorte JSONB,
+formato, linhas, ip, status, erro)`.
+
+- **Tabela própria, não a `eventos_auditoria` da V2.** A V2 está congelada; o
+  dia em que ela sair da VM, a auditoria da V3 sairia junto.
+- **`usuario` nulável, e fica nulo neste lote.** Login é o V3.4. Não se inventa
+  `'anonimo'`: isso criaria um ator que não existe, e depois ninguém
+  distinguiria "antes do login" de "usuário apagado".
+- **Registra no início, fecha no fim**, em conexão própria — o mesmo padrão do
+  `cat_cargas`, pela mesma razão: o stream pode morrer no meio, e download
+  interrompido não pode aparecer como concluído. Tem teste que força a falha e
+  confere `status='erro'` com mensagem.
+- Verificado com dado real: 4 downloads, recorte exato (`unidades: ["CWBIII"]`,
+  `2026-02`), 202 linhas cada, `usuario` nulo.
+
+### Aceite
+
+`test_planilha_somada_bate_com_a_matriz`: somando **todas as páginas** da
+planilha, o total dá exatamente o que a Matriz agrega no mesmo recorte — é onde
+erro de paginação, de `LIMIT/OFFSET` e de `JOIN` duplicando linha apareceria.
+`test_download_bate_com_o_csv_de_origem`: o arquivo baixado somado contra o CSV
+do DW, no mesmo recorte.
+
+### Defeito que só o navegador achou
+
+**A coluna do número estava fora da tela.** `Cliente` e `Operação` são largas
+(`NÃO TROCA NOTA DE ARMAZENAGEM`) e empurravam a medida para fora do viewport —
+numa tela cujo princípio é *mostrar o número*, isso é grave. Duas causas: as
+colunas de texto sem teto, e a primeira coluna reusando a classe `.rotulo` da
+Matriz, que carrega `min-width: 320px` (dimensionada para nome de cliente com
+hierarquia, não para uma data). Corrigido com classe própria da planilha e teto
+com reticências nas colunas de texto — o texto inteiro fica no `title`, porque
+cortar na tela não pode esconder dado.
+
+### Arquivos
+
+- `catering/consulta/{recorte,planilha,download}.py`, `catering/auditoria.py`
+- `alembic/versions/0021_cat_auditoria.py`
+- `catering/app.py` (`/api/planilha`, `/api/download`, e `_filtros()` comum aos três)
+- `catering/consulta/matriz.py` (passa a ler o recorte compartilhado)
+- `catering/web/matriz.html` (visão Matriz/Planilha e os botões de download)
+- `tests/test_catering_planilha.py` (12), `tests/test_catering_app.py` (+5)
 
 ---
 

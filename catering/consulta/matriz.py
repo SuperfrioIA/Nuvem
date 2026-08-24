@@ -67,12 +67,15 @@ identificador). Ele NUNCA vem do usuario: sai de `contrato.LENTES` /
 Todo VALOR de filtro vai como parametro.
 """
 
-from dataclasses import dataclass
-from datetime import date
-
 from catering import contrato
+from catering.consulta import recorte
+from catering.consulta.recorte import (  # reexportados: a API deste modulo nao muda
+    FiltroInvalido,
+    Filtros,
+    meses_do_periodo,
+)
 
-TABELA = {"rec": "cat_fato_recebimento", "exp": "cat_fato_expedicao"}
+TABELA = recorte.TABELA
 
 # O nivel da arvore -> como ele sai do SQL. `rotulo` e o que a tela mostra;
 # `chave` e o que identifica a linha (e o que o filtro usa).
@@ -80,22 +83,22 @@ NIVEL = {
     "unidade": {
         # a sigla EXIBIDA (a RMSPV do DW aparece como RMSPIV), com queda para a
         # sigla da fonte se a unidade ainda nao esta em cat_unidades
-        "chave": "COALESCE(u.sigla, f.nk_wms_filial)",
-        "rotulo": "COALESCE(u.sigla, f.nk_wms_filial)",
+        "chave": recorte.SIGLA,
+        "rotulo": recorte.SIGLA,
     },
     "cliente": {
         # chave = raiz do CNPJ; rotulo = razao social canonizada pela grafia de
         # maior peso (cat_clientes), com queda para a grafia da propria linha
         "chave": "f.nk_cliente",
-        "rotulo": "COALESCE(c.razao_social, f.raz_social)",
+        "rotulo": recorte.CLIENTE_ROTULO,
     },
     "operacao": {
         "chave": "f.descr_oper_wms",
         "rotulo": "f.descr_oper_wms",
     },
     "tipo_estoque": {
-        "chave": "COALESCE(t.tipo, 'NAO_CLASSIFICADO')",
-        "rotulo": "COALESCE(t.tipo, 'NAO_CLASSIFICADO')",
+        "chave": recorte.TIPO_ESTOQUE,
+        "rotulo": recorte.TIPO_ESTOQUE,
     },
 }
 
@@ -112,103 +115,18 @@ HIERARQUIA = {
 UNIDADES_POR_PAGINA = 12
 
 
-class FiltroInvalido(Exception):
-    """Filtro que o contrato nao admite. Erro do chamador, nao do dado."""
-
-
-@dataclass
-class Filtros:
-    """O recorte da tela. `de`/`ate` sao meses (`YYYY-MM`), inclusivos."""
-
-    de: str
-    ate: str
-    movimento: str = "rec"
-    lente: str = "liq"
-    faixa: str = "solicitado"
-    unidades: tuple = ()
-    clientes: tuple = ()
-    tipos_estoque: tuple = ()
-    operacoes: tuple = ()
-    pagina: int = 1
-
-    def validar(self):
-        if self.movimento not in contrato.MOVIMENTOS:
-            raise FiltroInvalido(f"movimento: {self.movimento!r}")
-        if self.lente not in contrato.LENTES:
-            raise FiltroInvalido(f"lente: {self.lente!r}")
-        if self.faixa not in contrato.FAIXAS:
-            raise FiltroInvalido(f"faixa: {self.faixa!r}")
-        for nome in ("de", "ate"):
-            _mes_para_data(getattr(self, nome), nome)
-        if _mes_para_data(self.de, "de") > _mes_para_data(self.ate, "ate"):
-            raise FiltroInvalido(f"periodo invertido: {self.de} > {self.ate}")
-        if self.pagina < 1:
-            raise FiltroInvalido(f"pagina: {self.pagina}")
-        return self
-
-
-def _mes_para_data(mes, campo) -> date:
-    try:
-        ano, m = str(mes).split("-")
-        return date(int(ano), int(m), 1)
-    except (ValueError, AttributeError):
-        raise FiltroInvalido(f"{campo} deve ser AAAA-MM, veio {mes!r}") from None
-
-
-def _proximo_mes(d: date) -> date:
-    return date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
-
-
-def meses_do_periodo(de, ate):
-    """Todos os meses do recorte, inclusive os sem dado.
-
-    Mes vazio tem que virar coluna vazia, nao coluna ausente: se a coluna
-    desaparece, as outras deslizam e a comparacao entre linhas passa a mentir."""
-    atual, fim = _mes_para_data(de, "de"), _mes_para_data(ate, "ate")
-    saida = []
-    while atual <= fim:
-        saida.append(f"{atual.year:04d}-{atual.month:02d}")
-        atual = _proximo_mes(atual)
-    return saida
-
-
-def _medida(movimento, lente, faixa):
-    """Nome da coluna de medida, conferido contra o contrato.
-
-    `None` quando a medida nao existe nesse lado -- o caso do pallet, que so
-    existe na entrada. Nao e defeito: e a fonte, e a tela declara."""
-    if movimento == "rec":
-        coluna = contrato.LENTES[lente]["rec"]
-    else:
-        coluna = contrato.coluna_exp(lente, faixa)
-    if coluna is None:
-        return None
-    validas = {nome for nome, _t, _n in contrato.colunas(movimento)}
-    if coluna not in validas:
-        raise FiltroInvalido(f"medida fora do contrato: {coluna!r}")
-    return coluna
-
-
-def _medidas_da_consulta(movimento, lente):
-    """As colunas de medida que a consulta traz.
-
-    Na saida traz as TRES faixas de uma vez: o nivel `faixa` da arvore e um
-    leque em Python, entao trocar a faixa escolhida no botao nao volta ao
-    banco."""
-    if movimento == "rec":
-        coluna = _medida("rec", lente, "solicitado")
-        return {} if coluna is None else {"": coluna}
-    saida = {}
-    for faixa in contrato.FAIXAS:
-        coluna = _medida("exp", lente, faixa)
-        if coluna is not None:
-            saida[faixa] = coluna
-    return saida
+# Reexportados do recorte: a Matriz, a planilha e o download tem que usar a
+# MESMA definicao de medida e de filtro. Duas copias derivariam em silencio.
+_medida = recorte.medida
+_medidas_da_consulta = recorte.medidas_da_lente
 
 
 def _sql(movimento, niveis, medidas, filtros):
-    """Monta a consulta. Identificador vem do contrato; valor vai parametrizado."""
-    tabela = TABELA[movimento]
+    """Monta a consulta. Identificador vem do contrato; valor vai parametrizado.
+
+    O `FROM`/`WHERE` sai de `recorte.de_para_where()` -- e o mesmo pedaco que a
+    planilha e o download usam, para as tres nao poderem discordar sobre quais
+    linhas estao no recorte."""
     grupos = [NIVEL[n]["chave"] for n in niveis if n != FAIXA]
     rotulos = [NIVEL[n]["rotulo"] for n in niveis if n != FAIXA]
 
@@ -221,36 +139,13 @@ def _sql(movimento, niveis, medidas, filtros):
     for apelido, coluna in medidas.items():
         selecoes.append(f"SUM(f.{coluna}) AS medida_{apelido or 'unica'}")
 
-    # LEFT JOIN de proposito: sem FK, dimensao faltando nao pode sumir com a
-    # linha do fato. Ver docstring.
-    onde = ["f.nk_calendario >= %(de)s", "f.nk_calendario < %(ate)s"]
-    params = {
-        "de": _mes_para_data(filtros.de, "de"),
-        "ate": _proximo_mes(_mes_para_data(filtros.ate, "ate")),
-    }
-    if filtros.unidades:
-        onde.append(f"{NIVEL['unidade']['chave']} = ANY(%(unidades)s)")
-        params["unidades"] = list(filtros.unidades)
-    if filtros.clientes:
-        onde.append("f.nk_cliente = ANY(%(clientes)s)")
-        params["clientes"] = list(filtros.clientes)
-    if filtros.tipos_estoque:
-        onde.append(f"{NIVEL['tipo_estoque']['chave']} = ANY(%(tipos)s)")
-        params["tipos"] = list(filtros.tipos_estoque)
-    if filtros.operacoes:
-        onde.append("f.descr_oper_wms = ANY(%(operacoes)s)")
-        params["operacoes"] = list(filtros.operacoes)
-
+    de_para_where, params = recorte.de_para_where(filtros)
     agrupamento = ", ".join(str(i + 1) for i in range(len(selecoes) - len(medidas)))
-    sql = (
-        f"SELECT {', '.join(selecoes)}\n"
-        f"FROM {tabela} f\n"
-        "LEFT JOIN cat_unidades u ON u.sigla_fonte = f.nk_wms_filial\n"
-        "LEFT JOIN cat_clientes c ON c.raiz_cnpj = f.nk_cliente\n"
-        "LEFT JOIN cat_tipos_estoque t ON t.nome_estoque = f.nome_estoque\n"
-        f"WHERE {' AND '.join(onde)}\n"
-        f"GROUP BY {agrupamento}"
-    )
+    sql = "\n".join((
+        f"SELECT {', '.join(selecoes)}",
+        de_para_where,
+        f"GROUP BY {agrupamento}",
+    ))
     return sql, params
 
 
@@ -317,13 +212,7 @@ def _arvore(linhas, niveis, medidas, faixa_escolhida):
     return raiz
 
 
-def _rotulo_faixa(faixa):
-    # Rotulos de TELA, entao acentuados -- ver contrato.LENTES.
-    return {
-        "solicitado": "Solicitado pelo cliente",
-        "atendido": "Atendido pelo estoque",
-        "separado": "Separado fisicamente",
-    }[faixa]
+_rotulo_faixa = recorte.rotulo_faixa
 
 
 def matriz(cur, filtros: Filtros) -> dict:
