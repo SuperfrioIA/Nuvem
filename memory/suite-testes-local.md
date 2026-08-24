@@ -71,3 +71,51 @@ de maiúscula/minúscula na correção de um achado da revisão independente).
 **How to apply:** antes de reportar "não dá pra verificar contra banco real"
 num ambiente sem Docker direto, testar `wsl -d <distro> -e docker ps` — pode
 existir um container de teste já de pé que só não está no caminho óbvio.
+
+## Como impedir o container de cair no meio (24/ago/2026)
+
+Em 24/ago/2026 o `nuvem-teste-db` foi parado pelo Docker Desktop **tres vezes**
+durante uma rodada da suite -- `docker inspect` mostrou `exit=0`, `oom=false`,
+`restarts=0`, isto e, parada graciosa, nao falta de memoria (havia 7,2 GB
+livres). O resultado foram **315 erros de conexao** numa rodada de 15min32 que
+nao tinha nenhuma regressao.
+
+O que resolveu foi manter a distro WSL ocupada durante a execucao, num processo
+a parte iniciado ANTES do pytest:
+
+```
+wsl -d Ubuntu-24.04 -e bash -c "for i in \$(seq 1 1800); do   docker exec nuvem-teste-db pg_isready -U nuvem -d nuvem_teste > /dev/null 2>&1; sleep 1; done"
+```
+
+Com o keep-alive: **6min32, zero erro de conexao**. Sem ele: 15min32 e 315
+erros. Encerrar o keep-alive junto com o container no fim.
+
+Detalhe que custou tempo: depois de dias parado, o container faz `fsync` do
+diretorio de dados inteiro na subida (80 s medidos, por causa de um
+`Exited (137)` anterior) e recusa conexao com "the database system is starting
+up". Esperar `pg_isready` responder `accepting connections` em vez de dormir um
+tempo fixo.
+
+### Duas armadilhas descobertas em 24/ago/2026
+
+**1. O keep-alive tem que ser um `wsl.exe` que continue vivo.** `nohup ... &`
+de dentro de um `wsl -d Ubuntu-24.04 -e bash -c "..."` morre junto com o
+`wsl.exe` que o lancou -- medido: rodada seguinte voltou a dar 330 erros. O que
+funciona e deixar o proprio `wsl -e bash -c "for ... sleep 1 ..."` rodando em
+segundo plano no lado Windows, pelo tempo da suite.
+
+**2. Matar o pytest no meio deixa o banco SEM o schema `public`.** A fixture
+`banco_vazio` faz `DROP SCHEMA public CASCADE` e depois `CREATE SCHEMA`; se o
+processo morrer entre as duas (o VS Code fechou no meio de uma rodada), a
+rodada seguinte falha instantaneamente com `InvalidSchemaName: schema "public"
+does not exist` em centenas de testes. Parece catastrofe e e so isso -- repara
+em um comando:
+
+```
+wsl -d Ubuntu-24.04 -e docker exec nuvem-teste-db psql -U nuvem -d nuvem_teste   -c "CREATE SCHEMA IF NOT EXISTS public; GRANT ALL ON SCHEMA public TO nuvem;"
+```
+
+Como distinguir os tres modos de falha em massa, todos de ambiente:
+- `OperationalError: connection refused` -> container caiu (keep-alive)
+- `OperationalError: ... starting up` -> container subindo, faz fsync longo
+- `InvalidSchemaName: schema "public" does not exist` -> schema orfao, repara

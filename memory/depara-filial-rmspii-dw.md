@@ -69,3 +69,33 @@ Movimento da instância fora desse CNPJ existe e é legítimo (overflow/operaç�
 para outras empresas do grupo) — não somar no RMSPII, registrar à parte. Ver
 [[fato-volumetria-dw]], [[filiais-catering-poc]] e
 [[confirmar-sigla-antes-de-citar-filial]].
+
+---
+
+**RESOLVIDO em 21/ago/2026, pelas bases novas do DW.** As extrações
+`dm_volumetriaRecebimento.csv` e `dm_volumetriaExpedicao.csv` (36.221 + 41.922
+linhas, jan–ago/26, processo `catering_to_dw_volumetry_v01`) trazem a coluna
+`NOME_UND`, que não existia no `fato.csv`. Com ela:
+
+- **MAQ e RPII não são "filial em instância errada": são unidades próprias.**
+  `MAQ` = `001/022` = **MAIRINQUE**; `RPII` = `001/024` = **SF RPII -
+  RIBEIRAO**. As duas têm `NOME_UND` próprio e volume comparável ao de uma
+  unidade (Mairinque 8,0 kt de recebimento em jan–ago; Ribeirão 4,7 kt, e ela
+  para de movimentar depois de abr/26). O P-10 estava certo no fato — aquele
+  movimento não é RMSPII — mas errado na conclusão: não é resíduo, é unidade.
+- **`NOME_UND` é o nível do BI.** "RMSPII - BARUERI" já reúne 001+015+016 num
+  valor só, sem de-para externo. Usar `NOME_UND` como unidade e
+  `NK_INSTANCIA` + `NK_SLIN_FILIAL` como armazém.
+- **Nunca usar a filial SLIN sozinha:** `001/001` aparece em DUAS unidades
+  (RMSPII - BARUERI e UNIDADE CURITIBA) e só a instância separa.
+- **O conflito do CNPJ de 015/016 ficou do lado do dado transacional:** nas duas
+  bases novas, `015` e `016` vêm com `NK_FILIAL = 06975242000268` em todas as
+  linhas, e só `001` vem com `...187` — o mesmo que o `volumetriaLucios.csv`
+  mostrou. Ou seja, três extrações independentes contra o cadastro Protheus que
+  a Maria trouxe. Consequência prática: **agrupar por CNPJ não separa 015 de
+  016**, e a RMSPII do BI por CNPJ exige `...187` + `...268` juntos.
+- A mesma unidade pode vir em duas instâncias: a SANCA aparece em
+  `SLIN_RMSPIV_PRD` e também em `SLIN_RMSPII_PRD` (131 linhas). Agrupando por
+  `NOME_UND` as duas somam certo; por instância, parece faltar.
+
+Ver [[radar-recebimento-fonte-dw]].
