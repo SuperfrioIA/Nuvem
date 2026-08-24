@@ -26,6 +26,9 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 
 ## Regras para IA
 
+- Antes de iniciar processos, rodar testes ou validar algo localmente, ler
+  `docs/EXECUCAO_LOCAL.md` — fonte oficial do método real de subir, testar e
+  encerrar o projeto nesta máquina.
 - Fase atual: **construção da V2 — volumetria integrada e cockpit visual**
   (aberta em 06/ago/2026; V2.1, V2.1.1 e V2.2 feitos e deployados; V2.3 e V2.4
   commitados em 07/ago/2026; **V2.5 (cockpit visual), V2.6 (conciliação com o
