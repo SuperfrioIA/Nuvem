@@ -95,6 +95,7 @@ sai quando o novo provar o mesmo número, não antes.
 | **Incremento** | por **`DW_DATA_ALTERACAO`**, não só `DW_DATA_INCLUSAO` (linha muda entre extrações). Idempotente pela PK. **O DW insere e altera, nunca apaga** — logo não precisa de varredura de PKs para detectar remoção |
 | **Tela** | barra de filtros + **Matriz** + planilha aberta (100 linhas) + download do recorte. **Só isso** — o resto do artefato não entra na V3 |
 | **Matriz** | **unidade > cliente > tipo de entrada**, um mês por coluna, 12 unidades por página — igual ao artefato |
+| **Data que agrega** | **`nk_calendario`** (Maria, 24/ago/2026) — a data do **movimento**, não a da solicitação. Guia pedida em 31/jan e expedida em 02/fev conta em **fevereiro**. É a data que o calendário do DW usa, e a que fecha melhor contra o `fato.csv`. `data_solic` continua guardada, para conciliação |
 | **Medidas** | as 5 lentes do artefato: peso líquido, peso bruto, pallets, volumes, valor. Expedição nas 3 faixas: solicitado, atendido, separado |
 | **Guia** | **fora da Matriz** — contagem distinta não soma por linha. Sem `COUNT(DISTINCT)` na tela principal |
 | **Pallet** | só existe na **entrada**. Nenhuma das 3 faixas da expedição tem pallet — escolher Pallets mostra entrada com número e saída vazia. É a fonte, não defeito |
@@ -168,12 +169,12 @@ Nenhum dos dois é defeito da V3. Os dois precisam estar **declarados na tela**.
 | A-2 | ~~Auditoria de acesso: só login, ou toda consulta?~~ — **só login e download** (Maria, 24/ago/2026) | fechada |
 | A-3 | Usuário `integracao_dados_catering` — pedido em aberto na Valcann. Falta: versão do Oracle (decide se a VM precisa do Instant Client), `service name` x SID, schema/owner das tabelas, política de expiração de senha | Valcann / Maria |
 | A-4 | ~~Nome do pacote novo no repo~~ — **decidido em 24/ago/2026: `catering/`**, pelo escopo do negócio e não pela métrica (já existe dado de ocupação e capacidade no projeto, que um dia pode entrar como outra métrica do mesmo escopo) | fechada |
-| A-5 | **Qual data a Matriz agrega**: `nk_calendario` (a do calendário do fato, que o BI usa) ou `data_solic` (a que o artefato usa)? Descoberto na medição do V3.0 — ver abaixo | Maria |
+| A-5 | ~~Qual data a Matriz agrega~~ — **`nk_calendario`** (Maria, 24/ago/2026): *"conta como expedida em fevereiro. Calendário."* A data que vale é a do **movimento**, não a do pedido | fechada |
 | A-6 | **Parcialmente fechada** (Maria, 24/ago/2026): `CONG` conta como congelado, `RESFRIADO` é classe nova, `AGUA / CARVAO` é seco — implementado, e o não-classificado caiu de 3,2% para **1,3%** do peso. **Segue aberto:** `CONSOLIDADOR` e `CONSOLIDADOR - 14025`, **3.872,5 t**, que são 97% do que restou e não foram perguntados | Maria |
 
-O A-3 é o único que bloqueia lote, e bloqueia **apenas** o V3.5. O A-5 e o A-6
-não bloqueiam o schema (ele guarda as duas datas e a sentinela), mas mudam
-número na tela e precisam de resposta antes do V3.2.
+O A-3 é o único que bloqueia lote, e bloqueia **apenas** o V3.5. O A-6 não
+bloqueia o schema (a sentinela já existe), mas o resíduo do `CONSOLIDADOR`
+aparece na tela como categoria própria até ser decidido.
 
 ---
 
@@ -195,7 +196,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 |---|---|---|
 | **V3.0** | Contrato e schema: fato no grão do DW, migrations, sem carga — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.1** | Carregador contra os CSVs, idempotente por PK, com registro de rodada; suíte nova | não |
-| **V3.2** | Filtros + Matriz. **Aceite: mesmo número do artefato**, célula por célula | não |
+| **V3.2** | Filtros + Matriz. **Aceite: mesmo número dos CSVs agregados por `nk_calendario`**, célula por célula — ver ressalva abaixo | não |
 | **V3.3** | Planilha aberta (100 linhas, paginação no servidor) + download do recorte em streaming; auditoria de download | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento 07h05/15h05 | **sim** |
@@ -203,10 +204,26 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.7** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.8** | Laboratório novo, sobre o dado do DW | não autorizado |
 
-**Ressalva sobre o V3.2:** a visão ainda muda — palavra do time em 21/ago, "vai
-mudar todo dia". Por isso o V3.2 para e é apresentado antes de qualquer tela
-adicional. Construir cinco páginas de uma vez é repetir exatamente o erro que
-gerou a bagunça que a V3 está corrigindo.
+**Ressalva sobre o V3.2 — o aceite não é literalmente o artefato.** O artefato
+agrega por `data_solic`; a aplicação agrega por `nk_calendario` (A-5). Comparar
+os dois direto acusaria diferença onde não há erro nenhum. Então:
+
+- a referência do aceite é **os mesmos CSVs, agregados por `nk_calendario`**,
+  célula por célula;
+- diferença contra o artefato **no meio do período** é bug e tem que ser
+  investigada (os totais mensais batem em ≤1,2% de jan a jul);
+- diferença **nas bordas do período** é esperada e é a própria decisão A-5 —
+  dez/2025 tem 1.408,8 t por solicitação contra 133,9 t por calendário.
+
+Se em algum momento incomodar apresentar artefato e aplicação com números
+diferentes na borda, o artefato pode ser reconstruído por calendário — é uma
+linha no `ler_dw_volumetria.py`. Não foi feito: o artefato está publicado e
+aprovado como está.
+
+**A visão ainda muda** — palavra do time em 21/ago, "vai mudar todo dia". Por
+isso o V3.2 para e é apresentado antes de qualquer tela adicional. Construir
+cinco páginas de uma vez é repetir exatamente o erro que gerou a bagunça que a
+V3 está corrigindo.
 
 ---
 
