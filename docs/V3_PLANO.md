@@ -3,7 +3,7 @@
 **Este documento é a fonte única do status da V3.** Criado em 24/ago/2026, na
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
-**Autorizados e feitos até agora: V3.0 e V3.1** (24/ago/2026). Do V3.2 em
+**Autorizados e feitos até agora: V3.0, V3.1 e V3.2** (24/ago/2026). Do V3.3 em
 diante a divisão em lotes na seção final é proposta, não plano em execução —
 autorização é por lote, como na V1 e na V2.
 
@@ -209,7 +209,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 |---|---|---|
 | **V3.0** | Contrato e schema: fato no grão do DW, migrations, sem carga — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.1** | Carregador contra os CSVs, idempotente pela **chave natural** (não pela PK do DW — ver V3.0), com registro de rodada; suíte nova — **feito em 24/ago/2026**, ver seção abaixo | não |
-| **V3.2** | Filtros + Matriz. **Aceite: mesmo número dos CSVs agregados por `nk_calendario`**, célula por célula — ver ressalva abaixo | não |
+| **V3.2** | Filtros + Matriz, com aceite célula por célula contra os CSVs agregados por `nk_calendario` — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.3** | Planilha aberta (100 linhas, paginação no servidor) + download do recorte em streaming; auditoria de download | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento 07h05/15h05 | **sim** |
@@ -527,11 +527,135 @@ V1/V2 foi apagado ou alterado.
 
 ---
 
+## Lote V3.2 — Filtros + Matriz (feito, 24/ago/2026)
+
+Autorizado pela Maria em 24/ago/2026. Entregou a agregação, o app próprio da V3
+e a tela. **Sem planilha aberta, sem download, sem login, sem Oracle, sem
+deploy** — e sem tocar em `backend/` ou `frontend/`.
+
+### App separado, e não router dentro do `backend/main.py`
+
+Decisão da Maria: *"V3 é um projeto totalmente diferente"*. Um router no
+`backend/main.py` deixaria `backend/` "intocado exceto uma linha", que não é
+intocado. Com app própria (`catering/app.py`, porta 8003 local):
+
+- `backend/` fica intacto de verdade;
+- a V3 sobe, cai e faz rollback sem encostar no que serve a operação hoje;
+- o desmonte do V3.6 é remover um serviço, não editar código da V2.
+
+O **banco é o mesmo** — as migrations seguem na mesma cadeia. Separar o dado
+exigiria segundo Postgres, backup próprio e conciliação entre os dois, sem
+ganho. `tests/test_catering_app.py::test_app_da_v3_nao_depende_do_app_da_v2`
+confere os **imports** do módulo e falha se alguém importar do `backend/` —
+"separado" precisa ser verificável, não prometido.
+
+### A Matriz
+
+```text
+entrada:  unidade → cliente → operação
+saída:    unidade → cliente → faixa → operação
+```
+
+- **Coluna é do tempo; medida que se repete vira linha** — as 3 faixas da saída
+  abrem dentro do cliente ("se não fica indo pro lado", 18/ago). Confirmado no
+  navegador: sem rolagem horizontal.
+- **Cada faixa leva os próprios filhos.** Expandir *Atendido pelo estoque*
+  mostra as operações daquela faixa, não as da faixa do botão.
+- **O nível de cima mostra a faixa escolhida**, e a tela declara que as três
+  **não somam entre si**.
+- `operação` é o `descr_oper_wms` (12 valores distintos na entrada, 74% em
+  `NÃO TROCA NOTA DE ARMAZENAGEM`). **Leitura do contrato escrito, não do
+  artefato** — que já não existe. Por isso `matriz.HIERARQUIA` é tupla
+  configurável: trocar o 3º nível é uma linha, não uma reescrita. **Falta a
+  Maria confirmar olhando a tela.**
+- **Duas matrizes, não uma.** O `V3_PLANO` deixava o formato da visão conjunta
+  para este lote; a resposta é que não existe: as hierarquias diferem (a saída
+  tem `faixa`) e as medidas não são comparáveis linha a linha.
+- Agrega ao vivo. Sem cubo, sem materialização — o índice
+  `(nk_calendario, nk_wms_filial)` da 0019 serve exatamente este filtro.
+
+### O aceite
+
+`test_aceite_celula_por_celula_contra_os_csvs` calcula a Matriz **duas vezes por
+caminhos independentes** — em Python puro lendo os CSVs, e pelo SQL — e compara
+**cada célula**, em 4 combinações (rec/liq, rec/pal, exp/liq, exp/val). O
+caminho de Python não importa `matriz.py`, não usa o carregador e reimplementa
+o de-para da sigla como dict literal; se compartilhasse, os dois erros seriam o
+mesmo erro. Isso substitui o lado a lado com o artefato que se perdeu.
+
+### Defeitos que só o navegador achou
+
+Confirma `memory/validar-tela-no-navegador.md` — lote de tela não fecha por
+leitura:
+
+1. **`#corpo` deixava de existir** depois do primeiro desenho, então o segundo
+   `carrega()` quebrava com `TypeError` ao trocar de movimento. A referência
+   estável é `.rolagem`.
+2. **Um byte nulo** tinha entrado como separador de caminho da árvore — o
+   arquivo virava binário para `grep` e `file`. Trocado pelo *unit
+   separator* (`\u001f`), que não aparece em sigla,
+   CNPJ nem descrição de operação — e por isso não pode colidir com chave.
+3. Rótulos de tela sem acento (`Peso liquido`, os dois avisos, a trilha de
+   níveis na seção de método). `contrato.LENTES[...]["nome"]` é texto de tela e
+   passou a ir acentuado, diferente do resto do módulo, que é ASCII por
+   convenção de código.
+
+### Decisões de tela
+
+- **Página é número.** Uma linha por elemento; método, procedência, de-para e
+  limitações ficam numa seção "Fontes & método" só deles
+  (`memory/pagina-mostra-numero-nao-texto.md`).
+- **Aviso só quando o caso ocorre.** Pallets na saída mostra coluna vazia com a
+  razão; nas outras lentes nenhum aviso aparece.
+- **Pallets fica visível e desabilitado** na saída, não escondido: esconder
+  faria parecer que a medida não existe, quando ela não existe *ali*.
+- **Mês vazio é coluna vazia, não coluna ausente** — coluna que desaparece faz
+  as outras deslizarem e a comparação passa a mentir.
+- **A tela não soma nada.** Todo total vem do backend, inclusive o de cada nó
+  (lição do V2.1). Há teste conferindo que o nó de cima é a soma dos filhos.
+- **Número vai como texto no JSON.** Peso e R$ não passam pelo float do
+  JavaScript; a conversão kg→t é da tela.
+- **Opções de filtro saem do dado**, não de lista fixa: unidade, cliente e
+  operação novos aparecem sozinhos.
+- **Sem FK, então `LEFT JOIN` com queda para a fonte.** Unidade ou cliente que
+  ainda não entrou na dimensão aparece com o rótulo cru — desaparecer em
+  silêncio deixaria o número menor sem ninguém ver. Tem teste.
+
+### Como rodar local
+
+```
+python -m uvicorn catering.app:app --host 127.0.0.1 --port 8003
+```
+
+Porta 8003 para não colidir com a V2 (8002). **Não há serviço no compose ainda,
+de propósito:** o app não tem login (V3.4), e criar o serviço agora deixaria uma
+tela sem autenticação a um `docker compose up` da VM. O compose é V3.6, depois
+do login.
+
+### Arquivos
+
+- `catering/consulta/{__init__,matriz}.py`, `catering/app.py`
+- `catering/web/matriz.html`, `catering/web/logo.png`
+- `tests/test_catering_matriz.py` (11 testes), `tests/test_catering_app.py` (9)
+- `catering/contrato.py`: só o rótulo acentuado da lente
+
+### O que este lote NÃO fez
+
+Planilha aberta e download (V3.3), login (V3.4), Oracle e agendamento (V3.5),
+deploy e compose (V3.6). O `CONSOLIDADOR` da A-6 aparece na tela como
+`NAO_CLASSIFICADO` até ser decidido.
+
+---
+
 ## Regras de trabalho
 
 Um lote por vez; validar migrations (upgrade e downgrade), atualizar este
 documento, commit isolado, verificação independente por agente separado e
 **aguardar autorização da Maria** antes do lote seguinte.
+
+Lote que entrega tela **não fecha por leitura**: abre no navegador, confere o
+console e exercita o fluxo. No V3.2 isso achou três defeitos, um deles um
+`TypeError` que aparecia no segundo clique.
 
 ### Qual suíte roda ao fechar um lote da V3
 

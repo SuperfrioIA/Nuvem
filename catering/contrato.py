@@ -162,8 +162,10 @@ COLUNAS_EXP = PROCEDENCIA + DIMENSOES + MEDIDAS_EXP
 # ------------------------------------------------------- leitura da tela
 # As 5 lentes do artefato. `pallet` so existe na ENTRADA -- nenhuma das tres
 # faixas da expedicao tem medida de pallet. Nao e defeito, e a fonte.
+# `nome` e rotulo de TELA, entao vai acentuado -- diferente do resto do modulo,
+# que e ASCII por convencao de codigo. Quem le a tela nao le o codigo.
 LENTES = {
-    "liq": {"nome": "Peso liquido", "unidade": "t", "rec": "qtde_peso2", "exp": "peso"},
+    "liq": {"nome": "Peso líquido", "unidade": "t", "rec": "qtde_peso2", "exp": "peso"},
     "bru": {"nome": "Peso bruto", "unidade": "t", "rec": "qtde_pbrt2", "exp": "pbrt"},
     "pal": {"nome": "Pallets", "unidade": "UA", "rec": "qtde_pallet", "exp": None},
     "vol": {"nome": "Volumes", "unidade": "cx", "rec": "qtde_vol2", "exp": "vol"},
