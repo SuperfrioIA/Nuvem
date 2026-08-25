@@ -132,6 +132,10 @@ class CursorFalso:
         if sql.rstrip().endswith("WHERE 1=0"):
             self.description = self.conexao.description
             self._resultado = iter(())
+        elif "COUNT(DISTINCT" in sql.upper():
+            self._resultado = iter([self.conexao.identidade])
+        elif "HAVING COUNT(*) > 1" in sql.upper():
+            self._resultado = iter(self.conexao.colisoes)
         elif sql.lstrip().upper().startswith("SELECT COUNT(*)"):
             self._resultado = iter([self.conexao.resumo])
         else:
@@ -149,12 +153,15 @@ class ConexaoFalsa:
     """Conexao de mentira. Guarda o que foi executado e se foi fechada."""
 
     def __init__(self, movimento="rec", linhas=(), resumo=None, erro=None,
-                 colunas=None):
+                 colunas=None, identidade=None, colisoes=()):
         self.description = [
             (nome,) for nome in (colunas or fonte_oracle.colunas_dw(movimento))
         ]
         self.linhas = list(linhas)
         self.resumo = resumo
+        # (total, distintas pela chave de hoje, + nk_calendario, + data_solic)
+        self.identidade = identidade or (1, 1, 1, 1)
+        self.colisoes = list(colisoes)
         self.erro = erro
         self.executados = []
         self.fechada = False
@@ -510,6 +517,70 @@ def test_sondar_nao_expoe_cliente_nem_cnpj():
     proibidas = {"raz_social", "nk_wms_cliente", "cnpj_cpf_cli", "nk_cliente"}
     for movimento in contrato.MOVIMENTOS:
         assert not (set(fonte_oracle.AMOSTRA[movimento]) & proibidas)
+
+
+def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
+    """O que a carga de 25/ago/2026 descobriu: a chave natural foi medida unica
+    em 36.300 linhas **de 2026**, e o DW passou a publicar 2023-2026. Sem data
+    na identidade, `num_gem` reciclado entre anos colide -- e o upsert recusa
+    com "cannot affect row a second time".
+
+    Esta medicao existe para a decisao ser tomada com numero, e nao com chute:
+    ela diz se a chave de hoje repete, e se somar uma das duas datas resolve."""
+    conexao = ConexaoFalsa(
+        "rec",
+        linhas=[linha_nativa("rec")],
+        resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
+                datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
+        identidade=(Decimal("201848"), Decimal("195000"), Decimal("201848"),
+                    Decimal("201000")),
+        colisoes=[("0000013953", "RMSPII", Decimal("2"),
+                   datetime(2023, 5, 4), datetime(2026, 2, 1))],
+    )
+    resumo = fonte_com(conexao).sondar("rec")
+
+    ident = resumo["identidade"]
+    assert ident["total"] == Decimal("201848")
+    assert ident["chave_atual"] < ident["total"], "e o caso que quebrou a carga"
+    assert ident["chave_mais_nk_calendario"] == ident["total"],         "somar o calendario tornaria a chave unica neste cenario"
+    assert ident["chave_mais_data_solic"] < ident["total"]
+
+    # e a colisao vem com o intervalo de datas, que e o que separa as duas
+    # explicacoes: gem reciclado entre anos, ou linha repetida no mesmo dia
+    gem, filial, quantas, de, ate = resumo["colisoes"][0]
+    assert (gem, filial, quantas) == ("0000013953", "RMSPII", Decimal("2"))
+    assert de.year != ate.year
+
+
+def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
+    """Consulta com `GROUP BY ... HAVING` sobre a tabela inteira nao se roda por
+    esporte: ela so acontece quando a contagem provou que ha o que olhar."""
+    conexao = ConexaoFalsa(
+        "rec",
+        linhas=[linha_nativa("rec")],
+        resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
+                datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
+        identidade=(Decimal("36592"), Decimal("36592"), Decimal("36592"),
+                    Decimal("36592")),
+    )
+    resumo = fonte_com(conexao).sondar("rec")
+    assert resumo["colisoes"] == []
+    assert not any("HAVING" in sql.upper() for sql, _ in conexao.executados)
+
+
+def test_chave_concatenada_sai_do_contrato_e_protege_nulo():
+    """A expressao e gerada de `CHAVE_NATURAL` -- lista escrita a mao aqui
+    divergiria do upsert sem ninguem notar. `NVL` porque um nulo colapsaria a
+    chave inteira e a medicao erraria para BAIXO justamente quando o dado
+    piorou; `CHR(31)` porque um valor com o separador dentro inventaria
+    duplicata."""
+    for movimento in contrato.MOVIMENTOS:
+        sql = fonte_oracle.sql_identidade(movimento)
+        for coluna in contrato.CHAVE_NATURAL:
+            nome = contrato.coluna_dw(coluna, movimento)
+            assert f"NVL(TO_CHAR({nome}), ' ')" in sql, f"{movimento}: {nome}"
+        assert sql.count("CHR(31)") >= len(contrato.CHAVE_NATURAL) - 1
+        assert "'|'" not in sql, "separador tem que ser impossivel no dado"
 
 
 # =================================================== somente leitura

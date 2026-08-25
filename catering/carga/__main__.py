@@ -45,6 +45,24 @@ def _sondagem(fonte, movimentos) -> int:
         print(f"  linhas            : {resumo['linhas']:,}".replace(",", "."))
         print(f"  nk_calendario     : {cal_de} a {cal_ate}")
         print(f"  dw_data_alteracao : {alt_de} a {alt_ate}   <- o `desde` do incremental")
+        ident = resumo.get("identidade") or {}
+        if ident:
+            total = ident["total"]
+            print("  identidade (a chave natural ainda e unica?)")
+            for rotulo, chave in (
+                ("chave de hoje          ", "chave_atual"),
+                ("+ nk_calendario        ", "chave_mais_nk_calendario"),
+                ("+ data_solic           ", "chave_mais_data_solic"),
+            ):
+                valor = ident[chave]
+                falta = total - valor
+                veredito = "UNICA" if falta == 0 else f"repete em {falta} linha(s)"
+                print(f"    {rotulo} {valor} distinta(s) de {total}  -> {veredito}")
+        for gem, filial, quantas, de, ate in resumo.get("colisoes") or ():
+            mesma_data = de == ate
+            print(f"    colisao: gem {gem} / {filial} aparece {quantas}x, "
+                  f"de {de} a {ate}"
+                  f"{'  <- MESMO dia: linha repetida de verdade' if mesma_data else '  <- datas diferentes: falta data na identidade'}")
         if resumo["amostra"]:
             print("  primeira linha (tipo que o driver entrega -> valor que o banco recebe):")
             for coluna, (tipo, bruto, tipado) in resumo["amostra"].items():

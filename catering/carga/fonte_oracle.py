@@ -248,6 +248,66 @@ def sql_resumo(movimento):
     )
 
 
+# O separador da chave concatenada. `CHR(31)` (unit separator) e nao `|` porque
+# esta consulta existe para ser acreditada: se um valor contivesse o separador,
+# duas chaves diferentes colidiriam no texto e a medicao inventaria duplicata.
+_SEPARADOR = "CHR(31)"
+
+
+def _chave_concatenada(movimento) -> str:
+    """A chave natural como uma expressao de texto, gerada do contrato.
+
+    `NVL` em toda coluna: as seis sao NOT NULL no contrato, mas se uma vier nula
+    o `||` colapsaria a chave inteira para NULL e o `COUNT(DISTINCT)` a
+    ignoraria -- a medicao erraria para baixo exatamente no caso em que o dado
+    piorou."""
+    partes = [
+        f"NVL(TO_CHAR({contrato.coluna_dw(coluna, movimento)}), ' ')"
+        for coluna in contrato.CHAVE_NATURAL
+    ]
+    return f" || {_SEPARADOR} || ".join(partes)
+
+
+def sql_identidade(movimento) -> str:
+    """Mede se a chave natural ainda e unica, e o que a consertaria.
+
+    Quatro numeros na mesma varredura: o total, os distintos pela chave de hoje,
+    e os distintos somando cada uma das duas datas do fato. Se a chave de hoje
+    ficar abaixo do total e alguma das outras empatar com ele, a resposta e qual
+    coluna falta -- e nao um chute."""
+    chave = _chave_concatenada(movimento)
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    solicitacao = contrato.coluna_dw("data_solic", movimento)
+    return (
+        "SELECT COUNT(*), "
+        f"COUNT(DISTINCT {chave}), "
+        f"COUNT(DISTINCT {chave} || {_SEPARADOR} || TO_CHAR({calendario}, 'YYYY-MM-DD')), "
+        f"COUNT(DISTINCT {chave} || {_SEPARADOR} || TO_CHAR({solicitacao}, 'YYYY-MM-DD')) "
+        "FROM " + contrato.tabela(movimento)
+    )
+
+
+def sql_colisoes(movimento, quantas=3) -> str:
+    """As chaves que mais repetem, com o intervalo de datas de cada uma.
+
+    E o que separa as duas explicacoes possiveis, que pedem respostas opostas:
+    se a mesma chave aparece em ANOS diferentes, o `num_gem` se recicla e falta
+    data na identidade; se ela aparece duas vezes no MESMO dia, o DW passou a
+    ter linha repetida de verdade, e ai o assunto e com quem mantem o processo."""
+    grupo = ", ".join(
+        contrato.coluna_dw(coluna, movimento) for coluna in contrato.CHAVE_NATURAL
+    )
+    gem = contrato.coluna_dw("num_gem", movimento)
+    filial = contrato.coluna_dw("nk_wms_filial", movimento)
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    return (
+        f"SELECT {gem}, {filial}, COUNT(*), MIN({calendario}), MAX({calendario}) "
+        "FROM " + contrato.tabela(movimento) + " "
+        f"GROUP BY {grupo} HAVING COUNT(*) > 1 "
+        f"ORDER BY COUNT(*) DESC FETCH FIRST {int(quantas)} ROWS ONLY"
+    )
+
+
 def nomes_do_cursor(description):
     """Os nomes de coluna que o driver descreve, em maiusculas.
 
@@ -340,12 +400,26 @@ class FonteOracle:
                 self._conferir_contrato(cur, movimento)
                 cur.execute(sql_resumo(movimento))
                 linhas, cal_min, cal_max, alt_min, alt_max = cur.fetchone()
+                cur.execute(sql_identidade(movimento))
+                total, so_chave, com_calendario, com_solicitacao = cur.fetchone()
+                identidade = {
+                    "total": total,
+                    "chave_atual": so_chave,
+                    "chave_mais_nk_calendario": com_calendario,
+                    "chave_mais_data_solic": com_solicitacao,
+                }
+                colisoes = []
+                if so_chave is not None and total is not None and so_chave < total:
+                    cur.execute(sql_colisoes(movimento))
+                    colisoes = list(cur)
         finally:
             conexao.close()
 
         resumo["linhas"] = linhas
         resumo["nk_calendario"] = (cal_min, cal_max)
         resumo["dw_data_alteracao"] = (alt_min, alt_max)
+        resumo["identidade"] = identidade
+        resumo["colisoes"] = colisoes
 
         # A amostra passa pelo funil de verdade: o valor cru mostra o que o
         # driver entregou, e o coagido mostra o que o banco vai receber. E onde
