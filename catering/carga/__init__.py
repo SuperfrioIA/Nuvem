@@ -1,14 +1,17 @@
-"""Carregador do catering (V3.1): le a fonte, tipa, grava idempotente.
+"""Carregador do catering: le a fonte, tipa, grava idempotente.
 
-## A costura, que e o ponto do lote
+## A costura, que e o ponto do V3.1
 
-    extrair(movimento, desde)   -> fonte_csv.py     (o UNICO que conhece a fonte)
+    extrair(movimento, desde)   -> fonte_csv.py / fonte_oracle.py  (os UNICOS
+                                   que conhecem a fonte)
     transformar(linha)          -> transformacao.py (nao sabe de onde veio)
     gravar(cur, lote)           -> destino.py       (nao sabe de onde veio)
 
-O V3.5 troca **uma** classe -- `FonteOracle` com o mesmo `extrair(movimento,
-desde)` -- e nada mais muda. O `desde` ja esta na assinatura desde agora
-justamente para a troca nao mexer em assinatura de ninguem.
+O V3.1 previu que o V3.5 trocaria **uma** classe, e foi o que aconteceu:
+`fonte_oracle.FonteOracle` tem o mesmo `extrair(movimento, desde)`, e este
+arquivo ganhou uma guarda nova (a de carga vazia, abaixo) e nada mais. O
+`desde` estar na assinatura desde o V3.1 e o que evitou que a troca mexesse na
+assinatura de todo mundo.
 
 ## Idempotencia
 
@@ -34,6 +37,21 @@ numero quase certo, e ninguem saberia quais linhas faltam.
 pulada, contada e logada, sem derrubar nada. Medido nos CSVs de 21/ago: zero
 linha nessa situacao, entao a guarda e tripwire.
 
+## Carga COMPLETA que le zero linha e erro (V3.5)
+
+`sem_dado` e o desfecho normal do **incremental**: nada mudou no DW desde a
+marca d'agua. Numa carga **completa** ele nao e desfecho normal nenhum -- e a
+fonte inteira vindo vazia, e nesse caso a tela continua mostrando o dado da
+rodada anterior sem ninguem ser avisado. A A-7 do `V3_PLANO.md` pede
+literalmente que a carga nunca reporte ok com zero linha, e isto e a
+implementacao dela.
+
+Tabela ausente ja derruba sozinha (`ORA-00942`). O que esta guarda cobre e o
+caso pior, que a sondagem de 25/ago tornou concreto: a tabela **existe** e vem
+vazia, porque o processo do DW versiona e reconstroi objeto. Custa nada --
+rollback de rodada vazia nao desfaz nada, e o upsert nunca apaga -- e troca um
+silencio por um alarme.
+
 ## Ordem
 
 `carregar_tudo()` faz recebimento, expedicao e **depois** as dimensoes -- uma
@@ -53,6 +71,10 @@ from catering.carga import destino, dimensoes, transformacao
 logger = logging.getLogger(__name__)
 
 MOVIMENTOS = contrato.MOVIMENTOS
+
+
+class CargaVazia(Exception):
+    """Carga completa que nao trouxe nenhuma linha carregavel. Ver docstring."""
 
 
 @dataclass
@@ -147,6 +169,19 @@ def carregar_movimento(fonte, movimento, desde=None) -> Resultado:
             inseridas, atualizadas = destino.gravar(cur, movimento, carga_id, lote)
             resultado.inseridas += inseridas
             resultado.atualizadas += atualizadas
+
+            # Antes do commit de proposito: a rodada vazia tem que sair pelo
+            # mesmo caminho de falha das outras, com rollback e registro.
+            if desde is None and resultado.linhas_carregadas == 0:
+                raise CargaVazia(
+                    f"carga completa de {movimento} nao trouxe nenhuma linha "
+                    + (
+                        f"carregavel: as {resultado.fora_escopo} linha(s) da fonte "
+                        "estao todas fora do escopo do catering"
+                        if resultado.fora_escopo
+                        else "-- a fonte nao devolveu linha nenhuma"
+                    )
+                )
 
         conn.commit()
     except Exception as erro:

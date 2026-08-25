@@ -68,7 +68,19 @@ from catering import contrato
 logger = logging.getLogger(__name__)
 
 TABELA = {"rec": "cat_fato_recebimento", "exp": "cat_fato_expedicao"}
-TABELA_ORIGEM = {"rec": contrato.TABELA_REC, "exp": contrato.TABELA_EXP}
+
+
+def tabela_origem(movimento) -> str:
+    """O nome do objeto do DW que esta rodada leu, para `cat_cargas`.
+
+    Funcao e nao dicionario de modulo: o nome vive em configuracao desde o
+    V3.5 (`contrato.tabela()`), e um dicionario montado no import congelaria o
+    valor de quando o modulo foi carregado. Como esta MESMA string e a chave da
+    marca d'agua, congelar aqui e ler a configuracao la significaria uma carga
+    gravando um nome e o incremento seguinte procurando outro -- ou seja,
+    recarga completa silenciosa em toda rodada."""
+    return contrato.tabela(movimento)
+
 
 # Linhas por statement. 78 mil linhas nao exigem lote nenhum; o lote existe
 # porque a forma tem que ser a mesma quando a fonte for o Oracle e o volume
@@ -145,7 +157,7 @@ def abrir_carga(movimento, fonte_nome, janela=(None, None)) -> int:
                 VALUES (%s, %s, 'rodando', %s, %s)
                 RETURNING id
                 """,
-                (TABELA_ORIGEM[movimento], fonte_nome, janela[0], janela[1]),
+                (tabela_origem(movimento), fonte_nome, janela[0], janela[1]),
             )
             carga_id = cur.fetchone()[0]
         conn.commit()
@@ -214,7 +226,7 @@ def marca_dagua(movimento):
                   AND max_dw_data_alteracao IS NOT NULL
                 ORDER BY id DESC LIMIT 1
                 """,
-                (TABELA_ORIGEM[movimento],),
+                (tabela_origem(movimento),),
             )
             linha = cur.fetchone()
             return linha[0] if linha else None

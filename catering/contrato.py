@@ -17,6 +17,11 @@ renomeada porque as duas tabelas viram o mesmo formato do nosso lado. Fora
 dela a regra vale como invariante testada, e e o que permite o carregador
 mapear sem tabela de traducao. Ver `coluna_dw()`.
 
+O nome do OBJETO e outra coisa, e ele mudou no V3.5: e
+`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`, qualificado, vindo de `tabela()` -- que
+le configuracao. O nome da coluna da PK **nao** deriva dele (ver `PK_DW`): a
+tabela ganhou schema e sufixo de versao, a coluna nao.
+
 ## Achados da medicao que mudaram o desenho
 
 1. **`PK_FATO_VOL_*_CAT` nao e identidade estavel.** Ela vem 1..N sem buraco,
@@ -43,10 +48,71 @@ mapear sem tabela de traducao. Ver `coluna_dw()`.
    -- decisao A-5 do `V3_PLANO.md`, aberta. O schema guarda as duas.
 """
 
+import os
+import re
+
+MOVIMENTOS = ("rec", "exp")
+
 # --------------------------------------------------------------- tabelas
-TABELA_REC = "FATO_VOL_REC_CAT"
-TABELA_EXP = "FATO_VOL_EXP_CAT"
+# Nome QUALIFICADO, como a sondagem de 25/ago/2026 provou que o objeto se chama
+# (`DM_VOLUMETRIA`, e sufixo `_V01`). O nome que o projeto guardava antes --
+# `FATO_VOL_REC_CAT`, sem schema e sem sufixo -- e o que levou `ORA-00942` na
+# primeira sondagem. `ORA-00942` responde a mesma coisa para "nao existe" e
+# para "existe e voce nao pode ver", entao ele nunca prova falta de GRANT
+# sozinho.
+#
+# Os dois valores viram `cat_cargas.tabela_origem`, que e CHAVE da marca
+# d'agua (`destino.marca_dagua()` filtra por ela). Qualificar invalida a marca
+# d'agua das rodadas anteriores de proposito, e a hora de fazer isso e agora:
+# a V3 nunca rodou em producao, entao a recarga custa uma rodada completa
+# contra o DW. Depois do V3.6 custaria carga cheia em producao.
+TABELA_REC = "DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01"
+TABELA_EXP = "DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01"
 PROCESSO_DW = "catering_to_dw_volumetry_v01"
+
+# O nome da coluna da PK, MEDIDO, e deliberadamente desacoplado do nome da
+# tabela. Ele ja foi `"PK_" + TABELA_REC`, e isso funcionava so enquanto os
+# dois andavam juntos: a tabela ganhou schema e sufixo de versao, e a coluna
+# nao -- concatenar produziria `PK_DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`, que
+# nao existe. Derivar um identificador de outro e economia que cobra juros na
+# primeira vez que os dois divergem.
+PK_DW = {
+    "rec": "PK_FATO_VOL_REC_CAT",
+    "exp": "PK_FATO_VOL_EXP_CAT",
+}
+
+# Variavel de ambiente que troca o nome do objeto sem tocar em codigo. A A-7
+# do `V3_PLANO.md` diz que fica so a `_V01` e nao ha outra versao programada --
+# mas "nao programada" e ausencia de plano, nao garantia, e a `FATO_VOLUMETRIA`
+# do mesmo schema ja esta em `_V04`. Entao o nome vive em configuracao, num
+# lugar so.
+_ENV_TABELA = {"rec": "DW_TABELA_REC", "exp": "DW_TABELA_EXP"}
+
+# Nome de objeto nao pode ser bind: ele e concatenado no SQL. Entao ele precisa
+# de guarda propria -- identificador Oracle em maiuscula, com schema opcional.
+_NOME_VALIDO = re.compile(r"^[A-Z][A-Z0-9_$#]*(\.[A-Z][A-Z0-9_$#]*)?$")
+
+
+class TabelaInvalida(ValueError):
+    """Nome de objeto que nao pode entrar num SQL."""
+
+
+def tabela(movimento: str) -> str:
+    """O nome qualificado do objeto no DW, com a configuracao tendo a palavra
+    final. Vale para o SELECT do V3.5 e para `cat_cargas.tabela_origem` -- os
+    dois tem que dizer o MESMO nome, senao a marca d'agua procura por um nome
+    que a carga nunca gravou."""
+    if movimento not in MOVIMENTOS:
+        raise KeyError(movimento)
+    padrao = TABELA_REC if movimento == "rec" else TABELA_EXP
+    nome = (os.environ.get(_ENV_TABELA[movimento]) or padrao).strip()
+    if not _NOME_VALIDO.match(nome):
+        raise TabelaInvalida(
+            f"{_ENV_TABELA[movimento]}={nome!r} nao e nome de objeto Oracle "
+            "valido (esperado SCHEMA.TABELA em maiusculas)"
+        )
+    return nome
+
 
 # Escopo do negocio (Maria, 24/ago/2026): catering = instancias SLIN. As
 # outras instancias do DW (DISTROMAQ_PRD, MDLZ_PRD, DISTRO_PRD, SEEDS_PRD,
@@ -188,11 +254,10 @@ def coluna_exp(lente: str, faixa: str):
     return None if sufixo is None else f"qtde_{sufixo}_{faixa}"
 
 
-MOVIMENTOS = ("rec", "exp")
-
-# A unica coluna cujo nome nosso NAO e o do DW em minusculas.
+# A unica coluna cujo nome nosso NAO e o do DW em minusculas. Ver `PK_DW`:
+# nome medido, e nao derivado do nome da tabela.
 RENOMEADAS = {
-    "pk_dw": {"rec": "PK_" + TABELA_REC, "exp": "PK_" + TABELA_EXP},
+    "pk_dw": PK_DW,
 }
 
 

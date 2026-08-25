@@ -398,9 +398,10 @@ def test_linha_invalida_derruba_a_rodada_inteira(banco_migrado):
         "o registro da falha tem que sobreviver ao rollback, com a mensagem"
 
 
-def test_fora_de_escopo_e_pulado_e_fonte_vazia_e_sem_dado(banco_migrado):
+def test_fora_de_escopo_e_pulado_e_incremental_vazio_e_sem_dado(banco_migrado):
     """Duas linhas que nao entram, por motivos diferentes. Fora de escopo e
-    outro negocio (nao derruba); fonte vazia e o caso normal do incremental."""
+    outro negocio (nao derruba); incremental vazio e o caso normal do dia a
+    dia."""
     dentro = linha_crua("rec", num_gem="0000000001")
     fora = linha_crua("rec", num_gem="0000000002", nk_instancia="DISTROMAQ_PRD")
 
@@ -414,12 +415,42 @@ def test_fora_de_escopo_e_pulado_e_fonte_vazia_e_sem_dado(banco_migrado):
     # lidas - inseridas - atualizadas continue sendo exatamente as iguais
     assert _cargas()[-1][4] == 1
 
-    vazia = carregar_movimento(FonteFalsa({"rec": []}), "rec")
+    marca = destino.marca_dagua("rec")
+    vazia = carregar_movimento(FonteFalsa({"rec": []}), "rec", desde=marca)
     assert vazia.status == "sem_dado"
     assert _cargas()[-1][3] == "sem_dado"
     # rodada sem dado nao pode virar marca d'agua: o incremento seguinte
     # retomaria do lugar errado
     assert destino.marca_dagua("rec") == datetime(2026, 8, 20, 15, 26, 39)
+
+
+def test_carga_completa_vazia_e_erro_e_nao_sem_dado(banco_migrado):
+    """V3.5, A-7: a carga nunca pode reportar desfecho normal com zero linha.
+
+    `sem_dado` e certo no incremental (nada mudou no DW) e errado numa carga
+    COMPLETA -- ali ele significa a fonte inteira vindo vazia, com a tela
+    seguindo em frente com o dado velho e ninguem avisado. Tabela ausente ja
+    derruba sozinha com `ORA-00942`; esta guarda cobre o caso pior, a tabela
+    que existe e vem vazia porque o DW reconstroi objeto.
+
+    Os dois motivos possiveis produzem mensagens diferentes de proposito: "a
+    fonte nao devolveu linha" e um problema no DW ou no acesso; "todas fora do
+    escopo" e a instancia ter mudado, que e problema de negocio."""
+    from catering.carga import CargaVazia
+
+    with pytest.raises(CargaVazia, match="nao devolveu linha nenhuma"):
+        carregar_movimento(FonteFalsa({"rec": []}), "rec")
+
+    ultima = _cargas()[-1]
+    assert ultima[3] == "erro", "a rodada vazia tem que ficar no historico"
+    assert "nenhuma linha" in ultima[8]
+    assert destino.marca_dagua("rec") is None,         "rodada que falhou nao pode virar marca d'agua"
+
+    # o outro motivo: a fonte trouxe linha, mas nenhuma e do catering
+    fora = linha_crua("rec", nk_instancia="DISTROMAQ_PRD")
+    with pytest.raises(CargaVazia, match="fora do escopo"):
+        carregar_movimento(FonteFalsa({"rec": [fora]}), "rec")
+    assert _contar("cat_fato_recebimento") == 0
 
 
 def test_dimensoes_guardam_as_nossas_decisoes(banco_migrado):

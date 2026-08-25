@@ -1,20 +1,56 @@
 """Linha de comando do carregador.
 
-    python -m catering.carga --de docs/Analise
-    python -m catering.carga --de docs/Analise --incremental
-    python -m catering.carga --de docs/Analise --movimento rec
+    python -m catering.carga --de docs/Analise                 # CSV (padrao)
+    python -m catering.carga --fonte oracle --sondar           # SO le o DW
+    python -m catering.carga --fonte oracle                    # carga completa
+    python -m catering.carga --fonte oracle --incremental      # o que o cron roda
+    python -m catering.carga --fonte oracle --movimento rec
 
 Fino de proposito: so argumento, log e codigo de saida. Toda a decisao esta
-nos modulos, para que a carga agendada do V3.5 possa chamar `carregar_tudo()`
-direto sem passar por aqui.
+nos modulos, para que a carga agendada possa chamar `carregar_tudo()` direto
+sem passar por aqui.
 
 Sai com codigo 1 quando a rodada falha -- agendador que nao ve falha nao serve
 de agendador.
+
+## `--fonte` tem padrao `csv`
+
+Nao por gosto, e para que todo comando ja documentado no `V3_PLANO.md` e no
+`EXECUCAO_LOCAL.md` continue valendo exatamente como esta escrito. `--de` e
+`--fonte oracle` sao mutuamente exclusivos: um diretorio de CSV nao tem sentido
+lendo do banco, e aceitar em silencio o argumento que nao se usa e como se
+comeca a duvidar do que uma rodada realmente leu.
+
+## `--sondar` nao escreve em lugar nenhum
+
+Nem no DW, nem no Postgres -- entao ele nao precisa de `DATABASE_URL`, e serve
+como primeira prova de acesso numa maquina onde o banco local ainda nao existe.
+E o comando do aceite do V3.5.
 """
 
 import argparse
 import logging
 import sys
+
+
+def _sondagem(fonte, movimentos) -> int:
+    """Imprime a evidencia de leitura do DW. Nada aqui toca no Postgres."""
+    for movimento in movimentos:
+        resumo = fonte.sondar(movimento)
+        cal_de, cal_ate = resumo["nk_calendario"]
+        alt_de, alt_ate = resumo["dw_data_alteracao"]
+        print(f"\n{resumo['tabela']}  ({resumo['dsn']})")
+        print(f"  contrato          : {resumo['colunas_no_contrato']} coluna(s), "
+              "conferidas contra o que o cursor descreve -- sem divergencia")
+        print(f"  linhas            : {resumo['linhas']:,}".replace(",", "."))
+        print(f"  nk_calendario     : {cal_de} a {cal_ate}")
+        print(f"  dw_data_alteracao : {alt_de} a {alt_ate}   <- o `desde` do incremental")
+        if resumo["amostra"]:
+            print("  primeira linha (tipo que o driver entrega -> valor que o banco recebe):")
+            for coluna, (tipo, bruto, tipado) in resumo["amostra"].items():
+                print(f"    {coluna:<22} {tipo:<9} {bruto}  ->  {tipado}")
+    print("\nfim da sondagem -- nada foi escrito, nem no DW nem no Postgres")
+    return 0
 
 
 def main(argv=None) -> int:
@@ -23,8 +59,13 @@ def main(argv=None) -> int:
         description="Carrega a volumetria de catering na base da V3.",
     )
     parser.add_argument(
-        "--de", required=True, metavar="DIR",
-        help="diretorio com as duas extracoes do DW (ex.: docs/Analise)",
+        "--fonte", choices=("csv", "oracle"), default="csv",
+        help="de onde ler (padrao: csv, que e como o carregador foi construido)",
+    )
+    parser.add_argument(
+        "--de", metavar="DIR",
+        help="diretorio com as duas extracoes do DW (ex.: docs/Analise). "
+             "Obrigatorio com --fonte csv, proibido com --fonte oracle",
     )
     parser.add_argument(
         "--movimento", choices=("rec", "exp"), default=None,
@@ -34,7 +75,20 @@ def main(argv=None) -> int:
         "--incremental", action="store_true",
         help="retoma da marca d'agua da ultima rodada ok de cada movimento",
     )
+    parser.add_argument(
+        "--sondar", action="store_true",
+        help="so le o DW e mostra contrato, volume e marca d'agua; nao escreve "
+             "em lugar nenhum (exige --fonte oracle)",
+    )
     args = parser.parse_args(argv)
+
+    if args.fonte == "csv":
+        if not args.de:
+            parser.error("--de e obrigatorio com --fonte csv")
+        if args.sondar:
+            parser.error("--sondar existe so para --fonte oracle")
+    elif args.de:
+        parser.error("--de nao se aplica a --fonte oracle (a fonte e o banco)")
 
     logging.basicConfig(
         level=logging.INFO,
@@ -42,12 +96,21 @@ def main(argv=None) -> int:
     )
 
     # Import depois do parse de proposito: `--help` e erro de argumento nao
-    # precisam pagar o import do psycopg2 nem do pacote de carga inteiro.
+    # precisam pagar o import do psycopg2, do oracledb nem do pacote de carga.
     from catering.carga import carregar_movimento, carregar_tudo, destino
-    from catering.carga.fonte_csv import FonteCSV
 
-    fonte = FonteCSV(args.de)
+    if args.fonte == "oracle":
+        from catering.carga.fonte_oracle import FonteOracle
+
+        fonte = FonteOracle()
+    else:
+        from catering.carga.fonte_csv import FonteCSV
+
+        fonte = FonteCSV(args.de)
+
     try:
+        if args.sondar:
+            return _sondagem(fonte, (args.movimento,) if args.movimento else ("rec", "exp"))
         if args.movimento:
             desde = destino.marca_dagua(args.movimento) if args.incremental else None
             resultado = carregar_movimento(fonte, args.movimento, desde=desde)
