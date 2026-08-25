@@ -40,6 +40,78 @@ aí vira decisão (trocar a porta no compose + realinhar o pedido da Valcann).
 
 ---
 
+## Passo 1.1 — Escopo dos comandos de container (medido em 25/ago/2026)
+
+**A VM roda quatro projetos, de times diferentes, no mesmo Docker.** Levantado com
+`docker ps` em 25/ago/2026:
+
+| projeto | containers |
+|---|---|
+| Nuvem IA (este) | `nuvemia-nuvem-app-1`, `nuvemia-nuvem-db-1` |
+| Conciliador | `conciliador_frontend`, `conciliador_backend`, `conciliador_db` |
+| Hub | `superfrio-hub`, `superfrio-db` |
+
+**O nome do projeto Compose na VM é `nuvemia`**, não `nuvem-ia` — ele vem do nome do
+diretório (`/home/ubuntu/nuvemIA`), e é diferente do nome local. Todo filtro por nome
+tem que usar o da VM.
+
+### Comandos que derrubam sistema de outro time
+
+Não é hipótese: um único comando amplo alcança os sete containers. Os cinco abaixo são
+os que aparecem em receita de internet e em memória muscular:
+
+| comando | o que ele realmente faz aqui |
+|---|---|
+| `docker stop $(docker ps -q)` | para **os sete** — Conciliador e Hub caem junto |
+| `docker system prune -a` | apaga imagem de todo container **parado**; o projeto do outro time não volta sem rebuild/pull |
+| `docker system prune --volumes` | apaga **volume** — é o banco do Conciliador e do Hub, sem backup no caminho |
+| `docker compose down` no diretório errado | Compose age sobre o projeto do **diretório atual**. Em `~/conciliador`, derruba o Conciliador |
+| `docker stop $(docker ps -q --filter name=db)` | casa com `nuvemia-nuvem-db-1`, `conciliador_db` **e** `superfrio-db` — três bancos, três projetos |
+
+E um que não atinge outro time, mas destrói dado nosso: **`docker compose down -v`**
+apaga o volume `nuvem_db_data`, que é o Postgres de produção da Nuvem IA.
+
+### A forma segura
+
+```bash
+pwd                                    # SEMPRE antes de qualquer comando compose
+docker ps --filter label=com.docker.compose.project=nuvemia   # só o nosso
+docker compose ps                      # do diretório certo, só este projeto
+```
+
+- Nunca `prune`, em nenhuma variante. Se faltar disco, resolver por nome, item a item.
+- Nunca parar/remover container por padrão genérico de nome.
+- `down -v` só com autorização explícita da Duda e backup confirmado.
+- **No V3.6**, ao acrescentar o serviço da V3 ao compose, subir **nomeando o serviço**
+  (`docker compose up -d <servico-novo>`) em vez de um `up -d` seco: o `up` recria
+  serviço cuja configuração mudou, e pode recriar o app da V2 sem necessidade.
+
+## Passo 1.2 — A VM alcança o DW Oracle (verificado em 25/ago/2026)
+
+Pré-requisito do V3.5/V3.6, verificado pela Maria **antes** de existir código que dependa
+dele — descobrir isso no dia do deploy travaria a subida:
+
+```bash
+getent hosts oracleprd-aws.superfrio.com.br
+timeout 5 bash -c "cat < /dev/null > /dev/tcp/oracleprd-aws.superfrio.com.br/1521"   && echo "PORTA 1521 ABRE" || echo "FALHOU"
+docker exec nuvemia-nuvem-app-1 python -c "import socket; s=socket.create_connection(('oracleprd-aws.superfrio.com.br',1521),5); print('ABRE DE DENTRO DO CONTAINER'); s.close()"
+```
+
+Resultado: **abre nos dois** — host e container. O nome resolve para **`172.31.80.11`**
+(host real `l001porcdb.superfrio.com.br`), e a VM é `172.31.49.141`: **mesma faixa
+`172.31.x.x`**, ou seja, tráfego interno da VPC, sem NAT nem gateway externo no caminho.
+
+Os dois testes existem porque são perguntas diferentes: o host pode alcançar e o
+container não (DNS do Docker é servidor embutido, e rede de container pode ter rota
+própria). Quem vai conectar é o processo da aplicação, então o teste que decide é o de
+dentro do container.
+
+Isto **não** prova que o listener do Oracle aceita sessão — prova que a rede chega. O
+handshake em modo thin já foi provado da máquina da Maria (Oracle 12.2, `service_name`,
+sem Instant Client).
+
+---
+
 ## Passo 2 — Deploy key do repo Nuvem
 
 A VM usa **uma deploy key por repo, com apelido de host** no `~/.ssh/config`
