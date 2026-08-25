@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Volumetria de catering — Nuvem IA</title>
+<link rel="icon" href="/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-azul-institucional:#071A3A; --brand-azul-corporativo:#0A2A5E;
+  --brand-azul-principal:#1E6FD9; --brand-azul-conexao:#3FA9F5;
+  --brand-amarelo:#FFC400; --brand-amarelo-suave:#FFD84D;
+  --brand-branco:#FFFFFF; --brand-cinza-claro:#C7D2E3; --brand-azul-escuro:#050F24;
+  --grad-institucional:linear-gradient(135deg,#050F24 0%,#071A3A 50%,#0A2A5E 100%);
+  --grad-conexao:linear-gradient(135deg,#1E6FD9 0%,#3FA9F5 100%);
+  --font-primary:'Montserrat',sans-serif;
+  --radius-sm:6px; --radius-md:12px;
+  --shadow-sm:0 2px 8px rgba(7,26,58,.12); --shadow-md:0 6px 20px rgba(7,26,58,.18);
+  --superficie:#F7F9FC; --cartao:#F0F4FA;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-primary);background:var(--superficie);
+     color:var(--brand-azul-institucional);font-size:13px}
+
+/* ---------- cabecalho: escuro, com o logo e as ondas da marca ---------- */
+header{background:var(--grad-institucional);color:var(--brand-branco);
+       padding:14px 22px 0;position:relative;overflow:hidden}
+.topo{display:flex;align-items:center;gap:18px;position:relative;z-index:2}
+header img{height:34px}
+.titulo{font-weight:700;font-size:15px;letter-spacing:.2px}
+.titulo span{display:block;font-weight:400;font-size:11px;color:var(--brand-cinza-claro)}
+.ondas{position:absolute;left:0;right:0;bottom:-2px;height:26px;z-index:1;opacity:.55}
+.sessao{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px}
+.sessao .quem{text-align:right;line-height:1.35}
+.sessao .quem b{display:block;font-size:12px}
+.sessao .papel{color:var(--brand-amarelo);font-weight:600;text-transform:uppercase;
+  letter-spacing:.5px;font-size:10px}
+.sessao a,.sessao button{font-family:var(--font-primary);font-size:11px;font-weight:600;
+  padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;text-decoration:none;
+  border:1px solid rgba(199,210,227,.45);background:transparent;
+  color:var(--brand-branco)}
+.sessao a[hidden]{display:none}
+
+/* ---------- barra de filtros ---------- */
+.filtros{background:var(--brand-branco);border-bottom:1px solid var(--brand-cinza-claro);
+         padding:12px 22px;display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;
+         box-shadow:var(--shadow-sm)}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo label{font-size:10px;font-weight:600;text-transform:uppercase;
+             letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+input[type=month],select{font-family:var(--font-primary);font-size:12px;padding:6px 8px;
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-sm);
+  background:var(--brand-branco);color:var(--brand-azul-institucional)}
+select[multiple]{min-width:150px;height:64px}
+.grupo{display:flex;gap:0;border:1px solid var(--brand-cinza-claro);
+       border-radius:var(--radius-sm);overflow:hidden}
+.grupo button{font-family:var(--font-primary);font-size:12px;font-weight:500;
+  padding:6px 11px;border:0;background:var(--brand-branco);cursor:pointer;
+  color:var(--brand-azul-corporativo);border-right:1px solid var(--brand-cinza-claro)}
+.grupo button:last-child{border-right:0}
+.grupo button[aria-pressed=true]{background:var(--brand-amarelo);
+  color:var(--brand-azul-institucional);font-weight:700}
+.grupo button:disabled{opacity:.4;cursor:not-allowed}
+.acoes{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
+.primario{font-family:var(--font-primary);font-weight:700;font-size:12px;
+  padding:8px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
+  background:var(--brand-amarelo);color:var(--brand-azul-institucional)}
+.secundario{font-family:var(--font-primary);font-weight:500;font-size:12px;
+  padding:8px 14px;border:1px solid var(--brand-azul-conexao);
+  border-radius:var(--radius-sm);cursor:pointer;background:transparent;
+  color:var(--brand-azul-principal)}
+
+/* ---------- conteudo ---------- */
+main{padding:18px 22px 40px}
+.linha-titulo{display:flex;align-items:baseline;gap:10px;margin:0 0 4px}
+h2{font-size:14px;font-weight:700;margin:0}
+.desc{font-size:11px;color:var(--brand-azul-corporativo);opacity:.8;margin:0 0 12px}
+.aviso{background:#FFF8E1;border-left:3px solid var(--brand-amarelo);
+  padding:8px 12px;border-radius:var(--radius-sm);font-size:12px;margin:0 0 12px;
+  line-height:1.45}
+
+/* ---------- a matriz ---------- */
+.rolagem{overflow-x:auto;background:var(--brand-branco);
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-md);
+  box-shadow:var(--shadow-sm)}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+th,td{padding:6px 10px;text-align:right;white-space:nowrap}
+th{background:var(--brand-azul-institucional);color:var(--brand-branco);
+   font-weight:600;font-size:11px;position:sticky;top:0;z-index:3}
+th.rotulo,td.rotulo{text-align:left;position:sticky;left:0;z-index:2;
+  min-width:320px;max-width:420px;white-space:normal}
+th.rotulo{z-index:4}
+td.rotulo{background:var(--brand-branco)}
+tbody tr:hover td{background:#EEF3FB}
+tbody tr:hover td.rotulo{background:#EEF3FB}
+tr.n0>td{font-weight:700;border-top:2px solid var(--brand-azul-principal)}
+tr.n0>td.rotulo{background:var(--cartao)}
+tr.n1>td{font-weight:600}
+tr.n2>td,tr.n3>td{font-weight:400;color:#33507d}
+tr.faixa>td{font-style:normal;background:#FBFCFE}
+tr.faixa>td.rotulo{background:#FBFCFE}
+td.rotulo{padding-left:calc(10px + var(--recuo,0px))}
+.abre{background:none;border:0;cursor:pointer;font-family:var(--font-primary);
+  font-size:11px;color:var(--brand-azul-principal);padding:0 6px 0 0;font-weight:700}
+.vazio{color:var(--brand-cinza-claro)}
+tfoot td{font-weight:800;background:var(--brand-azul-corporativo);
+  color:var(--brand-branco);position:sticky;bottom:0}
+tfoot td.rotulo{background:var(--brand-azul-corporativo)}
+.paginacao{display:flex;gap:10px;align-items:center;justify-content:flex-end;
+  margin-top:10px;font-size:11px}
+
+/* ---------- a planilha ---------- */
+/* Cliente e Operacao sao largas (`NAO TROCA NOTA DE ARMAZENAGEM`) e empurravam
+   a coluna da MEDIDA fora da tela -- numa tela cujo principio e mostrar o
+   numero, isso e defeito. Teto com reticencias, e o texto inteiro no title. */
+/* A primeira coluna da planilha NAO usa `.rotulo` da Matriz: aquela tem
+   min-width 320px (nome de cliente com hierarquia), e aqui e a data -- 320px
+   empurravam a coluna do numero fora da tela. */
+table.planilha th.primeira,table.planilha td.primeira{text-align:left;
+  position:sticky;left:0;z-index:2;min-width:92px;white-space:nowrap}
+table.planilha td.primeira{background:var(--brand-branco)}
+table.planilha th.primeira{z-index:4}
+table.planilha tbody tr:hover td.primeira{background:#EEF3FB}
+table.planilha td.texto{max-width:230px;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap}
+table.planilha td.numero{font-variant-numeric:tabular-nums;font-weight:600}
+table.planilha th{white-space:nowrap}
+
+/* ---------- baixar o recorte ---------- */
+.baixar{display:flex;align-items:center;gap:10px;margin-top:14px;flex-wrap:wrap}
+.baixar-rotulo{font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+.nota{font-size:11px;color:var(--brand-azul-corporativo);opacity:.85;
+  max-width:640px;line-height:1.45}
+
+/* ---------- fontes & metodo: um lugar so ---------- */
+details.metodo{margin-top:22px;background:var(--brand-branco);
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-md);
+  padding:12px 16px}
+details.metodo summary{font-weight:700;font-size:12px;cursor:pointer;
+  color:var(--brand-azul-corporativo)}
+details.metodo div{margin-top:10px;font-size:12px;line-height:1.6}
+details.metodo ul{margin:6px 0 0;padding-left:18px}
+.carregando{padding:30px;text-align:center;color:var(--brand-azul-corporativo)}
+.erro{background:#FDECEC;border-left:3px solid #C0392B;padding:10px 12px;
+  border-radius:var(--radius-sm);font-size:12px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="topo">
+    <img src="/logo.png" alt="IceStar | SuperFrio">
+    <div class="titulo">Volumetria de catering
+      <span>Fonte: DW Oracle — <code>FATO_VOL_REC_CAT</code> / <code>FATO_VOL_EXP_CAT</code></span>
+    </div>
+    <div class="sessao">
+      <div class="quem"><b id="eu-nome">—</b><span class="papel" id="eu-papel"></span></div>
+      <a href="/administracao" id="link-admin" hidden>Administração</a>
+      <button id="sair" type="button">Sair</button>
+    </div>
+  </div>
+  <svg class="ondas" viewBox="0 0 1200 26" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0,18 C220,2 380,26 600,14 C820,2 980,24 1200,10 L1200,26 L0,26 Z" fill="#1E6FD9" opacity=".45"/>
+    <path d="M0,22 C240,10 420,26 640,18 C860,10 1000,26 1200,16 L1200,26 L0,26 Z" fill="#3FA9F5" opacity=".35"/>
+    <path d="M0,25 C240,14 420,26 640,21 C860,14 1000,26 1200,19" fill="none" stroke="#FFC400" stroke-width="1" opacity=".8"/>
+  </svg>
+</header>
+
+<div class="filtros">
+  <div class="campo">
+    <label for="de">De</label>
+    <input type="month" id="de">
+  </div>
+  <div class="campo">
+    <label for="ate">Até</label>
+    <input type="month" id="ate">
+  </div>
+  <div class="campo">
+    <label>Movimento</label>
+    <div class="grupo" id="movimento"></div>
+  </div>
+  <div class="campo">
+    <label>Medida</label>
+    <div class="grupo" id="lente"></div>
+  </div>
+  <div class="campo" id="campo-faixa">
+    <label>Faixa da expedição</label>
+    <div class="grupo" id="faixa"></div>
+  </div>
+  <div class="campo">
+    <label for="unidade">Unidade</label>
+    <select id="unidade" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="cliente">Cliente</label>
+    <select id="cliente" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="tipo">Tipo de estoque</label>
+    <select id="tipo" multiple></select>
+  </div>
+  <div class="campo">
+    <label for="operacao">Operação</label>
+    <select id="operacao" multiple></select>
+  </div>
+  <div class="campo">
+    <label>Visão</label>
+    <div class="grupo" id="visao"></div>
+  </div>
+  <div class="acoes">
+    <button class="secundario" id="limpar">Limpar</button>
+    <button class="primario" id="aplicar">Aplicar</button>
+  </div>
+</div>
+
+<main>
+  <div class="linha-titulo"><h2 id="titulo">Matriz</h2></div>
+  <p class="desc" id="desc"></p>
+  <div id="avisos"></div>
+  <div class="rolagem"><div class="carregando" id="corpo">Carregando…</div></div>
+  <div class="paginacao" id="paginacao"></div>
+
+  <div class="baixar">
+    <span class="baixar-rotulo">Baixar o recorte</span>
+    <button class="secundario" id="baixar-csv">CSV</button>
+    <button class="secundario" id="baixar-xlsx">Excel (xlsx)</button>
+    <span class="nota" id="nota-download"></span>
+  </div>
+
+  <details class="metodo">
+    <summary>Fontes &amp; método</summary>
+    <div id="metodo"></div>
+  </details>
+</main>
+
+<script>
+// A tela nunca renderiza identificador cru e nunca soma nada: todo total vem
+// do backend (lição do V2.1). Aqui só há formatação e navegação.
+const $ = s => document.querySelector(s);
+const ROTULO_NIVEL = {unidade:'Unidade', cliente:'Cliente', faixa:'Faixa',
+                     operacao:'Operação', tipo_estoque:'Tipo de estoque'};
+const trilha = niveis => niveis.map(n => ROTULO_NIVEL[n] || n).join(' › ');
+
+let OPCOES = null, ESTADO = {
+  visao:'matriz', movimento:'rec', lente:'liq', faixa:'solicitado',
+  pagina:1, abertos:new Set()
+};
+
+const fmt = (valor, unidade) => {
+  if (valor === null || valor === undefined) return '<span class="vazio">—</span>';
+  let n = Number(valor);
+  if (unidade === 't') { n = n / 1000; }          // a fonte manda kg
+  const casas = unidade === 't' ? 1 : (unidade === 'R$' ? 0 : 0);
+  return n.toLocaleString('pt-BR', {minimumFractionDigits:casas, maximumFractionDigits:casas});
+};
+
+function botoes(alvo, itens, chaveEstado, aoTrocar){
+  const el = $(alvo); el.innerHTML = '';
+  itens.forEach(it => {
+    const b = document.createElement('button');
+    b.textContent = it.rotulo;
+    b.setAttribute('aria-pressed', ESTADO[chaveEstado] === it.chave);
+    if (it.desabilitado) b.disabled = true;
+    b.onclick = () => { ESTADO[chaveEstado] = it.chave; ESTADO.pagina = 1;
+                        if (aoTrocar) aoTrocar(); desenhaBotoes(); carrega(); };
+    el.appendChild(b);
+  });
+}
+
+function desenhaBotoes(){
+  botoes('#movimento', [
+    {chave:'rec', rotulo:'Entrada'}, {chave:'exp', rotulo:'Saída'}
+  ], 'movimento', () => { ESTADO.abertos = new Set(); preencheOperacoes(); });
+
+  botoes('#lente', OPCOES.lentes.map(l => ({
+    chave:l.chave, rotulo:l.nome,
+    // Pallet na saída fica visível mas desabilitado: esconder faria parecer
+    // que a medida não existe; desabilitado diz que ela não existe ALI.
+    desabilitado: ESTADO.movimento === 'exp' && l.so_entrada
+  })), 'lente');
+
+  botoes('#faixa', OPCOES.faixas.map(f => ({chave:f.chave, rotulo:f.rotulo})), 'faixa');
+  $('#campo-faixa').style.display = ESTADO.movimento === 'exp' ? '' : 'none';
+
+  // Trocar de visao reseta a pagina: a Matriz pagina UNIDADE (12) e a planilha
+  // pagina LINHA (100) -- carregar a pagina 7 da planilha na Matriz mostraria
+  // vazio e pareceria defeito.
+  botoes('#visao', [
+    {chave:'matriz', rotulo:'Matriz'}, {chave:'planilha', rotulo:'Planilha'}
+  ], 'visao', () => { ESTADO.pagina = 1; });
+}
+
+function opcoesSelect(alvo, itens){
+  const el = $(alvo); el.innerHTML = '';
+  itens.forEach(it => {
+    const o = document.createElement('option');
+    o.value = it.chave !== undefined ? it.chave : it;
+    o.textContent = it.rotulo !== undefined ? it.rotulo : it;
+    el.appendChild(o);
+  });
+}
+
+function preencheOperacoes(){
+  opcoesSelect('#operacao', OPCOES.operacoes[ESTADO.movimento] || []);
+}
+
+const selecionados = alvo => Array.from($(alvo).selectedOptions).map(o => o.value);
+
+function parametros(){
+  const p = new URLSearchParams();
+  p.set('de', $('#de').value); p.set('ate', $('#ate').value);
+  p.set('movimento', ESTADO.movimento); p.set('lente', ESTADO.lente);
+  p.set('faixa', ESTADO.faixa); p.set('pagina', ESTADO.pagina);
+  selecionados('#unidade').forEach(v => p.append('unidade', v));
+  selecionados('#cliente').forEach(v => p.append('cliente', v));
+  selecionados('#tipo').forEach(v => p.append('tipo_estoque', v));
+  selecionados('#operacao').forEach(v => p.append('operacao', v));
+  return p;
+}
+
+// Separador de caminho: unit separator, que nao aparece em sigla, CNPJ
+// nem descricao de operacao -- e por isso nao pode colidir com chave.
+function caminho(pai, no){ return pai + '\u001f' + no.chave; }
+
+function linhas(nos, meses, unidade, nivel, pai, saida){
+  nos.forEach(no => {
+    const id = caminho(pai, no);
+    const temFilhos = no.filhos && no.filhos.length;
+    const aberto = ESTADO.abertos.has(id);
+    const tr = document.createElement('tr');
+    tr.className = 'n' + nivel + (no.nivel === 'faixa' ? ' faixa' : '');
+    const td = document.createElement('td');
+    td.className = 'rotulo';
+    td.style.setProperty('--recuo', (nivel * 16) + 'px');
+    if (temFilhos){
+      const b = document.createElement('button');
+      b.className = 'abre'; b.textContent = aberto ? '−' : '+';
+      b.setAttribute('aria-expanded', aberto);
+      b.onclick = () => { aberto ? ESTADO.abertos.delete(id) : ESTADO.abertos.add(id);
+                          redesenha(); };
+      td.appendChild(b);
+    } else { td.appendChild(document.createTextNode('   ')); }
+    td.appendChild(document.createTextNode(no.rotulo === null ? '(sem rótulo)' : no.rotulo));
+    tr.appendChild(td);
+    meses.forEach(m => {
+      const c = document.createElement('td');
+      c.innerHTML = fmt(no.valores[m], unidade);
+      tr.appendChild(c);
+    });
+    saida.push(tr);
+    if (temFilhos && aberto) linhas(no.filhos, meses, unidade, nivel + 1, id, saida);
+  });
+  return saida;
+}
+
+let ULTIMO = null;
+
+function redesenha(){
+  if (!ULTIMO) return;
+  const d = ULTIMO, u = d.lente.unidade;
+  const tabela = document.createElement('table');
+
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  const th0 = document.createElement('th');
+  th0.className = 'rotulo';
+  th0.textContent = trilha(d.niveis);
+  trh.appendChild(th0);
+  d.meses.forEach(m => { const th = document.createElement('th');
+    th.textContent = m; trh.appendChild(th); });
+  thead.appendChild(trh); tabela.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  if (!d.linhas.length){
+    const tr = document.createElement('tr'); const td = document.createElement('td');
+    td.colSpan = d.meses.length + 1; td.className = 'rotulo';
+    td.innerHTML = '<span class="vazio">Nenhuma linha no recorte.</span>';
+    tr.appendChild(td); tbody.appendChild(tr);
+  } else {
+    linhas(d.linhas, d.meses, u, 0, '', []).forEach(tr => tbody.appendChild(tr));
+  }
+  tabela.appendChild(tbody);
+
+  const tfoot = document.createElement('tfoot');
+  const trf = document.createElement('tr');
+  const tdf = document.createElement('td');
+  tdf.className = 'rotulo'; tdf.textContent = 'Total do recorte';
+  trf.appendChild(tdf);
+  d.meses.forEach(m => { const td = document.createElement('td');
+    td.innerHTML = fmt(d.total[m], u); trf.appendChild(td); });
+  tfoot.appendChild(trf); tabela.appendChild(tfoot);
+
+  const alvo = $('.rolagem');
+  alvo.innerHTML = ''; alvo.appendChild(tabela);
+}
+
+function paginacao(p){
+  const el = $('#paginacao');
+  if (p.paginas <= 1){ el.innerHTML = `${p.total_unidades} unidade(s)`; return; }
+  el.innerHTML = '';
+  const info = document.createElement('span');
+  info.textContent = `Página ${p.pagina} de ${p.paginas} — ${p.total_unidades} unidades, ${p.por_pagina} por página`;
+  const anterior = document.createElement('button');
+  anterior.className = 'secundario'; anterior.textContent = '‹ Anterior';
+  anterior.disabled = p.pagina <= 1;
+  anterior.onclick = () => { ESTADO.pagina--; carrega(); };
+  const proxima = document.createElement('button');
+  proxima.className = 'secundario'; proxima.textContent = 'Próxima ›';
+  proxima.disabled = p.pagina >= p.paginas;
+  proxima.onclick = () => { ESTADO.pagina++; carrega(); };
+  el.append(info, anterior, proxima);
+}
+
+function metodo(d){
+  const cargas = (OPCOES.cargas || []).map(c =>
+    `<li><code>${c.tabela}</code> — carga <strong>${c.fonte}</strong> concluída em ${c.quando}, ${Number(c.linhas).toLocaleString('pt-BR')} linhas</li>`
+  ).join('');
+  $('#metodo').innerHTML = `
+    <div>
+      <strong>De quando é o dado</strong>
+      <ul>${cargas || '<li>Nenhuma carga concluída.</li>'}</ul>
+    </div>
+    <div>
+      <strong>Como o número é somado</strong>
+      <ul>
+        <li>Agrega pela <strong>data do movimento</strong> (<code>nk_calendario</code>), não pela data da solicitação. Guia pedida em 31/jan e expedida em 02/fev conta em fevereiro.</li>
+        <li>Hierarquia: ${trilha(d.niveis)}. Coluna é o mês.</li>
+        <li>Escopo: catering — instâncias <code>SLIN</code>. Volume de outras instâncias do DW é outro negócio e está fora.</li>
+      </ul>
+    </div>
+    <div>
+      <strong>De-para e classificação</strong>
+      <ul>
+        <li>A unidade da SANCA vem do DW com sigla <code>RMSPV</code> e é exibida como <strong>RMSPIV</strong>. É a única exceção.</li>
+        <li>Cliente é a raiz do CNPJ; o rótulo é a razão social de maior peso quando a mesma raiz aparece com mais de uma grafia.</li>
+        <li><code>NAO_CLASSIFICADO</code> em tipo de estoque é sentinela, não erro: significa nome de estoque que a regra ainda não classifica.</li>
+      </ul>
+    </div>
+    <div>
+      <strong>Limitações declaradas</strong>
+      <ul>
+        <li>A <code>FATO_VOL_REC_CAT</code> não traz guia de recebimento cancelada — a tabela só carrega guia confirmada.</li>
+        <li>Na expedição, guia cancelada tem peso apenas na faixa <em>solicitado</em>: ~3% do número dessa faixa é pedido que não saiu. Trocar para <em>atendido</em> ou <em>separado</em> zera isso.</li>
+      </ul>
+    </div>`;
+}
+
+function urlDownload(formato){
+  // O download e SEMPRE o recorte inteiro dos filtros -- `pagina` sai de
+  // proposito: baixar uma pagina so nao e baixar o recorte (contrato).
+  const p = parametros();
+  p.delete('pagina');
+  p.set('formato', formato);
+  return '/api/download?' + p.toString();
+}
+
+/* V3.4: 401 e "a sessao expirou", nao "o servidor deu erro". Sem este desvio, a
+   tela mostraria "Recorte recusado: sessao ausente ou expirada" -- que manda a
+   pessoa mexer nos filtros para resolver um problema de login. */
+async function busca(url, opcoes){
+  const resposta = await fetch(url, opcoes);
+  if (resposta.status === 401){ window.location.replace('/login'); throw new Error('401'); }
+  return resposta;
+}
+
+async function carregaEu(){
+  const eu = await (await busca('/api/eu')).json();
+  $('#eu-nome').textContent = eu.nome;
+  $('#eu-papel').textContent = eu.papel;
+  // o link so aparece para quem ele serve -- visualizador que clicasse seria
+  // devolvido para ca pelo proprio servidor
+  $('#link-admin').hidden = eu.papel !== 'admin';
+}
+
+async function carrega(){
+  if (ESTADO.visao === 'planilha') return carregaPlanilha();
+  // `.rolagem` e o container ESTAVEL: o `#corpo` inicial e substituido
+  // pela tabela no primeiro desenho e deixa de existir.
+  const alvo = $('.rolagem');
+  alvo.innerHTML = '<div class="carregando">Carregando…</div>';
+  let resposta;
+  try { resposta = await busca('/api/matriz?' + parametros().toString()); }
+  catch (e) { alvo.innerHTML = `<div class="erro">Falha de rede: ${e}</div>`; return; }
+  if (!resposta.ok){
+    let detalhe = resposta.statusText;
+    try { detalhe = (await resposta.json()).detail || detalhe; } catch (e) {}
+    alvo.innerHTML = `<div class="erro">Recorte recusado: ${detalhe}</div>`;
+    return;
+  }
+  const d = await resposta.json();
+  ULTIMO = d;
+  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
+  $('#titulo').textContent = `Matriz — ${mov}, ${d.lente.nome}`;
+  $('#desc').textContent =
+    `${d.lente.nome} em ${d.lente.unidade}, por mês. ` +
+    (ESTADO.movimento === 'exp' ? `Faixa: ${OPCOES.faixas.find(f => f.chave === d.filtros.faixa).rotulo}.` : '');
+  $('#avisos').innerHTML = (d.avisos || [])
+    .map(a => `<p class="aviso">${a}</p>`).join('');
+  redesenha(); paginacao(d.paginacao); metodo(d);
+}
+
+// --------------------------------------------------------------- planilha
+function desenhaPlanilha(d){
+  const tabela = document.createElement('table');
+  tabela.className = 'planilha';
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  d.colunas.forEach((c, i) => {
+    const th = document.createElement('th');
+    if (i === 0) th.className = 'primeira';
+    th.textContent = c.rotulo;
+    trh.appendChild(th);
+  });
+  thead.appendChild(trh); tabela.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  if (!d.linhas.length){
+    const tr = document.createElement('tr'); const td = document.createElement('td');
+    td.colSpan = d.colunas.length; td.className = 'primeira';
+    td.innerHTML = '<span class="vazio">Nenhuma linha no recorte.</span>';
+    tr.appendChild(td); tbody.appendChild(tr);
+  }
+  const numericas = new Set(['valor','solicitado','atendido','separado']);
+  d.linhas.forEach(linha => {
+    const tr = document.createElement('tr');
+    d.colunas.forEach((c, i) => {
+      const td = document.createElement('td');
+      if (i === 0) td.className = 'primeira';
+      const valor = linha[c.chave];
+      if (numericas.has(c.chave)){
+        td.innerHTML = fmt(valor, d.lente.unidade);
+        td.classList.add('numero');
+      } else if (c.chave === 'dia'){
+        td.textContent = valor ? formataDia(valor) : '';
+      } else {
+        const texto = valor === null || valor === undefined ? '' : String(valor);
+        td.textContent = texto;
+        // o texto inteiro fica no title: cortar na tela nao pode esconder dado
+        td.title = texto;
+        td.style.textAlign = 'left';
+        if (c.chave === 'cliente' || c.chave === 'operacao') td.classList.add('texto');
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  tabela.appendChild(tbody);
+
+  const alvo = $('.rolagem');
+  alvo.innerHTML = ''; alvo.appendChild(tabela);
+}
+
+// A API manda a data como AAAA-MM-DD; a tela mostra no formato de quem le.
+const formataDia = iso => iso.split('-').reverse().join('/');
+
+function paginacaoPlanilha(p){
+  const el = $('#paginacao');
+  el.innerHTML = '';
+  const info = document.createElement('span');
+  const total = Number(p.total_linhas).toLocaleString('pt-BR');
+  info.textContent = p.paginas <= 1
+    ? `${total} linha(s)`
+    : `Página ${p.pagina} de ${p.paginas} — ${total} linhas, ${p.por_pagina} por página`;
+  el.appendChild(info);
+  if (p.paginas <= 1) return;
+  const anterior = document.createElement('button');
+  anterior.className = 'secundario'; anterior.textContent = '‹ Anterior';
+  anterior.disabled = p.pagina <= 1;
+  anterior.onclick = () => { ESTADO.pagina--; carrega(); };
+  const proxima = document.createElement('button');
+  proxima.className = 'secundario'; proxima.textContent = 'Próxima ›';
+  proxima.disabled = p.pagina >= p.paginas;
+  proxima.onclick = () => { ESTADO.pagina++; carrega(); };
+  el.append(anterior, proxima);
+}
+
+async function carregaPlanilha(){
+  const alvo = $('.rolagem');
+  alvo.innerHTML = '<div class="carregando">Carregando…</div>';
+  let resposta;
+  try { resposta = await busca('/api/planilha?' + parametros().toString()); }
+  catch (e) { alvo.innerHTML = `<div class="erro">Falha de rede: ${e}</div>`; return; }
+  if (!resposta.ok){
+    let detalhe = resposta.statusText;
+    try { detalhe = (await resposta.json()).detail || detalhe; } catch (e) {}
+    alvo.innerHTML = `<div class="erro">Recorte recusado: ${detalhe}</div>`;
+    return;
+  }
+  const d = await resposta.json();
+  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
+  $('#titulo').textContent = `Planilha — ${mov}, ${d.lente.nome}`;
+  $('#desc').textContent =
+    `Uma linha por registro do DW, no mesmo recorte da Matriz. ${d.lente.nome} em ${d.lente.unidade}.`;
+  $('#avisos').innerHTML = (d.avisos || []).map(a => `<p class="aviso">${a}</p>`).join('');
+  desenhaPlanilha(d); paginacaoPlanilha(d.paginacao);
+  metodo({niveis: ESTADO.movimento === 'exp'
+    ? ['unidade','cliente','faixa','operacao'] : ['unidade','cliente','operacao']});
+}
+
+async function inicia(){
+  await carregaEu();
+  $('#sair').onclick = async () => {
+    await fetch('/logout', {method: 'POST'});
+    window.location.replace('/login');
+  };
+  OPCOES = await (await busca('/api/opcoes')).json();
+  $('#de').value = OPCOES.periodo.de || '2026-01';
+  $('#ate').value = OPCOES.periodo.ate || '2026-08';
+  opcoesSelect('#unidade', OPCOES.unidades);
+  opcoesSelect('#cliente', OPCOES.clientes);
+  opcoesSelect('#tipo', OPCOES.tipos_estoque);
+  preencheOperacoes();
+  desenhaBotoes();
+  $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
+
+  // O aviso do zero a esquerda fica no controle do CSV, nao numa parede de
+  // texto: e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela
+  // e lida. O xlsx nao tem o problema, e a nota diz por que.
+  $('#nota-download').textContent =
+    'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
+    + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
+    + 'identificador, baixe em Excel (xlsx), que preserva.';
+  // O download navega (nao e fetch), entao um 401 apareceria como JSON cru na
+  // tela. Confere a sessao antes de navegar -- `busca` redireciona se caiu.
+  const baixa = async (formato) => {
+    await busca('/api/eu');
+    window.location = urlDownload(formato);
+  };
+  $('#baixar-csv').onclick = () => baixa('csv');
+  $('#baixar-xlsx').onclick = () => baixa('xlsx');
+  $('#limpar').onclick = () => {
+    ['#unidade','#cliente','#tipo','#operacao'].forEach(s =>
+      Array.from($(s).options).forEach(o => o.selected = false));
+    $('#de').value = OPCOES.periodo.de; $('#ate').value = OPCOES.periodo.ate;
+    ESTADO.pagina = 1; ESTADO.abertos = new Set(); carrega();
+  };
+  carrega();
+}
+inicia();
+</script>
+</body>
+</html>

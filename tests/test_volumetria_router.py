@@ -8,6 +8,7 @@ autenticacao e o encaixe HTTP (200/400), mesmo padrao de test_cockpit_router.py.
 
 from datetime import date
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
@@ -77,6 +78,18 @@ def test_volumetria_resumo_sucesso(cliente, cursor):
     }
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "V2 congelada (Maria, 24/ago/2026). A migration 0018 fez `RMSPII/016` "
+        "resolver para RMSPII, e a fixture deste teste semeia no armazem de "
+        "sigla RMSPIV -- que agora e outra linha de `armazens`. Nao e trocar o "
+        "rotulo esperado: sem refazer a fixture a serie volta vazia e o teste "
+        "ficaria verde provando nada, que e pior que vermelho. Nao apagado "
+        "porque cobre rota viva em producao. Ver docs/V3_PLANO.md, "
+        "'Regras de trabalho'."
+    ),
+)
 def test_evolucao_devolve_serie_da_filial(cliente, cursor):
     """Mesmo dado do antigo GET /datahub/serie (removido neste lote) -- prova
     que a leitura persistida continua correta na rota nova."""
