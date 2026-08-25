@@ -514,6 +514,91 @@ docker run --rm --network nuvem-teste \
 O banco de teste é **zerado** a cada teste — nunca aponte `TEST_DATABASE_URL` pro
 banco de verdade.
 
+## Carga agendada da V3 — construída no V3.5, **ligada no V3.6**
+
+`scripts/carga_catering.sh` já existe e funciona. **Não instale o crontab
+agora**: faltam duas coisas que só o V3.6 resolve, e ligar antes disso produz
+uma carga que falha todo dia às 07h05 ou, pior, uma que roda no horário errado
+sem ninguém notar.
+
+### Pendência 1 — o serviço da V3 no compose
+
+A imagem de hoje **não contém `catering/`**: o `Dockerfile` faz `COPY` de
+`backend/` e `frontend/`, e nada mais. Então `docker compose run --rm <serviço>
+python -m catering.carga` não tem o que rodar até o V3.6 acrescentar o serviço.
+
+O script falha alto nesse caso, listando os serviços que existem — de propósito:
+numa VM com quatro projetos, a mensagem crua do Compose manda quem estiver de
+plantão para o lugar errado. O nome vem de `SERVICO_CATERING` (padrão
+`nuvem-cat`).
+
+O serviço da V3 precisará das variáveis do DW, que o Compose lê do `.env` da VM:
+
+```yaml
+    environment:
+      DW_USER: ${DW_USER}
+      DW_SENHA: ${DW_SENHA}
+```
+
+A credencial chega no container **por variável de ambiente do Compose**, nunca
+como argumento de linha de comando — argumento aparece em `ps`, em log de shell
+e no histórico.
+
+### Pendência 2 — o fuso da VM (conferir antes de ligar)
+
+O contrato diz **07h05 e 15h05**, 30 minutos depois das rodadas do processo do
+DW (que roda a cada 2h, de 6h35 a 23h35). Se a VM estiver em UTC, `5 7 * * *`
+dispara às **04h05 locais** — antes da primeira rodada do DW do dia — e a carga
+leria sempre a véspera, entregando número velho com cara de número novo.
+
+```bash
+timedatectl                 # esperado: Time zone: America/Sao_Paulo
+date -Iseconds
+```
+
+Se estiver em UTC, são duas saídas: ajustar o fuso da VM (afeta os outros três
+projetos, então é decisão a combinar) ou escrever o cron em UTC — `5 10` e
+`5 18` para 07h05/15h05 de Brasília. Escolher a segunda **exige** deixar
+escrito aqui que os horários estão em UTC, senão a próxima pessoa "corrige" de
+volta.
+
+### As duas linhas, quando as duas pendências estiverem fechadas
+
+```bash
+crontab -e
+# adicionar (horários LOCAIS — ver a pendência 2 antes de colar):
+5 7  * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+5 15 * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+```
+
+Antes: `mkdir -p /home/ubuntu/nuvemIA/logs`.
+
+Como conferir depois de ligar, sem abrir a tela:
+
+```bash
+tail -20 logs/carga_catering.log
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c \
+  "SELECT id, tabela_origem, fonte, status, linhas_lidas, linhas_inseridas, linhas_atualizadas, terminada_em, erro FROM cat_cargas ORDER BY id DESC LIMIT 6"
+```
+
+O que cada status significa: `ok` carregou; `sem_dado` é o desfecho **normal**
+do incremental (nada mudou no DW desde a marca d'água); `erro` tem o motivo na
+coluna `erro`, e o script saiu com código diferente de zero. Rodada `rodando`
+que não terminou é rodada morta no meio — o processo caiu sem passar pelo
+tratamento.
+
+Rodada manual, fora do horário (por exemplo depois de arrumar uma falha):
+
+```bash
+cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh                  # incremental
+cd /home/ubuntu/nuvemIA && MODO=completa ./scripts/carga_catering.sh    # recarga cheia
+```
+
+Duas rodadas nunca correm juntas: o script usa `flock` e a segunda desiste
+registrando `PULADA` no log. Isso é proteção contra rodada que atrasou além da
+próxima, não contra rodada travada — `PULADA` aparecendo duas vezes seguidas é
+sinal de rodada presa, e aí é olhar `docker ps` e o log.
+
 ## Comandos úteis / rollback
 
 ```bash

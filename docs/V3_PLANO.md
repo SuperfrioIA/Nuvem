@@ -4,8 +4,13 @@
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
 **Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026) **e
-V3.4** (25/ago/2026). Do V3.5 em diante a divisão em lotes na seção final é
-proposta, não plano em execução — autorização é por lote, como na V1 e na V2.
+V3.4 e V3.5** (25/ago/2026). Do V3.6 em diante a divisão em lotes na seção final
+é proposta, não plano em execução — autorização é por lote, como na V1 e na V2.
+
+> **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
+> falta.** A IA não conecta no DW; o aceite é a rodada da Maria
+> (`python -m catering.carga --fonte oracle --sondar`, e depois a carga). Ver
+> "Aceite" na seção do V3.5.
 
 > **Cuidado com o nome:** `docs/proposta_v3_volumetria.md` **não** é deste
 > documento — é a especificação da **V2**, e se chama "v3" por acidente
@@ -158,7 +163,9 @@ A diferenca contra o CSV e pequena e coerente com dias novos — a premissa "tab
 
 **O que a marca d'agua mostra, e o que ela ainda nao prova.** O `last_ddl_time` das duas tabelas e **20/ago 15:24**, e o menor `dw_data_alteracao` e **20/ago 15:26** — dois minutos depois. Ou seja: as tabelas nasceram em 20/ago, foram carregadas inteiras naquele momento (e por isso linha de dez/2025 tambem carrega 20/ago na alteracao), e **desde entao nao houve DDL** — nos quatro dias seguintes elas foram atualizadas no lugar, com alteracao subindo ate 24/ago. Isso confirma duas coisas do V3.0: `dw_data_alteracao` e **tempo de processamento do DW**, nao data de negocio (que e o que serve para marca d'agua), e a decisao de nao usar a PK como identidade estava certa. O que **quatro dias nao provam** e o comportamento no mes: se um dia o DW recriar a tabela, todo `dw_data_alteracao` sobe junto e a rodada "incremental" vira carga cheia. Isso e **seguro** (o upsert nao apaga nada, e a chave natural sobrevive a rebuild), mas nao e incremental — e vale saber antes de prometer 07h05/15h05 rapidos.
 
-**O risco que o upsert nao cobre:** linha **removida** na fonte nao e removida no nosso Postgres, porque a carga so insere e atualiza. Em 20/ago isso era teoria; agora sabemos que a tabela e reconstruida em algum momento (o proprio `_V01` e o `FATO_VOLUMETRIA_V04` mostram versionamento ativo), entao e cenario real. Decisao para o V3.5, nao para agora.
+**O risco que o upsert nao cobre:** linha **removida** na fonte nao e removida no nosso Postgres, porque a carga so insere e atualiza. Em 20/ago isso era teoria; agora sabemos que a tabela e reconstruida em algum momento (o proprio `_V01` e o `FATO_VOLUMETRIA_V04` mostram versionamento ativo), entao e cenario real.
+
+**Decidido no V3.5:** nao ha varredura de PKs, porque o time do DW confirmou que o processo so insere e atualiza, so guia confirmada entra e nao existe desconfirmar — linha que entrou nao tem por onde sair (ver a linha "Incremento" do contrato fechado). O que o V3.5 construiu no lugar foi a guarda contra o cenario **oposto e observavel**: carga completa que le zero linha e `erro`, nunca `sem_dado`. Se um dia o WMS passar a permitir cancelar guia confirmada, a varredura volta a pauta — e o gatilho esta escrito.
 
 ## O que sobrevive da V1/V2
 
@@ -216,7 +223,9 @@ Nenhum dos dois é defeito da V3. Os dois precisam estar **declarados na tela**.
 
 **O A-3 esta fechado** e nao bloqueia mais nada: as quatro incognitas foram respondidas em 25/ago e o contrato medido nos CSVs bateu coluna por coluna contra as tabelas reais. O que a sondagem trouxe de novo virou A-7 e A-8, **as duas fechadas pela Maria no mesmo dia**: fica so a `_V01`, e as tabelas de estoque e transporte existem mas nao entram agora.
 
-> **Consequencia no codigo, para o V3.5 decidir:** `catering/contrato.py` tem `TABELA_REC = "FATO_VOL_REC_CAT"` / `TABELA_EXP = "FATO_VOL_EXP_CAT"` — nomes **incompletos** (sem schema, sem `_V01`) — e esses valores viram `cat_cargas.tabela_origem`, que e **chave da marca d'agua** (`destino.marca_dagua()` filtra por ela). Trocar para o nome qualificado e o certo para procedencia, mas invalida a marca d'agua das rodadas anteriores: a rodada seguinte recarrega tudo. Hoje isso nao custa nada (a V3 nunca rodou em producao) e depois do V3.6 custaria uma carga cheia. Entao a hora de trocar e **no V3.5**.
+> **Consequencia no codigo — FEITA no V3.5:** `catering/contrato.py` tinha `TABELA_REC = "FATO_VOL_REC_CAT"` / `TABELA_EXP = "FATO_VOL_EXP_CAT"`, nomes **incompletos** (sem schema, sem `_V01`), e esses valores viram `cat_cargas.tabela_origem`, que e **chave da marca d'agua** (`destino.marca_dagua()` filtra por ela). O V3.5 trocou para o nome qualificado e o pos em **configuracao** (`contrato.tabela()`, lendo `DW_TABELA_REC`/`DW_TABELA_EXP`), invalidando a marca d'agua das rodadas por CSV de proposito: a primeira rodada contra o Oracle e completa. Foi feito agora exatamente porque hoje nao custa nada, e depois do V3.6 custaria uma carga cheia em producao.
+>
+> **Efeito colateral que o lote descobriu:** `RENOMEADAS` montava o nome da coluna da PK como `"PK_" + TABELA_REC`. A tabela ganhou schema e sufixo de versao; a coluna, nao — derivar um identificador do outro produziria `PK_DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`, que nao existe. Agora sao constantes separadas, e o teste que ja existia no `test_catering_dominio.py` e a trava.
 
 ---
 
@@ -241,7 +250,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.2** | Filtros + Matriz, com aceite célula por célula contra os CSVs agregados por `nk_calendario` — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.3** | Planilha aberta + download em streaming e auditoria — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso — **feito em 25/ago/2026**, ver seção abaixo | não |
-| **V3.5** | Troca de `extrair()` para Oracle + agendamento 07h05/15h05 | **sim** |
+| **V3.5** | Troca de `extrair()` para Oracle + agendamento construído e desligado — **feito em 25/ago/2026**, ver seção abaixo | **sim** |
 | **V3.6** | Deploy na VM; desmonte do admin e do linhagem em produção | não |
 | **V3.7** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.8** | Laboratório novo, sobre o dado do DW | não autorizado |
@@ -504,7 +513,12 @@ Carga completa das duas extrações de 21/ago/2026, em Postgres real:
   fonte reapresentou sem mudança. O total que a fonte entregou fica no log.
 - **`janela_de`/`janela_ate` ficam NULL na carga por CSV.** A coluna significa
   "o recorte pedido ao Oracle", e no CSV nada foi pedido — preenchê-la com o
-  período observado mudaria o sentido da coluna. O V3.5 a preenche.
+  período observado mudaria o sentido da coluna. ~~O V3.5 a preenche.~~
+  **Corrigido em 25/ago/2026:** o V3.5 **não** as preenche, e a promessa acima
+  estava errada. As duas colunas são `DATE` e a 0019 as descreve como janela de
+  data de **negócio** relida; o incremento é por `dw_data_alteracao`, que é
+  timestamp de processamento e já está inteiro em `max_dw_data_alteracao`. Ver a
+  seção do V3.5.
 - **`cat_cargas` é escrito em conexão própria**, para o registro da falha
   sobreviver ao rollback do lote. Rodada que morreu fica no histórico com
   `status='erro'` e a mensagem nomeando linha e coluna.
@@ -1083,6 +1097,217 @@ falhas de Matriz apontando para o lugar errado.
 - **Persistir o freio de tentativas** — ele mora em memória e zera num restart do
   container, como na V2.
 - Oracle (V3.5), deploy (V3.6).
+
+---
+
+## Lote V3.5 — A fonte passa a ser o Oracle (feito, 25/ago/2026)
+
+Autorizado pela Maria em 25/ago/2026. Entregou `catering/carga/fonte_oracle.py`,
+o comando de carga sob demanda, o `--sondar` e o script do agendamento **pronto e
+desligado**. **Sem migration** — o CHECK da 0020 já aceitava `fonte='oracle'`
+desde o V3.1, justamente para este lote não precisar de uma.
+
+**Limite que definiu o lote: a IA não conectou no DW.** O DW é produção, e a
+política do projeto é que a IA não conecta nele. Todo o código foi escrito e
+testado contra driver falso; a leitura real é a rodada que a Maria executa, e a
+saída dela é o aceite (abaixo).
+
+### O adaptador cobrou a promessa do V3.1
+
+```text
+extrair(movimento, desde)   <- fonte_csv.py  |  fonte_oracle.py
+transformar(linha)          <- NÃO mudou uma linha
+gravar(cur, lote)           <- NÃO mudou uma linha
+```
+
+O que o V3.1 pagou adiantado se provou certo: o `desde` já estar na assinatura, e
+a coerção aceitar texto **e** valor nativo. O carregador (`carga/__init__.py`) só
+ganhou uma guarda nova (carga vazia, abaixo) — nada mais nele soube que a fonte
+mudou.
+
+### O nome do objeto, e a marca d'água invalidada de propósito
+
+`contrato.TABELA_REC/EXP` passaram a levar o nome qualificado
+(`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`), e o nome vive em `contrato.tabela()`, que
+lê `DW_TABELA_REC`/`DW_TABELA_EXP` do ambiente. A A-7 diz que fica só a `_V01` e
+não há outra versão programada — mas "não programada" é ausência de plano, não
+garantia, e a `FATO_VOLUMETRIA` do mesmo schema já está em `_V04`. Trocar de
+versão é uma variável de ambiente, não um commit.
+
+Como `tabela_origem` é a **chave da marca d'água**, mudar o nome invalida a marca
+d'água das rodadas por CSV: a primeira rodada contra o Oracle é completa. Era o
+esperado e foi autorizado — hoje custa uma rodada, depois do V3.6 custaria carga
+cheia em produção.
+
+`destino.TABELA_ORIGEM` virou a função `destino.tabela_origem()` pelo mesmo
+motivo: dicionário montado no import congelaria o valor de quando o módulo foi
+carregado, e uma carga gravando um nome com o incremento seguinte procurando
+outro é recarga completa silenciosa em toda rodada.
+
+### A armadilha que o lote desarmou: a PK derivava do nome da tabela
+
+`RENOMEADAS` montava o nome da coluna da PK como `"PK_" + TABELA_REC`. Isso
+funcionava **só enquanto os dois andavam juntos**. Com a tabela qualificada,
+produziria `PK_DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`, que não existe: a tabela
+ganhou schema e sufixo de versão, a coluna não. Agora é constante medida
+(`contrato.PK_DW`), e o teste que já existia no `test_catering_dominio.py` virou
+a trava — ele reprovaria a concatenação sem ninguém precisar lembrar do risco.
+
+### `fetch_decimals`, a linha que corrompe número em silêncio
+
+Medido: `oracledb 4.0.2` traz `defaults.fetch_decimals = False`, e com isso todo
+`NUMBER` chega como **float**. Peso em kg com 3 decimais passando por ponto
+flutuante binário não volta a ser o que era contra a coluna `NUMERIC(18,3)`.
+
+A opção é ligada dentro de `conectar()`, **não no import**: efeito de import
+mudaria o comportamento global do driver para quem só importou o módulo. A
+alternativa considerada foi um `outputtypehandler` por conexão, mais cirúrgico —
+ficou de fora porque ele decide coluna por coluna, e coluna nova cair no ramo
+errado é exatamente o silêncio que se está tentando evitar.
+
+### Duas consultas por movimento, e o motivo de cada uma
+
+| consulta | para quê |
+|---|---|
+| `SELECT * FROM <tabela> WHERE 1=0` | o `description` do cursor passa pela **mesma** `conferir_colunas()` que o CSV usa. É o que enxerga coluna **nova** no DW — a lista explícita passaria por cima dela em silêncio. Não lê bloco nenhum |
+| `SELECT <colunas do contrato> FROM <tabela> [WHERE DW_DATA_ALTERACAO > :desde]` | o dado. Lista explícita, gerada de `contrato.colunas()`: coluna removida ou renomeada dá `ORA-00904` **nomeando a coluna**, no primeiro `execute`, em vez de erro de tipo trinta mil linhas adiante |
+
+O `desde` vai por **bind**, nunca concatenado. E não há teto do outro lado: o
+Oracle dá consistência de leitura no nível do statement, e a marca d'água da
+rodada é o `max` do que efetivamente entrou — então linha que chegue durante a
+leitura entra na rodada seguinte, sem furo. Um teto com o relógio da nossa
+máquina compraria diferença de relógio contra o do DW sem resolver nada.
+
+### `janela_de`/`janela_ate` ficam nulas — a nota do V3.1 estava errada
+
+O V3.1 registrou que "o V3.5 as preenche". Ao implementar, as duas colunas se
+mostraram **DATE**, e a 0019 as descreve como a janela de **data de negócio**
+relida. O incremento daqui é por `dw_data_alteracao`, que é timestamp de
+processamento e já está inteiro em `max_dw_data_alteracao`. Preenchê-las com a
+data truncada do `desde` misturaria dois sentidos na mesma coluna, e truncando.
+O `desde` de uma rodada é exatamente o `max_dw_data_alteracao` da rodada `ok`
+anterior, então nada se perde em auditoria. A alternativa — migration mudando as
+duas para TIMESTAMP — não responderia nada que a coluna existente não responda.
+
+### Carga completa que lê zero linha é `erro`, não `sem_dado`
+
+A A-7 pede que a carga nunca reporte desfecho normal com zero linha, e esta é a
+implementação. `sem_dado` continua **certo** no incremental (nada mudou no DW
+desde a marca d'água) e passou a ser **errado** numa carga completa, onde
+significa a fonte inteira vindo vazia — com a tela seguindo em frente com o dado
+velho e ninguém avisado.
+
+Tabela ausente já derrubava sozinha (`ORA-00942`). O que a guarda cobre é o caso
+pior, que a sondagem tornou concreto: a tabela **existe** e vem vazia, porque
+aquele time versiona e reconstrói objeto. Custa nada — rollback de rodada vazia
+não desfaz nada, e o upsert nunca apaga.
+
+As duas causas produzem mensagens diferentes de propósito: "a fonte não devolveu
+linha nenhuma" é problema no DW ou no acesso; "todas fora do escopo do catering"
+é a instância ter mudado, que é problema de negócio. Um teste existente mudou de
+expectativa por causa disso — o que era um teste só virou dois, um por caso.
+
+### O escopo continua sendo filtrado em Python
+
+Não existe `WHERE NK_INSTANCIA LIKE 'SLIN_%'` no SQL, de propósito. O V3.1 conta
+e loga linha fora de escopo como tripwire (medido: zero linha nos dois CSVs).
+Empurrar o filtro para o banco economizaria tráfego de linha que ninguém tem, ao
+preço de nunca mais saber que instância nova apareceu.
+
+### Somente leitura, provado de duas formas
+
+Mesmo par do cliente do Graph, pelo mesmo motivo:
+
+- **estática**, sobre a árvore sintática: nenhum literal do módulo contém palavra
+  de escrita (docstring é ignorada — ela fala de escrita para explicar por que
+  não há), e nenhuma chamada a `commit`/`rollback`/`executemany`. Pega o código
+  que nenhum teste exercitou;
+- **de runtime**: o cursor falso recusa qualquer comando que não comece por
+  `SELECT`, e os dois caminhos que emitem SQL são exercitados. Pega o comando
+  montado por concatenação, que a estática não veria.
+
+### Agendamento: construído, e desligado
+
+`scripts/carga_catering.sh` está pronto e **não está no crontab de ninguém**.
+
+- **`docker compose run --rm`, e não `exec`**: a carga não depende do processo web
+  estar saudável. Com `exec`, uma rodada morreria porque a *tela* está fora do
+  ar, que é outro problema;
+- **`flock` sem espera**: se uma rodada atrasar além da próxima, a nova desiste e
+  registra "PULADA" em vez de duas cargas concorrentes disputarem o upsert;
+- **falha alto quando o serviço do compose não existe** — que é o caso **hoje**: a
+  imagem atual não copia `catering/`, e o serviço da V3 é do V3.6. A mensagem
+  lista os serviços que existem, porque numa VM com quatro projetos a mensagem
+  crua do Compose manda quem estiver de plantão para o lugar errado;
+- **o código de saída sobe**: agendador que não vê falha não serve de agendador.
+
+Duas coisas que só o V3.6 fecha, e estão escritas no `DEPLOY.md`: o **nome do
+serviço** e o **fuso da VM** — se ela estiver em UTC, `5 7 * * *` é 04h05 local,
+antes da rodada de 06h35 do DW, e a carga leria sempre a véspera.
+
+### Como rodar
+
+```
+python -m catering.carga --de docs/Analise                  # CSV, igual antes
+python -m catering.carga --fonte oracle --sondar            # SÓ lê o DW
+python -m catering.carga --fonte oracle                     # carga completa
+python -m catering.carga --fonte oracle --incremental       # o que o cron roda
+```
+
+`--fonte` tem padrão `csv` para que todo comando já documentado continue valendo
+como está escrito. `--de` e `--fonte oracle` são mutuamente exclusivos, e
+`--sondar` não toca no Postgres — então ele não precisa de `DATABASE_URL` e serve
+como primeira prova de acesso numa máquina onde o banco local ainda não existe.
+
+### Aceite
+
+A suíte prova o **statement**, os binds, a conferência de contrato e a coerção de
+valor nativo. Ela não prova — e está escrito no próprio arquivo de teste — que o
+Oracle honra o `>`, que os nomes reais das colunas são os do contrato, e que o
+volume é o esperado. Essas três são a rodada da Maria:
+
+```
+python -m catering.carga --fonte oracle --sondar
+python -m catering.carga --fonte oracle
+python -m catering.carga --fonte oracle
+python -m catering.carga --fonte oracle --incremental
+```
+
+O que cada uma responde: a 1ª, sessão + GRANT + contrato coluna por coluna +
+volume comparável aos 36.592/42.789 de 25/ago + o tipo que chega; a 2ª, a carga
+de verdade; a 3ª, idempotência (`0 inserida, 0 atualizada`, ou o que o DW mexeu
+no meio, que também é resposta certa); a 4ª, `sem_dado` ou poucas linhas.
+
+**Evidência da rodada real: pendente** — colar aqui quando a Maria executar.
+
+### Suíte
+
+**221 passed** (`python -m pytest tests/test_catering_*.py tests/test_migracao.py`,
+Postgres real em `localhost:5433`, 6min17), com as extrações de 21/ago presentes
+na máquina — então os testes `@tem_extracao` rodaram em vez de pular. 29 testes
+novos em `tests/test_catering_oracle.py`.
+
+O container de teste foi derrubado pelo Docker Desktop no meio de uma rodada, de
+novo — o keep-alive de `memory/suite-testes-local.md` resolveu, como nas vezes
+anteriores.
+
+### Arquivos
+
+- `catering/carga/fonte_oracle.py` (novo)
+- `catering/contrato.py` (nome qualificado, `tabela()`, `PK_DW` desacoplada)
+- `catering/carga/destino.py` (`tabela_origem()` virou função)
+- `catering/carga/__init__.py` (`CargaVazia`)
+- `catering/carga/__main__.py` (`--fonte`, `--sondar`)
+- `catering/web/matriz.html` (procedência e ressalva passam a dizer o nome real)
+- `scripts/carga_catering.sh` (novo, **não instalado**)
+- `requirements.txt` (`oracledb==4.0.2`), `.env.example` (as variáveis `DW_*`)
+- `tests/test_catering_oracle.py` (novo, 29), `tests/test_catering_carga.py`
+
+### O que este lote NÃO fez
+
+Deploy e serviço no compose (V3.6), crontab instalado, conciliação (V3.7),
+laboratório (V3.8). Nada em `backend/`, `frontend/` ou nas migrations antigas. E
+nenhuma conexão da IA com o DW.
 
 ---
 

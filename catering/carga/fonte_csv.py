@@ -9,9 +9,10 @@ antes do acesso existir e esta costura:
     extrair()                   <- so ele conhece a fonte
     transformar() + carregar()  <- identico nos dois casos
 
-Entao o V3.5 nao e reescrita: e uma classe `FonteOracle` com o mesmo
-`extrair(movimento, desde)`, e nada mais muda. Duas coisas aqui existem so
-para garantir isso desde agora:
+E foi o que aconteceu no V3.5: `fonte_oracle.FonteOracle` tem o mesmo
+`extrair(movimento, desde)`, e nem `transformacao.py` nem `destino.py`
+mudaram uma linha. Duas coisas aqui existiam so para garantir isso, e sao as
+que pagaram:
 
 1. **`desde` ja esta na assinatura.** No CSV ele filtra em Python por
    `DW_DATA_ALTERACAO`; no Oracle vira `WHERE DW_DATA_ALTERACAO > :desde`. Se

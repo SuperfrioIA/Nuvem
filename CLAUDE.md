@@ -35,11 +35,19 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `docs/EXECUCAO_LOCAL.md` — fonte oficial do método real de subir, testar e
   encerrar o projeto nesta máquina.
 - Fase atual: **construção da V3 — volumetria de catering lendo o DW Oracle**
-  (aberta em 24/ago/2026; **V3.0 a V3.3 feitos em 24/ago e V3.4 (login e papéis)
-  em 25/ago**; V3.5 em diante não autorizado — status em `docs/V3_PLANO.md`). O
-  código novo vive em `catering/`; a fonte é o DW, **não** o SharePoint DataHub.
-  Não construir código sem pedido explícito da Maria, e a autorização é
-  **por lote**.
+  (aberta em 24/ago/2026; **V3.0 a V3.3 feitos em 24/ago, e V3.4 (login e papéis)
+  e V3.5 (fonte Oracle) em 25/ago**; V3.6 em diante não autorizado — status em
+  `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
+  o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
+  autorização é **por lote**.
+- **A IA não conecta no DW.** Ele é produção. O V3.5 construiu a leitura inteira
+  contra driver falso, e a prova de leitura real é um comando que a Maria roda
+  (`python -m catering.carga --fonte oracle --sondar`). A credencial (`DW_USER`,
+  `DW_SENHA`) vive no `.env` — nunca no chat, em log, em teste ou em commit.
+- O agendamento da carga (07h05 e 15h05) **está escrito e desligado**
+  (`scripts/carga_catering.sh`): ele é ligado no V3.6, junto com o deploy, e há
+  duas pendências nomeadas no `docs/DEPLOY.md` (o serviço da V3 no compose e o
+  fuso da VM).
 - O app da V3 **exige login** desde o V3.4: `catering/seguranca/` (papel separado
   de identidade, para o AD entrar depois), e local ele precisa de `CAT_SECRET_KEY`
   no ambiente — ver `docs/EXECUCAO_LOCAL.md`, caminho C. Credencial vai para o
