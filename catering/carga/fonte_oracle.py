@@ -277,8 +277,15 @@ def _chave_concatenada(movimento) -> str:
 # alarme. Se o que separa `num_gem` reciclado e o ANO, botar a data inteira na
 # chave compra 364 chances por ano de duplicar por correcao de dia, e nao compra
 # unicidade nenhuma a mais.
+# Entre dois candidatos de MESMA granularidade, vem primeiro o derivado da
+# coluna que o fato carrega como **data**, e nao o da copia denormalizada: a
+# sondagem de 25/ago/2026 mostrou `ano_solic` discordando do ano de `data_solic`
+# em 15 e 16 linhas, e quando duas colunas discordam uma delas e copia que ficou
+# atras. Identidade nao se pendura em copia -- salvo se a medicao provar que a
+# copia e que e o espaco de numeracao, e a data nao.
 CANDIDATOS_DE_IDENTIDADE = (
     ("chave de hoje", None),
+    ("+ ano de data_solic", "TO_CHAR({data_solic}, 'YYYY')"),
     ("+ ano_solic", "TO_CHAR({ano_solic})"),
     ("+ ano de nk_calendario", "TO_CHAR({nk_calendario}, 'YYYY')"),
     ("+ data_solic", "TO_CHAR({data_solic}, 'YYYY-MM-DD')"),
@@ -338,6 +345,28 @@ def sql_colisoes(movimento, quantas=3) -> str:
         "FROM " + contrato.tabela(movimento) + " "
         f"GROUP BY {grupo} HAVING COUNT(*) > 1 "
         f"ORDER BY COUNT(*) DESC FETCH FIRST {int(quantas)} ROWS ONLY"
+    )
+
+
+def sql_ano_discordante(movimento, quantas=8) -> str:
+    """As linhas em que `ano_solic` nao e o ano de `data_solic`.
+
+    Existe porque "sao 15 linhas" nao decide nada, e o formato delas decide: se
+    forem viradas de ano (`ano_solic` 2025 com `data_solic` em 02/jan/2026), e
+    uma das duas colunas atrasada num caso de borda conhecido; se forem anos sem
+    relacao, a coluna nao significa o que o nome dela diz -- e ai ela esta fora
+    da identidade, nao importa se torna a chave unica."""
+    colunas = _colunas_do_movimento(movimento)
+    ano, solic, calendario = (
+        colunas["ano_solic"], colunas["data_solic"], colunas["nk_calendario"],
+    )
+    return (
+        f"SELECT {ano}, TO_CHAR(MIN({solic}), 'YYYY-MM-DD'), "
+        f"TO_CHAR(MAX({solic}), 'YYYY-MM-DD'), "
+        f"TO_CHAR(MIN({calendario}), 'YYYY-MM-DD'), COUNT(*) "
+        "FROM " + contrato.tabela(movimento) + " "
+        f"WHERE {ano} <> EXTRACT(YEAR FROM {solic}) "
+        f"GROUP BY {ano} ORDER BY {ano} FETCH FIRST {int(quantas)} ROWS ONLY"
     )
 
 
@@ -451,6 +480,10 @@ class FonteOracle:
                 if so_chave is not None and total is not None and so_chave < total:
                     cur.execute(sql_colisoes(movimento))
                     colisoes = list(cur)
+                discordantes = []
+                if resto[-1]:
+                    cur.execute(sql_ano_discordante(movimento))
+                    discordantes = list(cur)
         finally:
             conexao.close()
 
@@ -459,6 +492,7 @@ class FonteOracle:
         resumo["dw_data_alteracao"] = (alt_min, alt_max)
         resumo["identidade"] = identidade
         resumo["colisoes"] = colisoes
+        resumo["ano_discordante"] = discordantes
 
         # A amostra passa pelo funil de verdade: o valor cru mostra o que o
         # driver entregou, e o coagido mostra o que o banco vai receber. E onde

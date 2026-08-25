@@ -55,6 +55,9 @@ def _sondagem(fonte, movimentos) -> int:
                 print(f"    {rotulo:<24} {valor} de {total}  -> {veredito}")
             discordam = ident["ano_solic_discorda_de_data_solic"]
             print(f"    ano_solic discorda do ano de data_solic em {discordam} linha(s)")
+            for ano, solic_de, solic_ate, cal, quantas in resumo.get("ano_discordante") or ():
+                print(f"      ano_solic={ano}: data_solic de {solic_de} a {solic_ate}, "
+                      f"nk_calendario desde {cal}, {quantas} linha(s)")
         for gem, filial, quantas, de, ate in resumo.get("colisoes") or ():
             mesma_data = de == ate
             print(f"    colisao: gem {gem} / {filial} aparece {quantas}x, "

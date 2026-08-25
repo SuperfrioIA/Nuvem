@@ -136,6 +136,8 @@ class CursorFalso:
             self._resultado = iter([self.conexao.identidade])
         elif "HAVING COUNT(*) > 1" in sql.upper():
             self._resultado = iter(self.conexao.colisoes)
+        elif "EXTRACT(YEAR" in sql.upper() and "WHERE" in sql.upper():
+            self._resultado = iter(self.conexao.discordantes)
         elif sql.lstrip().upper().startswith("SELECT COUNT(*)"):
             self._resultado = iter([self.conexao.resumo])
         else:
@@ -153,7 +155,7 @@ class ConexaoFalsa:
     """Conexao de mentira. Guarda o que foi executado e se foi fechada."""
 
     def __init__(self, movimento="rec", linhas=(), resumo=None, erro=None,
-                 colunas=None, identidade=None, colisoes=()):
+                 colunas=None, identidade=None, colisoes=(), discordantes=()):
         self.description = [
             (nome,) for nome in (colunas or fonte_oracle.colunas_dw(movimento))
         ]
@@ -165,6 +167,7 @@ class ConexaoFalsa:
             (1,) * (1 + len(fonte_oracle.CANDIDATOS_DE_IDENTIDADE)) + (0,)
         )
         self.colisoes = list(colisoes)
+        self.discordantes = list(discordantes)
         self.erro = erro
         self.executados = []
         self.fechada = False
@@ -538,8 +541,8 @@ def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
         resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
                 datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
         identidade=(Decimal("201848"), Decimal("174014"), Decimal("201848"),
-                    Decimal("201848"), Decimal("201848"), Decimal("201848"),
-                    Decimal("0")),
+                    Decimal("201848"), Decimal("201836"), Decimal("201848"),
+                    Decimal("201848"), Decimal("0")),
         colisoes=[("0000000020", "RMSPII", Decimal("4"),
                    datetime(2023, 1, 3), datetime(2026, 1, 5))],
     )
@@ -548,13 +551,18 @@ def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
     ident = resumo["identidade"]
     assert ident["total"] == Decimal("201848")
     rotulos = [rotulo for rotulo, _valor in ident["candidatos"]]
-    assert rotulos[0] == "chave de hoje" and rotulos[1] == "+ ano_solic", (
+    assert rotulos[0] == "chave de hoje" and rotulos[1] == "+ ano de data_solic", (
         "a ordem e a decisao: do mais grosso para o mais fino, e a chave certa "
         f"e a primeira unica. Veio {rotulos}"
     )
     por_rotulo = dict(ident["candidatos"])
     assert por_rotulo["chave de hoje"] < ident["total"], "e o caso que quebrou a carga"
-    assert por_rotulo["+ ano_solic"] == ident["total"],         "o ano da solicitacao bastaria neste cenario"
+    assert por_rotulo["+ ano de data_solic"] == ident["total"],         "o ano da solicitacao bastaria neste cenario"
+    assert por_rotulo["+ ano de nk_calendario"] < ident["total"], (
+        "e o numero que prova QUAL ano e o espaco de numeracao: o do pedido, "
+        "nao o do movimento -- guia pedida em dezembro e movimentada em janeiro "
+        "pertence a sequencia do ano anterior"
+    )
     assert ident["ano_solic_discorda_de_data_solic"] == Decimal("0")
 
     # e a colisao vem com o intervalo de datas, que e o que separa as duas
@@ -567,6 +575,38 @@ def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
     )
 
 
+def test_sondar_detalha_o_ano_discordante_so_quando_ele_existe():
+    """15 e 16 linhas discordando nao decidem nada; o FORMATO delas decide. Se
+    for virada de ano (`ano_solic` 2025 com `data_solic` em janeiro/2026), e
+    borda conhecida; se forem anos sem relacao, a coluna nao significa o que o
+    nome diz e sai da disputa por identidade."""
+    conexao = ConexaoFalsa(
+        "rec",
+        linhas=[linha_nativa("rec")],
+        resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
+                datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
+        identidade=(Decimal("201848"),) * 7 + (Decimal("15"),),
+        discordantes=[(Decimal("2025"), "2026-01-02", "2026-01-09",
+                       "2026-01-05", Decimal("15"))],
+    )
+    resumo = fonte_com(conexao).sondar("rec")
+    ano, de, ate, cal, quantas = resumo["ano_discordante"][0]
+    assert (ano, quantas) == (Decimal("2025"), Decimal("15"))
+    assert de.startswith("2026"), "o caso de borda: ano_solic atrasado na virada"
+
+    # e sem discordancia, a consulta de detalhe nao roda
+    limpa = ConexaoFalsa(
+        "rec",
+        linhas=[linha_nativa("rec")],
+        resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
+                datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
+        identidade=(Decimal("36592"),) * 7 + (Decimal("0"),),
+    )
+    assert fonte_com(limpa).sondar("rec")["ano_discordante"] == []
+    assert not any("EXTRACT(YEAR" in sql and "WHERE" in sql
+                   for sql, _ in limpa.executados)
+
+
 def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
     """Consulta com `GROUP BY ... HAVING` sobre a tabela inteira nao se roda por
     esporte: ela so acontece quando a contagem provou que ha o que olhar."""
@@ -575,7 +615,7 @@ def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
         linhas=[linha_nativa("rec")],
         resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
                 datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
-        identidade=(Decimal("36592"),) * 6 + (Decimal("0"),),
+        identidade=(Decimal("36592"),) * 7 + (Decimal("0"),),
     )
     resumo = fonte_com(conexao).sondar("rec")
     assert resumo["colisoes"] == []
@@ -603,9 +643,12 @@ def test_candidatos_de_identidade_vao_do_mais_grosso_ao_mais_fino():
     linha antiga sobrevivendo ao lado -- numero dobrado, sem alarme."""
     rotulos = [r for r, _e in fonte_oracle.CANDIDATOS_DE_IDENTIDADE]
     assert rotulos == [
-        "chave de hoje", "+ ano_solic", "+ ano de nk_calendario",
-        "+ data_solic", "+ nk_calendario",
-    ]
+        "chave de hoje", "+ ano de data_solic", "+ ano_solic",
+        "+ ano de nk_calendario", "+ data_solic", "+ nk_calendario",
+    ], (
+        "entre dois candidatos de mesma granularidade vem primeiro o derivado da "
+        "coluna que o fato carrega como data, e nao o da copia denormalizada"
+    )
     sql = fonte_oracle.sql_identidade("rec")
     assert sql.index("TO_CHAR(ANO_SOLIC)") < sql.index("'YYYY-MM-DD'"),         "o ano tem que ser medido antes da data inteira"
     # e a conferencia de que escolher ano_solic e legitimo: ele tem que
