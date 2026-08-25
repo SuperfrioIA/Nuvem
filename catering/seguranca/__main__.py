@@ -1,8 +1,8 @@
 """CLI de usuarios: `python -m catering.seguranca <comando>`.
 
-O dia a dia tem tela (a `/admin`, restrita a admin). Este CLI existe para o que
-a tela nao alcanca: criar o primeiro admin sem depender do `.env`, e recuperar
-acesso quando ninguem consegue entrar.
+O dia a dia tem tela (a `/administracao`, restrita a admin). Este CLI existe para
+o que a tela nao alcanca: criar o primeiro admin sem depender do `.env`, e
+recuperar acesso quando ninguem consegue entrar.
 
 ## A senha e pedida, nao passada como argumento
 
@@ -23,9 +23,32 @@ Exemplos:
 
 import argparse
 import getpass
+import os
 import sys
 
 from catering.seguranca import usuarios
+
+# Mensagem no lugar do KeyError (25/ago/2026): sem `DATABASE_URL`, o CLI morria
+# com `KeyError: 'DATABASE_URL'` e quinze linhas de traceback apontando para o
+# `psycopg2`. Isso e defeito de ferramenta de recuperacao: ela e usada justamente
+# quando algo esta errado, e nessa hora o traceback manda olhar o lugar errado.
+#
+# A armadilha e concreta e apareceu no uso real: as variaveis valem por sessao de
+# shell, entao um SEGUNDO terminal aberto na mesma pasta nao tem nada exportado.
+FALTA_BANCO = """falta a variavel DATABASE_URL nesta sessao do terminal.
+
+Variavel de ambiente vale por terminal -- se voce exportou noutra janela, esta
+nao herda. O `.env` da raiz nao serve aqui: ele e lido pelo docker-compose, nao
+pelo Python (ver docs/EXECUCAO_LOCAL.md).
+
+No PowerShell, na raiz do repositorio:
+
+    $env:DATABASE_URL = "postgresql://nuvem:teste@localhost:5433/nuvem_teste"
+
+Ou, para carregar o .env inteiro nesta sessao:
+
+    Get-Content .env | Where-Object { $_ -match '^\\s*[A-Z_]' } | ForEach-Object { $n,$v = $_ -split '=',2; Set-Item "env:$n" $v }
+"""
 
 
 def _pedir_senha() -> str:
@@ -69,21 +92,36 @@ def _criar(args) -> int:
 
 
 def _senha(args) -> int:
-    if not usuarios.definir_senha(args.login, _pedir_senha()):
+    try:
+        mudou = usuarios.definir_senha(args.login, _pedir_senha())
+    except usuarios.UsuarioInvalido as erro:
+        raise SystemExit(str(erro)) from None
+    if not mudou:
         raise SystemExit(f"login nao encontrado: {args.login}")
     print(f"senha de {usuarios.normalizar(args.login)} atualizada")
     return 0
 
 
 def _papel(args) -> int:
-    if not usuarios.definir_papel(args.login, args.papel):
+    # `UltimoAdmin` sobe daqui quando a troca deixaria o sistema sem admin ativo.
+    # Sem este `except` ela virava traceback -- e numa ferramenta de recuperacao
+    # o traceback esconde justamente a instrucao de como sair do problema.
+    try:
+        mudou = usuarios.definir_papel(args.login, args.papel)
+    except usuarios.UsuarioInvalido as erro:
+        raise SystemExit(str(erro)) from None
+    if not mudou:
         raise SystemExit(f"login nao encontrado: {args.login}")
     print(f"papel de {usuarios.normalizar(args.login)}: {args.papel}")
     return 0
 
 
 def _ativo(args, ativo) -> int:
-    if not usuarios.definir_ativo(args.login, ativo):
+    try:
+        mudou = usuarios.definir_ativo(args.login, ativo)
+    except usuarios.UsuarioInvalido as erro:
+        raise SystemExit(str(erro)) from None
+    if not mudou:
         raise SystemExit(f"login nao encontrado: {args.login}")
     print(
         f"{usuarios.normalizar(args.login)}: "
@@ -129,6 +167,10 @@ def main(argv=None) -> int:
     p.set_defaults(func=lambda args: _ativo(args, True))
 
     args = parser.parse_args(argv)
+    # depois do parse, de proposito: `--help` e argumento errado nao dependem de
+    # banco, e exigir a variavel para ler a ajuda seria hostil
+    if not (os.environ.get("DATABASE_URL") or "").strip():
+        raise SystemExit(FALTA_BANCO)
     return args.func(args)
 
 

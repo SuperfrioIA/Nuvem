@@ -102,7 +102,7 @@ sai quando o novo provar o mesmo número, não antes.
 
 | item | decisão |
 |---|---|
-| **Fonte** | Oracle `pdwgener` (`oracleprd-aws.superfrio.com.br:1521`) — `FATO_VOL_REC_CAT` + `FATO_VOL_EXP_CAT`; `FATO_VOLUMETRIA` só para conciliação. São **tabelas inteiras**, sem filtro de extração |
+| **Fonte** | Oracle `pdwgener` (`oracleprd-aws.superfrio.com.br:1521`, `service_name`, cliente `oracledb` em modo thin) — **`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`** + **`DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01`** (nome confirmado pela Maria em 25/ago/2026; o registrado antes, `FATO_VOL_REC_CAT`, estava sem o schema e sem o sufixo `_V01`, e por isso a sondagem levou `ORA-00942`); `FATO_VOLUMETRIA` só para conciliação. São **tabelas inteiras**, sem filtro de extração |
 | **Escopo** | **catering = instâncias SLIN**. Volume de outras instâncias (`DISTROMAQ_PRD`, `MDLZ_PRD`, `DISTRO_PRD`, `SEEDS_PRD`, `ATIVA_*`) é outro negócio e está corretamente fora. Declarar na tela; guardar a instância como coluna de procedência |
 | **Carga** | 2× ao dia: **07h05 e 15h05**. O processo do DW (`catering_to_dw_volumetry_v01`) roda a cada 2h, de 6h35 a 23h35 — lemos 30 min depois, nunca no horário |
 | **Incremento** | por **`DW_DATA_ALTERACAO`**, não só `DW_DATA_INCLUSAO` (linha muda entre extrações). Idempotente pela PK. **O DW insere e altera, nunca apaga** — logo não precisa de varredura de PKs para detectar remoção |
@@ -132,6 +132,33 @@ Isso é pequeno para Postgres. Não justifica cubo, pré-agregação nem
 materialização — a Matriz agrega ao vivo.
 
 ---
+
+### Sondagem do DW em 25/ago/2026 (o que a conexao real provou)
+
+Executada pela Maria em dois blocos somente leitura. O que **mudou** em relacao ao
+que o projeto assumia:
+
+| assunto | o que se assumia | o que a conexao provou |
+|---|---|---|
+| nome do objeto | `FATO_VOL_REC_CAT` | **`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`** — outro schema e sufixo de versao |
+| tabela ou view | indefinido (o `_V01` sugeria view) | **TABLE** nas duas. View pesada teria custo no `extrair()`; tabela nao tem |
+| `NUMBER` no Python | `Decimal` | **`float`** — `fetch_decimals` e `False` por padrao no `oracledb 4.0.2`. Ver a correcao na secao do V3.1 |
+| cliente Oracle na VM | incognita | **nao precisa** — modo thin conecta em 12.2 |
+| senha do usuario | incognita | **`OPEN`, sem expiracao** — agendamento nao morre por senha vencida |
+| contrato de colunas | medido nos CSVs, nao verificado na fonte | **bate coluna por coluna**: 36 e 46, unica diferenca e o `pk_dw` renomeado de proposito |
+
+**Volume e marca d'agua, em 25/ago:**
+
+| | linhas no DW | CSV de 21/ago | `nk_calendario` | `dw_data_alteracao` |
+|---|---|---|---|---|
+| recebimento | 36.592 | 36.300 (+292) | 02/jan/2026 a 24/ago/2026 | 20/ago 15:26 a 24/ago 17:46 |
+| expedicao | 42.789 | 42.468 (+321) | 31/dez/2025 a 24/ago/2026 | 20/ago 15:40 a 24/ago 17:47 |
+
+A diferenca contra o CSV e pequena e coerente com dias novos — a premissa "tabelas inteiras, sem filtro de extracao" **se sustenta**.
+
+**O que a marca d'agua mostra, e o que ela ainda nao prova.** O `last_ddl_time` das duas tabelas e **20/ago 15:24**, e o menor `dw_data_alteracao` e **20/ago 15:26** — dois minutos depois. Ou seja: as tabelas nasceram em 20/ago, foram carregadas inteiras naquele momento (e por isso linha de dez/2025 tambem carrega 20/ago na alteracao), e **desde entao nao houve DDL** — nos quatro dias seguintes elas foram atualizadas no lugar, com alteracao subindo ate 24/ago. Isso confirma duas coisas do V3.0: `dw_data_alteracao` e **tempo de processamento do DW**, nao data de negocio (que e o que serve para marca d'agua), e a decisao de nao usar a PK como identidade estava certa. O que **quatro dias nao provam** e o comportamento no mes: se um dia o DW recriar a tabela, todo `dw_data_alteracao` sobe junto e a rodada "incremental" vira carga cheia. Isso e **seguro** (o upsert nao apaga nada, e a chave natural sobrevive a rebuild), mas nao e incremental — e vale saber antes de prometer 07h05/15h05 rapidos.
+
+**O risco que o upsert nao cobre:** linha **removida** na fonte nao e removida no nosso Postgres, porque a carga so insere e atualiza. Em 20/ago isso era teoria; agora sabemos que a tabela e reconstruida em algum momento (o proprio `_V01` e o `FATO_VOLUMETRIA_V04` mostram versionamento ativo), entao e cenario real. Decisao para o V3.5, nao para agora.
 
 ## O que sobrevive da V1/V2
 
@@ -180,14 +207,16 @@ Nenhum dos dois é defeito da V3. Os dois precisam estar **declarados na tela**.
 |---|---|---|
 | A-1 | ~~O `linhagem` morre junto com o admin?~~ — **sim** (Maria, 24/ago/2026). Mesmo tratamento do admin: parqueado no repo agora, sai da VM só depois da tela nova de pé | fechada |
 | A-2 | ~~Auditoria de acesso: só login, ou toda consulta?~~ — **só login e download** (Maria, 24/ago/2026) | fechada |
-| A-3 | **Acesso concedido** (Maria, 24/ago/2026) — o usuário existe. As quatro incógnitas seguem abertas e só a conexão real responde: versão do Oracle (decide se a VM precisa do Instant Client), `service name` x SID, schema/owner das tabelas, política de expiração de senha. As três primeiras são fatos de **infra com consequência no deploy**: descobrir no V3.6 que a VM precisa do Instant Client trava a subida. Resolver com um **bloco somente leitura que a Maria executa** — a IA não conecta em produção. Credenciais vão para `.env` (gitignored), nunca no chat nem em commit | Maria |
+| A-3 | ~~As quatro incognitas do acesso ao DW~~ — **fechadas em 25/ago/2026**, com dois blocos somente leitura executados pela Maria (a IA nao conecta no DW). Oracle **12.2.0.1.0**; `service_name=pdwgener`; **`oracledb` em modo thin conecta, entao a VM NAO precisa do Instant Client**; usuario `INTEGRACAO_DADOS_CATERING` (criado em 24/ago), **senha `OPEN` e sem data de expiracao** — o agendamento do V3.5 nao morre por senha vencida; objetos reais **`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`** e **`DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01`**, que sao **TABLE** e nao view; leitura confirmada (36.592 e 42.789 linhas); e o **contrato do V3.0 bateu coluna por coluna** (36 e 46, com a unica diferenca sendo o `pk_dw`, renomeado de proposito e ja documentado no `contrato.py`). Licao registrada: o `ORA-00942` da primeira sondagem **nao era falta de GRANT** — era o nome, que o plano guardava sem o schema e sem o sufixo `_V01` | fechada |
 | A-4 | ~~Nome do pacote novo no repo~~ — **decidido em 24/ago/2026: `catering/`**, pelo escopo do negócio e não pela métrica (já existe dado de ocupação e capacidade no projeto, que um dia pode entrar como outra métrica do mesmo escopo) | fechada |
 | A-5 | ~~Qual data a Matriz agrega~~ — **`nk_calendario`** (Maria, 24/ago/2026): *"conta como expedida em fevereiro. Calendário."* A data que vale é a do **movimento**, não a do pedido | fechada |
 | A-6 | **Parcialmente fechada** (Maria, 24/ago/2026): `CONG` conta como congelado, `RESFRIADO` é classe nova, `AGUA / CARVAO` é seco — implementado, e o não-classificado caiu de 3,2% para **1,3%** do peso. **Segue aberto:** `CONSOLIDADOR` e `CONSOLIDADOR - 14025`, **3.872,5 t**, que são 97% do que restou e não foram perguntados | Maria |
+| A-7 | ~~O nome da tabela tem versao, e versao sobe~~ — **respondido pela Maria em 25/ago/2026: fica so a `_V01`, sem programacao para criar outra versao por enquanto.** Entao o V3.5 escreve `DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01` e segue. Duas coisas do desenho ficam de pe **mesmo assim**, porque "sem programacao por enquanto" e ausencia de plano e nao garantia: o nome da tabela vive em **configuracao**, nao como constante enterrada em tres arquivos, e **tabela ausente falha alto** — a carga nunca pode reportar `ok` com zero linha. O contexto que justifica: a `FATO_VOLUMETRIA` do mesmo schema ja esta em `_V04`, entao versao subir e o comportamento normal daquele time, so nao esta agendado agora | fechada |
+| A-8 | ~~Duas tabelas de catering desconhecidas~~ — **respondido pela Maria em 25/ago/2026: `FATO_VOL_EST_CAT_V01` e ESTOQUE e `FATO_VOL_TRN_CAT_V01` e TRANSPORTE. Nao entram agora, mas entram no futuro.** Fora do escopo do V3.5 (recebimento + expedicao). Quando entrarem, **nao e ajuste, e lote proprio**, por tres razoes concretas: (1) `movimento` tem CHECK `('rec','exp')` na migration 0019, e ampliar CHECK e migration; (2) cada movimento novo tem contrato de colunas **proprio** — a expedicao ja tem 46 colunas contra 36 do recebimento, entao estoque e transporte nao vao ser copias; (3) estoque provavelmente e **saldo** (foto num instante) e nao **fluxo** (soma no periodo) — se for, ele nao se soma por mes como a Matriz faz hoje, e isso e decisao de produto antes de ser codigo | fechada, com trabalho futuro registrado |
 
-O A-3 deixou de bloquear (o acesso existe); o que resta dele é a sondagem de infra, que **não** bloqueia lote nenhum antes do V3.5. O A-6 não
-bloqueia o schema (a sentinela já existe), mas o resíduo do `CONSOLIDADOR`
-aparece na tela como categoria própria até ser decidido.
+**O A-3 esta fechado** e nao bloqueia mais nada: as quatro incognitas foram respondidas em 25/ago e o contrato medido nos CSVs bateu coluna por coluna contra as tabelas reais. O que a sondagem trouxe de novo virou A-7 e A-8, **as duas fechadas pela Maria no mesmo dia**: fica so a `_V01`, e as tabelas de estoque e transporte existem mas nao entram agora.
+
+> **Consequencia no codigo, para o V3.5 decidir:** `catering/contrato.py` tem `TABELA_REC = "FATO_VOL_REC_CAT"` / `TABELA_EXP = "FATO_VOL_EXP_CAT"` — nomes **incompletos** (sem schema, sem `_V01`) — e esses valores viram `cat_cargas.tabela_origem`, que e **chave da marca d'agua** (`destino.marca_dagua()` filtra por ela). Trocar para o nome qualificado e o certo para procedencia, mas invalida a marca d'agua das rodadas anteriores: a rodada seguinte recarrega tudo. Hoje isso nao custa nada (a V3 nunca rodou em producao) e depois do V3.6 custaria uma carga cheia. Entao a hora de trocar e **no V3.5**.
 
 ---
 
@@ -415,8 +444,18 @@ Duas coisas fazem a troca do V3.5 ser adaptador de verdade, e não promessa:
    `DW_DATA_ALTERACAO`; no Oracle vira `WHERE`. Se o parâmetro só aparecesse
    no V3.5, a troca mexeria na assinatura de todos e deixaria de ser adaptador.
 2. **`extrair()` devolve a linha crua** e a coerção aceita **texto e valor
-   nativo** — o CSV entrega `'25290.217'`, o `oracledb` entrega `Decimal`, e
-   os dois passam pelo mesmo funil. Se a fonte já entregasse tipado, cada
+   nativo** — o CSV entrega `'25290.217'` e o `oracledb` entrega valor
+   tipado, e os dois passam pelo mesmo funil.
+   **Correção de 25/ago/2026:** este item dizia que o `oracledb` entrega
+   `Decimal`. **Entrega `float`.** Medido: `oracledb 4.0.2`,
+   `defaults.fetch_decimals = False` por padrão, e `NUMBER` vira `float`
+   (ou `int` quando escala 0). Peso em kg com 3 decimais passando por
+   ponto flutuante binário perde precisão contra a coluna `NUMERIC` do
+   Postgres — então o V3.5 tem que ligar
+   `oracledb.defaults.fetch_decimals = True` (ou um output type handler).
+   A coerção já aceita os dois, então isto é uma linha de configuração,
+   não retrabalho — mas é uma linha que, faltando, corrompe número em
+   silêncio. Se a fonte já entregasse tipado, cada
    adaptador teria sua própria cópia da coerção, que é exatamente o que
    afunda a promessa. Há teste passando os dois lados
    (`test_coercao_aceita_texto_e_valor_nativo`).

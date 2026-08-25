@@ -608,6 +608,68 @@ def test_auditoria_pela_api_filtra_por_evento(cliente):
     assert cliente.get("/api/auditoria", params={"evento": "consulta"}).status_code == 400
 
 
+# ------------------------------------------------------------------- CLI
+def test_cli_sem_database_url_diz_o_que_falta(monkeypatch):
+    """Apareceu no uso real (25/ago/2026): a Maria abriu um SEGUNDO terminal e o
+    CLI morreu com `KeyError: 'DATABASE_URL'` e quinze linhas de traceback do
+    psycopg2.
+
+    Ferramenta de recuperacao e usada justamente quando algo esta errado -- nessa
+    hora, traceback manda olhar o lugar errado. A mensagem tem que dizer o que
+    falta e como resolver."""
+    from catering.seguranca import __main__ as cli
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    with pytest.raises(SystemExit) as saida:
+        cli.main(["listar"])
+    mensagem = str(saida.value)
+    assert "DATABASE_URL" in mensagem
+    assert "terminal" in mensagem  # explica por que a outra janela nao vale
+    assert "Traceback" not in mensagem
+
+
+def test_cli_cria_lista_troca_papel_e_desativa(banco_migrado, capsys):
+    """O CLI nao tinha teste nenhum, e ele e o caminho de recuperacao: caminho de
+    recuperacao quebrado se descobre exatamente na hora em que se precisa dele."""
+    from catering.seguranca import __main__ as cli
+
+    assert cli.main(["criar", "--login", "Chefe", "--nome", "Chefe",
+                     "--papel", "admin", "--sem-senha"]) == 0
+    assert "criado: chefe (admin)" in capsys.readouterr().out
+
+    assert cli.main(["listar"]) == 0
+    saida = capsys.readouterr().out
+    assert "chefe" in saida and "nao (AD)" in saida
+
+    assert cli.main(["criar", "--login", "joao", "--nome", "Joao",
+                     "--papel", "visualizador", "--sem-senha"]) == 0
+    capsys.readouterr()
+
+    assert cli.main(["papel", "--login", "JOAO", "--papel", "admin"]) == 0
+    assert usuarios.buscar("joao").papel == "admin"
+
+    assert cli.main(["desativar", "--login", "joao"]) == 0
+    assert usuarios.buscar("joao").ativo is False
+
+    # login que nao existe: mensagem, e nao traceback
+    with pytest.raises(SystemExit, match="nao encontrado"):
+        cli.main(["papel", "--login", "ninguem", "--papel", "admin"])
+
+
+def test_cli_recusa_deixar_o_sistema_sem_admin_com_mensagem(banco_migrado):
+    """Mesmo defeito do `KeyError`, em outro lugar: `UltimoAdmin` subia crua e
+    virava traceback nos comandos `papel`, `desativar` e `senha`."""
+    from catering.seguranca import __main__ as cli
+
+    usuarios.criar("chefe", "Chefe", "admin", SENHA)
+    for argumentos in (
+        ["papel", "--login", "chefe", "--papel", "visualizador"],
+        ["desativar", "--login", "chefe"],
+    ):
+        with pytest.raises(SystemExit, match="unico admin ativo"):
+            cli.main(argumentos)
+
+
 # ------------------------------------------------ bootstrap do 1o admin
 def test_bootstrap_cria_o_primeiro_admin_e_nao_mexe_em_quem_existe(
     banco_migrado, monkeypatch

@@ -115,6 +115,17 @@ python -m uvicorn catering.app:app --host 127.0.0.1 --port 8003
 URL: `http://localhost:8003/` — cai em `/login`, porque a partir do V3.4 tudo
 exige sessão (só `/health`, `/logo.png` e `/login` ficam abertos).
 
+> **Armadilha: o `.env` NÃO é lido aqui.** O projeto não usa `python-dotenv`
+> (confirmado — nenhum `load_dotenv` no código); quem lê o `.env` da raiz é o
+> **docker-compose**. Colocar `CAT_SECRET_KEY` no `.env` resolve o caminho A e o
+> V3.6, e não resolve o caminho C: no `uvicorn` bare a variável tem que estar
+> exportada na sessão do shell. Para não duplicar o valor, carregue o `.env` na
+> sessão (não imprime nada):
+>
+> ```
+> Get-Content .env | Where-Object { $_ -match '^\s*[A-Z_]' } | ForEach-Object { $n,$v = $_ -split '=',2; Set-Item "env:$n" $v }
+> ```
+
 Sobre as variáveis (detalhe e motivo em `docs/V3_PLANO.md`, lote V3.4):
 
 - **`CAT_SECRET_KEY` é obrigatória** e é **própria da V3** — não é a
