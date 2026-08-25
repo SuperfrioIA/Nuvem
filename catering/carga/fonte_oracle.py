@@ -187,6 +187,10 @@ def conectar():
             "(ver docs/EXECUCAO_LOCAL.md)"
         )
     oracledb = configurar_driver()
+    # Uma linha no log antes de abrir a sessao. A carga agendada roda sem
+    # ninguem olhando, e "parou aqui" e a diferenca entre suspeitar do DW e
+    # suspeitar do Postgres quando a rodada das 07h05 nao termina.
+    logger.info("abrindo sessao no DW: %s", dsn())
     return oracledb.connect(
         user=usuario,
         password=senha,
