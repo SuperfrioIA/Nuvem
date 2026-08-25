@@ -21,6 +21,13 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ.setdefault("ADMIN_PASSWORD", "senha-teste")
 os.environ.setdefault("SECRET_KEY", "chave-de-teste-nao-usar-em-prod")
+# V3.4: a sessao da V3 tem chave PROPRIA, separada da SECRET_KEY da V2 -- se a
+# V2 vazar a chave dela, sessao da V3 nao passa a ser forjavel. Ver
+# catering/seguranca/sessao.py. CAT_ADMIN_LOGIN/CAT_ADMIN_SENHA de proposito NAO
+# entram aqui: o bootstrap do primeiro admin e testado com o ambiente montado no
+# proprio teste, e um admin aparecendo sozinho em toda suite esconderia o estado
+# "banco sem usuario nenhum".
+os.environ.setdefault("CAT_SECRET_KEY", "chave-v3-de-teste-nao-usar-em-prod")
 os.environ.setdefault("UPLOADS_DIR", tempfile.mkdtemp(prefix="nuvem_uploads_"))
 # Bloco E (V1.5): so pra obter_configuracao_ia() nao levantar "faltam as
 # variaveis" -- os testes mockam ia_client.enviar_mensagem, entao esta chave

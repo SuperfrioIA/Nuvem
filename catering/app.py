@@ -14,12 +14,22 @@ O banco e o **mesmo** (as migrations continuam na mesma cadeia). O que se separa
 e o processo, nao o dado -- separar o dado exigiria uma segunda instancia de
 Postgres, backup proprio e uma conciliacao entre os dois, o que nao serve nada.
 
-## Sem login neste lote
+## Login (V3.4): pagina redireciona, API responde 401
 
-Login e papeis sao o V3.4, e o deploy e o V3.6 -- nesta ordem de proposito,
-para que **nada sem autenticacao chegue a VM**. Enquanto isso este app roda
-apenas local. O `/health` existe desde agora porque o compose do V3.6 vai
-precisar dele.
+Tudo exige sessao, com tres excecoes declaradas: `/health` (o compose do V3.6
+depende dele, e ele nao expoe dado), `/logo.png` (a propria tela de login usa) e
+`/login`.
+
+A recusa tem **duas formas**, porque quem recebe e diferente:
+
+  - rota de **pagina** (`/`, `/administracao`) sem sessao -> **303 para `/login`**.
+    Responder 401 numa navegacao mostraria `{"detail": "..."}` cru no navegador,
+    que e o servidor falando com uma pessoa em formato de maquina;
+  - rota de **API** sem sessao -> **401**, que e o que o `fetch` da tela sabe
+    tratar (ele redireciona para `/login`).
+
+Login e papeis vieram antes do deploy (V3.6) de proposito: **nada sem
+autenticacao chega a VM**.
 
 ## Valor cru na API, formatacao na tela
 
@@ -31,22 +41,43 @@ flutuante.
 """
 
 import os
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from pathlib import Path
 
 import psycopg2
-from fastapi import FastAPI, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, Response
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 
-from catering import auditoria, contrato
+from catering import auditoria, contrato, seguranca
 from catering.consulta import download, matriz, planilha, recorte
+from catering.seguranca import identidade, sessao, usuarios
 
 AQUI = Path(__file__).resolve().parent
 WEB = AQUI / "web"
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Bootstrap do primeiro admin, se a tabela estiver vazia e o ambiente
+    trouxer as variaveis. Idempotente -- ver `catering/seguranca/__init__.py`.
+
+    Nao roda migration: o schema e o mesmo da V2, migrado pelo startup dela no
+    compose. Duplicar isso aqui daria dois processos correndo `alembic upgrade`
+    ao mesmo tempo na subida do stack."""
+    seguranca.garantir_primeiro_admin()
+    yield
+
+
 app = FastAPI(
     title="Nuvem IA -- Volumetria de catering (V3)",
-    description="Filtros + Matriz sobre o dado do DW. Lote V3.2.",
+    description="Filtros + Matriz sobre o dado do DW, com login. Lote V3.4.",
+    lifespan=lifespan,
 )
 
 
@@ -87,6 +118,68 @@ def _json(valor):
     return valor
 
 
+def _ip(request: Request):
+    """IP do cliente, ou `None`. **Nao** viramos ausencia em `"desconhecido"`:
+    o freio de tentativas juntaria origens diferentes num mesmo balde, e a
+    auditoria passaria a ter um IP que nunca existiu."""
+    return request.client.host if request.client else None
+
+
+# ---------------------------------------------------------------- login (V3.4)
+@app.post("/login")
+def entrar(
+    request: Request,
+    response: Response,
+    login: str = Form(...),
+    senha: str = Form(...),
+):
+    """Autentica e abre a sessao.
+
+    A recusa e **sempre a mesma mensagem**, com o mesmo 401: "login ou senha
+    invalidos". Dizer "esse usuario nao existe" entregaria quem tem conta a quem
+    esta adivinhando. O motivo real vai para o log e para a auditoria, que sao
+    nossos.
+
+    Sucesso e falha, os dois, viram linha em `cat_auditoria` -- inclusive a
+    tentativa barrada pelo freio, que e justamente a que interessa ver."""
+    ip = _ip(request)
+    tentado = usuarios.normalizar(login)
+
+    try:
+        identidade.verificar_freio(login, ip)
+    except identidade.MuitasTentativas as erro:
+        auditoria.registrar_login(tentado, ip=ip, ok=False, motivo="freio de tentativas")
+        raise HTTPException(status_code=429, detail=str(erro)) from None
+
+    usuario = identidade.autenticar(login, senha)
+    if usuario is None:
+        identidade.registrar_falha(login, ip)
+        auditoria.registrar_login(
+            tentado, ip=ip, ok=False, motivo="credencial invalida"
+        )
+        raise HTTPException(status_code=401, detail="login ou senha invalidos")
+
+    identidade.registrar_sucesso(login, ip)
+    auditoria.registrar_login(usuario.login, ip=ip, ok=True)
+    sessao.criar(response, usuario)
+    return {"ok": True, "usuario": usuario.como_dict()}
+
+
+@app.post("/logout")
+def sair(response: Response):
+    """Apaga o cookie. **Nao exige sessao**: sair sem estar dentro nao e erro, e
+    exigir login para sair prenderia quem tem cookie invalido numa recusa."""
+    sessao.encerrar(response)
+    return {"ok": True}
+
+
+@app.get("/api/eu")
+def eu(usuario=Depends(sessao.exigir_login)):
+    """Quem esta logado, para o cabecalho da tela. O papel sai do banco, como em
+    todo request -- ver `seguranca/sessao.py`."""
+    return usuario.como_dict()
+
+
 @app.get("/health")
 def health():
     """Vivo e com banco alcancavel. O compose do V3.6 depende disto."""
@@ -102,11 +195,11 @@ def health():
         return JSONResponse(
             {"ok": False, "banco": f"{type(erro).__name__}"}, status_code=503
         )
-    return {"ok": True, "banco": "ok", "lote": "V3.2"}
+    return {"ok": True, "banco": "ok", "lote": "V3.4"}
 
 
 @app.get("/api/opcoes")
-def opcoes():
+def opcoes(usuario=Depends(sessao.exigir_login)):
     """O que existe para filtrar -- lido do dado, nao de lista fixa.
 
     Unidade nova, cliente novo ou operacao nova aparecem no filtro sozinhos.
@@ -209,6 +302,7 @@ def api_matriz(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    usuario=Depends(sessao.exigir_login),
 ):
     """A Matriz do recorte."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
@@ -234,6 +328,7 @@ def api_planilha(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    usuario=Depends(sessao.exigir_login),
 ):
     """Linhas cruas do recorte, 100 por pagina, paginadas no servidor."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
@@ -259,6 +354,7 @@ def api_download(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    usuario=Depends(sessao.exigir_login),
 ):
     """O recorte inteiro, em CSV (streaming) ou xlsx (sob teto).
 
@@ -272,10 +368,11 @@ def api_download(
     filtros = _filtros(de, ate, movimento, lente, faixa, 1,
                        unidade, cliente, tipo_estoque, operacao)
 
-    ip = request.client.host if request.client else None
-    # `usuario` fica nulo: login e o V3.4. Ver catering/auditoria.py.
+    # V3.4: `usuario` deixa de ser nulo. O resto do registro nao mudou de forma,
+    # como o V3.3 previu -- e uma linha, e nao um retrabalho.
     registro = auditoria.abrir(
-        "download", recorte=filtros.como_dict(), formato=formato, ip=ip
+        "download", recorte=filtros.como_dict(), formato=formato,
+        ip=_ip(request), usuario=usuario.login,
     )
 
     nome = download.nome_do_arquivo(filtros, formato)
@@ -303,9 +400,141 @@ def api_download(
     )
 
 
+# ------------------------------------------------- administracao (so admin)
+@app.get("/api/usuarios")
+def api_usuarios(admin=Depends(sessao.exigir_admin)):
+    """Quem existe, com papel e se tem senha local. **Sem hash** -- o objeto
+    `Usuario` nao carrega o hash, exatamente para nao poder sair por aqui."""
+    return [u.como_dict() for u in usuarios.listar()]
+
+
+@app.post("/api/usuarios")
+def api_criar_usuario(
+    login: str = Form(...),
+    nome: str = Form(...),
+    papel: str = Form(...),
+    senha: str = Form(""),
+    admin=Depends(sessao.exigir_admin),
+):
+    """Cria usuario. Senha vazia cria **sem credencial local** -- o caso do AD,
+    que tem papel e entra pelo diretorio (ver a migration 0022)."""
+    try:
+        usuario = usuarios.criar(login, nome, papel, senha or None)
+    except usuarios.UsuarioJaExiste as erro:
+        raise HTTPException(status_code=409, detail=str(erro)) from None
+    except usuarios.UsuarioInvalido as erro:
+        raise HTTPException(status_code=400, detail=str(erro)) from None
+    return usuario.como_dict()
+
+
+@app.patch("/api/usuarios/{login}")
+def api_alterar_usuario(
+    login: str,
+    papel: str = Form(None),
+    senha: str = Form(None),
+    ativo: bool = Form(None),
+    admin=Depends(sessao.exigir_admin),
+):
+    """Troca papel, senha ou `ativo`. Papel e `ativo` valem **no request
+    seguinte**, porque nenhum dos dois mora no cookie.
+
+    `409` quando a mudanca deixaria o sistema sem admin ativo nenhum -- ver
+    `usuarios.UltimoAdmin`."""
+    if papel is None and senha is None and ativo is None:
+        raise HTTPException(status_code=400, detail="nada a alterar")
+    if usuarios.buscar(login) is None:
+        raise HTTPException(status_code=404, detail=f"login: {login}")
+    try:
+        if papel is not None:
+            usuarios.definir_papel(login, papel)
+        if ativo is not None:
+            usuarios.definir_ativo(login, ativo)
+        if senha is not None:
+            usuarios.definir_senha(login, senha or None)
+    except usuarios.UltimoAdmin as erro:
+        raise HTTPException(status_code=409, detail=str(erro)) from None
+    except usuarios.UsuarioInvalido as erro:
+        raise HTTPException(status_code=400, detail=str(erro)) from None
+    return usuarios.buscar(login).como_dict()
+
+
+@app.get("/api/auditoria")
+def api_auditoria(
+    limite: int = Query(100, ge=1, le=1000),
+    evento: str = Query(None),
+    admin=Depends(sessao.exigir_admin),
+):
+    """As ultimas linhas de `cat_auditoria`. Restrita a admin: a tabela diz quem
+    baixou o que e quem tentou entrar, e isso nao e leitura de todo mundo."""
+    if evento is not None and evento not in auditoria.EVENTOS:
+        raise HTTPException(status_code=400, detail=f"evento: {evento!r}")
+    conn = _conexao()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, to_char(criado_em, 'DD/MM/YYYY HH24:MI:SS'), evento,
+                       usuario, formato, linhas, ip, status, erro, recorte
+                FROM cat_auditoria
+                WHERE (%s IS NULL OR evento = %s)
+                ORDER BY id DESC LIMIT %s
+                """,
+                (evento, evento, limite),
+            )
+            colunas = ("id", "quando", "evento", "usuario", "formato", "linhas",
+                       "ip", "status", "erro", "recorte")
+            return [dict(zip(colunas, linha)) for linha in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+# ------------------------------------------------------------------- paginas
+def _pagina(arquivo):
+    """HTML de pagina protegida, com `Cache-Control: no-store`.
+
+    Sem isso o navegador serve a pagina do **cache** e a autorizacao nao e
+    reavaliada -- achado na validacao do V3.4: depois de sair de um admin e
+    entrar como visualizador, o `GET /administracao` nao chegou ao servidor, o
+    Chrome devolveu o HTML guardado, e o desvio para a Matriz nunca teve chance
+    de acontecer. Nao houve vazamento de dado (as APIs responderam 403 e as
+    tabelas ficaram vazias), mas a tela errada abrir e defeito por si.
+
+    `FileResponse` manda `ETag`/`Last-Modified` por padrao, o que e certo para o
+    logo e errado para pagina atras de sessao. O `/logo.png` continua
+    cacheavel de proposito: e estatico e publico.
+    """
+    return FileResponse(WEB / arquivo, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/login")
+def pagina_login(request: Request):
+    """Aberta, por definicao. Quem ja esta logado nao precisa dela -- vai para a
+    Matriz, em vez de ver um formulario que nao serve mais."""
+    if sessao.usuario_atual(request) is not None:
+        return RedirectResponse("/", status_code=303)
+    return _pagina("login.html")
+
+
 @app.get("/")
-def pagina():
-    return FileResponse(WEB / "matriz.html")
+def pagina(request: Request):
+    """Pagina, e nao API: sem sessao **redireciona**, e nao devolve 401. Ver a
+    docstring do modulo."""
+    if sessao.usuario_atual(request) is None:
+        return RedirectResponse("/login", status_code=303)
+    return _pagina("matriz.html")
+
+
+@app.get("/administracao")
+def pagina_admin(request: Request):
+    """Usuarios e auditoria. Visualizador vai para a Matriz em vez de levar 403
+    numa navegacao: 403 e resposta para `fetch`, nao para uma pessoa que clicou
+    num link."""
+    usuario = sessao.usuario_atual(request)
+    if usuario is None:
+        return RedirectResponse("/login", status_code=303)
+    if not usuario.admin:
+        return RedirectResponse("/", status_code=303)
+    return _pagina("administracao.html")
 
 
 @app.get("/logo.png")

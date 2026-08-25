@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Administração — Volumetria de catering</title>
+<link rel="icon" href="/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-azul-institucional:#071A3A; --brand-azul-corporativo:#0A2A5E;
+  --brand-azul-principal:#1E6FD9; --brand-azul-conexao:#3FA9F5;
+  --brand-amarelo:#FFC400; --brand-amarelo-suave:#FFD84D;
+  --brand-branco:#FFFFFF; --brand-cinza-claro:#C7D2E3; --brand-azul-escuro:#050F24;
+  --grad-institucional:linear-gradient(135deg,#050F24 0%,#071A3A 50%,#0A2A5E 100%);
+  --font-primary:'Montserrat',sans-serif;
+  --radius-sm:6px; --radius-md:12px;
+  --shadow-sm:0 2px 8px rgba(7,26,58,.12); --shadow-md:0 6px 20px rgba(7,26,58,.18);
+  --superficie:#F7F9FC; --cartao:#F0F4FA;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-primary);background:var(--superficie);
+     color:var(--brand-azul-institucional);font-size:13px}
+
+header{background:var(--grad-institucional);color:var(--brand-branco);
+       padding:14px 22px 0;position:relative;overflow:hidden}
+.topo{display:flex;align-items:center;gap:18px;position:relative;z-index:2}
+header img{height:34px}
+.titulo{font-weight:700;font-size:15px;letter-spacing:.2px}
+.titulo span{display:block;font-weight:400;font-size:11px;color:var(--brand-cinza-claro)}
+.sessao{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px}
+.sessao .quem{text-align:right;line-height:1.35}
+.sessao .quem b{display:block;font-size:12px}
+.sessao .papel{color:var(--brand-amarelo);font-weight:600;text-transform:uppercase;
+  letter-spacing:.5px;font-size:10px}
+.sessao a,.sessao button{font-family:var(--font-primary);font-size:11px;font-weight:600;
+  padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;text-decoration:none;
+  border:1px solid rgba(199,210,227,.45);background:transparent;
+  color:var(--brand-branco)}
+.ondas{position:absolute;left:0;right:0;bottom:-2px;height:26px;z-index:1;opacity:.55}
+
+main{padding:18px 22px 40px;display:flex;flex-direction:column;gap:24px}
+section{background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-md);box-shadow:var(--shadow-sm);overflow:hidden}
+.cabeca{display:flex;align-items:baseline;gap:10px;padding:12px 16px;
+  border-bottom:1px solid var(--brand-cinza-claro)}
+h2{font-size:14px;font-weight:700;margin:0}
+.desc{font-size:11px;color:var(--brand-azul-corporativo);opacity:.8;margin:0}
+.rolagem{overflow-x:auto}
+table{border-collapse:separate;border-spacing:0;width:100%;font-size:12px}
+th,td{padding:7px 12px;text-align:left;white-space:nowrap}
+th{background:var(--brand-azul-institucional);color:var(--brand-branco);
+   font-weight:600;font-size:11px}
+tbody tr:nth-child(even){background:var(--cartao)}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.marca-papel{font-weight:700;font-size:10px;letter-spacing:.5px;text-transform:uppercase;
+  padding:2px 7px;border-radius:10px;background:var(--cartao);
+  border:1px solid var(--brand-cinza-claro)}
+.marca-papel.admin{background:var(--brand-amarelo);border-color:var(--brand-amarelo)}
+.inativo{opacity:.5}
+.ok{color:#1B7F3B;font-weight:600}
+.falha{color:#B3261E;font-weight:600}
+
+form.linha{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;padding:14px 16px}
+.campo{display:flex;flex-direction:column;gap:4px}
+.campo label{font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--brand-azul-corporativo)}
+input,select{font-family:var(--font-primary);font-size:12px;padding:6px 8px;
+  border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-sm);
+  background:var(--brand-branco);color:var(--brand-azul-institucional)}
+.primario{font-family:var(--font-primary);font-weight:700;font-size:12px;
+  padding:8px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
+  background:var(--brand-amarelo);color:var(--brand-azul-institucional)}
+.acao{font-family:var(--font-primary);font-weight:500;font-size:11px;
+  padding:4px 9px;border:1px solid var(--brand-azul-conexao);
+  border-radius:var(--radius-sm);cursor:pointer;background:transparent;
+  color:var(--brand-azul-principal);margin-right:5px}
+.aviso{background:#FFF8E1;border-left:3px solid var(--brand-amarelo);
+  padding:9px 13px;font-size:12px;line-height:1.5;margin:0}
+.recado{padding:9px 16px;font-size:12px;line-height:1.5;display:none}
+.recado.visivel{display:block}
+.recado.erro{background:#FDECEA;border-left:3px solid #B3261E}
+.recado.bom{background:#EAF6EC;border-left:3px solid #1B7F3B}
+.texto{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+</style>
+</head>
+<body>
+<header>
+  <div class="topo">
+    <img src="/logo.png" alt="IceStar | SuperFrio">
+    <div class="titulo">Administração
+      <span>Usuários, papéis e auditoria de acesso</span>
+    </div>
+    <div class="sessao">
+      <div class="quem"><b id="eu-nome">—</b><span class="papel" id="eu-papel"></span></div>
+      <a href="/">Matriz</a>
+      <button id="sair" type="button">Sair</button>
+    </div>
+  </div>
+  <svg class="ondas" viewBox="0 0 1200 26" preserveAspectRatio="none" aria-hidden="true">
+    <path d="M0,18 C220,2 380,26 600,14 C820,2 980,24 1200,10 L1200,26 L0,26 Z" fill="#1E6FD9" opacity=".45"/>
+    <path d="M0,22 C240,10 420,26 640,18 C860,10 1000,26 1200,16 L1200,26 L0,26 Z" fill="#3FA9F5" opacity=".35"/>
+    <path d="M0,25 C240,14 420,26 640,21 C860,14 1000,26 1200,19" fill="none" stroke="#FFC400" stroke-width="1" opacity=".8"/>
+  </svg>
+</header>
+
+<main>
+  <section>
+    <div class="cabeca">
+      <h2>Usuários</h2>
+      <p class="desc">Papel e situação valem no request seguinte — não é preciso esperar a sessão expirar.</p>
+    </div>
+    <div class="recado" id="recado-usuarios"></div>
+    <div class="rolagem"><table>
+      <thead><tr>
+        <th>Login</th><th>Nome</th><th>Papel</th><th>Situação</th>
+        <th>Senha local</th><th>Ações</th>
+      </tr></thead>
+      <tbody id="corpo-usuarios"></tbody>
+    </table></div>
+    <form class="linha" id="forma-novo">
+      <div class="campo"><label for="novo-login">Login</label>
+        <input id="novo-login" required autocapitalize="none" spellcheck="false"></div>
+      <div class="campo"><label for="novo-nome">Nome</label>
+        <input id="novo-nome" required></div>
+      <div class="campo"><label for="novo-papel">Papel</label>
+        <select id="novo-papel">
+          <option value="visualizador">visualizador</option>
+          <option value="admin">admin</option>
+        </select></div>
+      <div class="campo"><label for="nova-senha">Senha (vazio = sem senha local)</label>
+        <input id="nova-senha" type="password" autocomplete="new-password"></div>
+      <button class="primario" type="submit">Cadastrar</button>
+    </form>
+    <p class="aviso"><b>Senha em branco</b> cria a pessoa com papel e <b>sem credencial local</b> —
+      é o formato previsto para quando a autenticação passar para o AD. Hoje, quem está
+      assim não consegue entrar.</p>
+  </section>
+
+  <section>
+    <div class="cabeca">
+      <h2>Auditoria de acesso</h2>
+      <p class="desc">Logins (inclusive os recusados) e downloads, com o recorte que saiu.</p>
+    </div>
+    <form class="linha" id="forma-auditoria">
+      <div class="campo"><label for="filtro-evento">Evento</label>
+        <select id="filtro-evento">
+          <option value="">todos</option>
+          <option value="login">login</option>
+          <option value="download">download</option>
+        </select></div>
+      <div class="campo"><label for="filtro-limite">Linhas</label>
+        <select id="filtro-limite">
+          <option>100</option><option>300</option><option>1000</option>
+        </select></div>
+      <button class="primario" type="submit">Atualizar</button>
+    </form>
+    <div class="rolagem"><table>
+      <thead><tr>
+        <th>Quando</th><th>Evento</th><th>Usuário</th><th>Situação</th>
+        <th>Formato</th><th>Linhas</th><th>IP</th><th>Detalhe</th>
+      </tr></thead>
+      <tbody id="corpo-auditoria"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<script>
+/* 401 = a sessao morreu enquanto a tela estava aberta -> volta pro login.
+   Sem isto, a tela mostraria "erro" para algo que e so "faca login de novo".
+
+   403 = a pessoa deixou de ser admin com a tela aberta (papel vem do banco a
+   cada request, de propósito). Aqui é a tela INTEIRA que não é mais dela, então
+   vai para a Matriz — o mesmo desvio que o servidor faz numa navegação. Sem
+   isto o 403 caía como `TypeError: lista is not iterable`, que manda quem está
+   depurando olhar o JSON em vez da autorização. */
+async function busca(url, opcoes){
+  const resposta = await fetch(url, opcoes);
+  if (resposta.status === 401) { window.location.replace('/login'); throw new Error('401'); }
+  if (resposta.status === 403) { window.location.replace('/'); throw new Error('403'); }
+  return resposta;
+}
+
+function recado(id, texto, bom){
+  const caixa = document.getElementById(id);
+  caixa.textContent = texto;
+  caixa.className = 'recado visivel ' + (bom ? 'bom' : 'erro');
+}
+
+async function detalheDoErro(resposta){
+  try { return (await resposta.json()).detail || ('HTTP ' + resposta.status); }
+  catch (e) { return 'HTTP ' + resposta.status; }
+}
+
+async function carregaEu(){
+  const eu = await (await busca('/api/eu')).json();
+  document.getElementById('eu-nome').textContent = eu.nome;
+  document.getElementById('eu-papel').textContent = eu.papel;
+}
+
+async function carregaUsuarios(){
+  const lista = await (await busca('/api/usuarios')).json();
+  const corpo = document.getElementById('corpo-usuarios');
+  corpo.innerHTML = '';
+  for (const u of lista){
+    const tr = document.createElement('tr');
+    if (!u.ativo) tr.className = 'inativo';
+    tr.innerHTML =
+      '<td>' + u.login + '</td>' +
+      '<td class="texto">' + u.nome + '</td>' +
+      '<td><span class="marca-papel ' + u.papel + '">' + u.papel + '</span></td>' +
+      '<td>' + (u.ativo ? 'ativo' : 'desativado') + '</td>' +
+      '<td>' + (u.tem_senha_local ? 'sim' : 'não') + '</td>';
+
+    const acoes = document.createElement('td');
+
+    const trocar = document.createElement('button');
+    trocar.className = 'acao';
+    trocar.textContent = u.papel === 'admin' ? 'tornar visualizador' : 'tornar admin';
+    trocar.onclick = () => altera(u.login,
+      {papel: u.papel === 'admin' ? 'visualizador' : 'admin'});
+    acoes.appendChild(trocar);
+
+    const situacao = document.createElement('button');
+    situacao.className = 'acao';
+    situacao.textContent = u.ativo ? 'desativar' : 'ativar';
+    situacao.onclick = () => altera(u.login, {ativo: u.ativo ? 'false' : 'true'});
+    acoes.appendChild(situacao);
+
+    const senha = document.createElement('button');
+    senha.className = 'acao';
+    senha.textContent = 'trocar senha';
+    senha.onclick = () => {
+      const nova = window.prompt('Nova senha para ' + u.login +
+        ' (vazio remove a senha local):');
+      if (nova === null) return;
+      altera(u.login, {senha: nova});
+    };
+    acoes.appendChild(senha);
+
+    tr.appendChild(acoes);
+    corpo.appendChild(tr);
+  }
+}
+
+async function altera(login, campos){
+  const dados = new FormData();
+  for (const [chave, valor] of Object.entries(campos)) dados.append(chave, valor);
+  const resposta = await busca('/api/usuarios/' + encodeURIComponent(login),
+    {method: 'PATCH', body: dados});
+  if (!resposta.ok){ recado('recado-usuarios', await detalheDoErro(resposta), false); return; }
+  recado('recado-usuarios', login + ' atualizado.', true);
+  carregaUsuarios();
+}
+
+document.getElementById('forma-novo').addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+  const dados = new FormData();
+  dados.append('login', document.getElementById('novo-login').value);
+  dados.append('nome', document.getElementById('novo-nome').value);
+  dados.append('papel', document.getElementById('novo-papel').value);
+  dados.append('senha', document.getElementById('nova-senha').value);
+  const resposta = await busca('/api/usuarios', {method: 'POST', body: dados});
+  if (!resposta.ok){ recado('recado-usuarios', await detalheDoErro(resposta), false); return; }
+  document.getElementById('forma-novo').reset();
+  recado('recado-usuarios', 'Usuário cadastrado.', true);
+  carregaUsuarios();
+});
+
+async function carregaAuditoria(){
+  const evento = document.getElementById('filtro-evento').value;
+  const limite = document.getElementById('filtro-limite').value;
+  let url = '/api/auditoria?limite=' + limite;
+  if (evento) url += '&evento=' + evento;
+  const lista = await (await busca(url)).json();
+  const corpo = document.getElementById('corpo-auditoria');
+  corpo.innerHTML = '';
+  for (const linha of lista){
+    const tr = document.createElement('tr');
+    const situacao = linha.status === 'ok'
+      ? '<span class="ok">ok</span>'
+      : '<span class="falha">' + linha.status + '</span>';
+    const detalhe = linha.erro
+      ? linha.erro
+      : (linha.recorte && Object.keys(linha.recorte).length
+          ? JSON.stringify(linha.recorte) : '');
+    const celula = document.createElement('td');
+    celula.className = 'texto';
+    celula.textContent = detalhe;
+    celula.title = detalhe;
+    tr.innerHTML =
+      '<td>' + (linha.quando || '') + '</td>' +
+      '<td>' + linha.evento + '</td>' +
+      '<td>' + (linha.usuario || '—') + '</td>' +
+      '<td>' + situacao + '</td>' +
+      '<td>' + (linha.formato || '') + '</td>' +
+      '<td class="num">' + (linha.linhas === null ? '' : linha.linhas) + '</td>' +
+      '<td>' + (linha.ip || '') + '</td>';
+    tr.appendChild(celula);
+    corpo.appendChild(tr);
+  }
+}
+
+document.getElementById('forma-auditoria').addEventListener('submit', (evento) => {
+  evento.preventDefault();
+  carregaAuditoria();
+});
+
+document.getElementById('sair').addEventListener('click', async () => {
+  await fetch('/logout', {method: 'POST'});
+  window.location.replace('/login');
+});
+
+carregaEu();
+carregaUsuarios();
+carregaAuditoria();
+</script>
+</body>
+</html>

@@ -3,9 +3,9 @@
 **Este documento é a fonte única do status da V3.** Criado em 24/ago/2026, na
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
-**Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026). Do
-V3.4 em diante a divisão em lotes na seção final é proposta, não plano em execução —
-autorização é por lote, como na V1 e na V2.
+**Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026) **e
+V3.4** (25/ago/2026). Do V3.5 em diante a divisão em lotes na seção final é
+proposta, não plano em execução — autorização é por lote, como na V1 e na V2.
 
 > **Cuidado com o nome:** `docs/proposta_v3_volumetria.md` **não** é deste
 > documento — é a especificação da **V2**, e se chama "v3" por acidente
@@ -211,7 +211,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.1** | Carregador contra os CSVs, idempotente pela **chave natural** (não pela PK do DW — ver V3.0), com registro de rodada; suíte nova — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.2** | Filtros + Matriz, com aceite célula por célula contra os CSVs agregados por `nk_calendario` — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.3** | Planilha aberta + download em streaming e auditoria — **feito em 24/ago/2026**, ver seção abaixo | não |
-| **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso | não |
+| **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso — **feito em 25/ago/2026**, ver seção abaixo | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento 07h05/15h05 | **sim** |
 | **V3.6** | Deploy na VM; desmonte do admin e do linhagem em produção | não |
 | **V3.7** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
@@ -762,6 +762,291 @@ cortar na tela não pode esconder dado.
 
 ---
 
+## Lote V3.4 — Login e papéis (feito, 25/ago/2026)
+
+Autorizado pela Maria em 25/ago/2026. Entregou autenticação por pessoa, dois
+papéis (`admin` / `visualizador`), auditoria de acesso preenchendo `usuario`, e
+uma tela de administração. Sem Oracle (V3.5) e sem deploy (V3.6) — que é a ordem
+de propósito: **nada sem autenticação chega à VM**.
+
+### A costura que o contrato exige: papel separado de identidade
+
+O contrato pede "desenhado para o AD entrar depois sem reescrita". Isso não é
+organização de código, é o schema:
+
+```text
+identidade  -> QUEM você é.     Hoje: senha local. Depois: AD.
+papel       -> O QUE você pode. Sempre nosso, sempre no nosso banco.
+```
+
+Na `cat_usuarios` (migration 0022) isso aparece como uma decisão concreta:
+**`senha_hash` é NULÁVEL**. Uma pessoa do AD tem linha aqui — com papel, nome e
+`ativo` — e nenhuma senha local. No dia do AD, `identidade.autenticar()` passa a
+consultar o diretório e a autorização não muda uma linha, porque nunca dependeu
+de a senha existir.
+
+Se a coluna fosse `NOT NULL`, "AD depois" exigiria migration mais uma senha falsa
+por pessoa — e alguém acabaria guardando um hash inútil só para satisfazer a
+restrição. O teste `test_usuario_sem_senha_local_tem_papel_mas_nao_entra` fixa
+isso: se alguém tornar a coluna obrigatória, ele quebra.
+
+Uma decisão de fronteira que vem junto: **pessoa autenticada no AD sem linha
+nossa não entra**. Senão, no dia da virada, o domínio inteiro da SuperFrio
+passaria a ter acesso à volumetria de catering.
+
+### O papel vem do banco a cada request, nunca do cookie
+
+O cookie carrega **quem** (login e validade, assinados). O que a pessoa pode é
+consultado na `cat_usuarios` em cada request.
+
+Essa é a diferença entre revogar acesso **agora** e revogar acesso "em até 12
+horas". Com o papel dentro do cookie — o atalho barato, que economiza uma
+consulta — rebaixar um admin ou desativar quem saiu da empresa só faria efeito
+quando o cookie expirasse: o crachá continuaria valendo depois do desligamento.
+
+Custa uma consulta curta por request autenticado. Numa ferramenta interna de CSC
+isso é barato; se um dia deixar de ser, a resposta é cache com invalidação — e
+não mover o papel para dentro do cookie. Dois testes cuidam disso
+(`test_papel_vem_do_banco_e_nao_do_cookie`,
+`test_desativar_corta_o_acesso_no_request_seguinte`).
+
+### scrypt da stdlib, e nenhuma dependência nova
+
+O `requirements.txt` não tem bcrypt, passlib nem argon2. `hashlib.scrypt` é
+stdlib e é **memory-hard** — subir o custo de quebra exige memória, não só CPU,
+que é o que derruba ataque em GPU. Medido nesta máquina: **~51 ms** por hash em
+n=2^14. Caro para força bruta, imperceptível num login.
+
+O que não serve, e por quê:
+
+- **SHA-256 cru** — rápido de propósito, bilhões de tentativas por segundo;
+- **`compare_digest(senha, SENHA_DO_ENV)`**, que é o que a V2 faz — funciona para
+  *uma* senha compartilhada, onde não há nada guardado. Com identidade por pessoa
+  existe hash guardado, e guardar senha reversível de várias pessoas é uma classe
+  de incidente inteira;
+- **PBKDF2** — aceitável, mas só CPU-hard.
+
+O valor guardado leva os parâmetros dentro dele
+(`scrypt$16384$8$1$<sal>$<hash>`), e não numa constante do módulo: sem isso,
+subir o custo no futuro invalidaria toda senha já cadastrada, porque a
+verificação usaria um custo diferente do da gravação e **ninguém entraria**.
+
+### O que o login recusa, e o que ele não conta
+
+- **Mensagem e código iguais** para senha errada e login inexistente. Diferenciar
+  entregaria *quem tem conta* a quem está adivinhando, sem acertar senha nenhuma.
+  O motivo real vai para o log e para a auditoria, que são nossos.
+- **Login inexistente também paga um scrypt**, num hash descartável. Sem isso a
+  resposta voltaria em ~0 ms para quem não existe e ~51 ms para quem existe com
+  senha errada — e essa diferença é um oráculo de enumeração.
+- **Freio por login E por IP.** A V2 freava só por IP porque não havia identidade
+  por pessoa; o próprio comentário dela registra o custo — o CSC atrás do mesmo
+  IP trava inteiro quando uma pessoa erra a senha. Com identidade, a chave certa
+  é o **login**: quem erra trava a si mesmo. 5 falhas em 10 min → 10 min. O freio
+  por IP fica, mais frouxo (30 em 10 min), para o caso que o outro não pega:
+  varredura de logins diferentes da mesma origem. Em memória, como na V2 —
+  proporcional a uma ferramenta interna, e não defesa contra atacante
+  determinado.
+
+### A auditoria de acesso, sem migration nova
+
+A `cat_auditoria` do V3.3 já tinha `evento IN ('download','login')` e `usuario`
+nulável. O V3.4 **só passou a usar**: sucesso vira `status='ok'`, falha vira
+`status='erro'` com o motivo, e a tentativa barrada pelo freio também entra —
+que é justamente a que interessa ver. A senha nunca entra em coluna nenhuma
+(`test_a_senha_nunca_chega_a_auditoria`).
+
+Login grava **numa escrita só** (`registrar_login`), e não no par
+`abrir`/`fechar` do download: download é um stream que pode morrer no meio, login
+não tem meio. Duas escritas por tentativa custariam duas idas ao banco inclusive
+nas erradas, que são as que podem vir em rajada.
+
+O download passou a preencher `usuario` — uma linha, como o V3.3 previu.
+
+### Duas formas de recusar, porque quem recebe é diferente
+
+- rota de **página** (`/`, `/administracao`) sem sessão → **303 para `/login`**.
+  Responder 401 numa navegação mostraria `{"detail": ...}` cru no navegador, que é
+  o servidor falando com uma pessoa em formato de máquina;
+- rota de **API** sem sessão → **401**, que é o que o `fetch` da tela trata
+  (redireciona para `/login`);
+- visualizador em rota de admin → **403**, e não 401: 401 o mandaria para a tela
+  de login, onde ele entraria de novo para ser recusado de novo.
+
+Abertos, por decisão declarada: `/health` (o healthcheck do V3.6 depende, e não
+expõe dado), `/logo.png` (a própria tela de login usa) e `/login`.
+
+### A fraqueza que fica declarada: cookie sem `secure`
+
+**A VM serve HTTP puro hoje** (porta 8002, sem TLS). Com `secure=True` o
+navegador não devolveria o cookie e o login simplesmente não funcionaria em
+produção. Então o padrão é desligado, controlado por `CAT_COOKIE_SECURE`.
+
+Isto é uma fraqueza real, não um detalhe: em HTTP, quem estiver no caminho da
+rede lê o cookie de sessão. É aceitável porque a rede é interna e o dado não é
+credencial de terceiros, e **fica registrado como pendência** — no dia em que
+houver HTTPS, liga a variável. `httponly` e `samesite=lax` ficam ligados sempre,
+porque não dependem de TLS.
+
+### O primeiro admin, e a guarda contra ficar sem nenhum
+
+Sistema com login precisa de uma forma de o primeiro acesso existir. As duas
+saídas ruins: usuário fixo no código (que vai para o Git e para produção) e
+endpoint público de cadastro (que qualquer um usa antes de você).
+
+A saída daqui: no startup, `garantir_primeiro_admin()` cria o admin **só se a
+tabela estiver vazia**, lendo `CAT_ADMIN_LOGIN`/`CAT_ADMIN_SENHA` do ambiente.
+Com um usuário cadastrado a função não faz nada — então variável esquecida no
+`.env` não recria nem sobrescreve ninguém, e trocar o valor depois não muda a
+senha de quem existe.
+
+No outro extremo, `usuarios.UltimoAdmin` recusa a alteração que deixaria o
+sistema **sem nenhum admin ativo**. O modo de falha que isso impede é definitivo:
+o único admin se desativa por engano e ninguém mais cadastra usuário nem lê
+auditoria. São três caminhos para o mesmo buraco, e os três estão fechados:
+rebaixar, desativar e **remover a senha local** — o terceiro tranca igual
+enquanto não existe AD, porque a pessoa mantém o papel e deixa de ter qualquer
+forma de entrar. A guarda vive em `usuarios.py`, e não no `app.py`, para valer também
+para o CLI — e não fecha a saída de recuperação, porque criar outro admin antes
+continua funcionando.
+
+### Chave de sessão própria, e lida no uso
+
+`CAT_SECRET_KEY`, e não a `SECRET_KEY` da V2: chave compartilhada significa que
+um vazamento da V2 (congelada, e um dia removida da VM) passaria a permitir
+forjar sessão da V3.
+
+Ela é lida **no uso**, não no import. Com erro no import o app não subiria, o
+`/health` morreria junto e o sintoma chegaria como "container não fica de pé",
+sem dizer o que falta. Com erro no uso o `/health` responde e o erro no log nomeia
+a variável ausente (`test_sem_chave_o_health_continua_de_pe`).
+
+### Variáveis de ambiente novas
+
+| variável | para quê | obrigatória |
+|---|---|---|
+| `CAT_SECRET_KEY` | assina o cookie de sessão da V3 | **sim** |
+| `CAT_COOKIE_SECURE` | `1` só quando houver HTTPS (ver acima) | não (padrão `0`) |
+| `CAT_ADMIN_LOGIN` / `CAT_ADMIN_SENHA` | primeiro admin, se a tabela estiver vazia | não |
+| `CAT_ADMIN_NOME` | nome de exibição do primeiro admin | não |
+
+Vão no `.env` (gitignored) — **nunca no chat, nunca em commit**.
+
+### CLI de recuperação
+
+```
+python -m catering.seguranca listar
+python -m catering.seguranca criar --login joao.silva --nome "João" --papel visualizador
+python -m catering.seguranca criar --login do.ad --nome "Do AD" --papel admin --sem-senha
+python -m catering.seguranca senha --login joao.silva
+python -m catering.seguranca papel --login joao.silva --papel admin
+python -m catering.seguranca desativar --login joao.silva
+```
+
+A senha vem por `getpass`, e **não existe flag para passá-la na linha de
+comando**: iria para o histórico do shell, para o `ps` de quem estiver na máquina
+e para qualquer terminal gravado.
+
+### A tela
+
+`/login` (marca, sem barra de filtros) e `/administracao` (usuários + últimas
+linhas da auditoria, só admin). O cabeçalho da Matriz passou a mostrar quem está
+logado, o papel, o botão de sair, e o link da administração **só para admin** —
+visualizador que clicasse seria devolvido pelo próprio servidor.
+
+A rota da tela de administração é `/administracao`, e não `/admin`: `/admin` é
+rota da V2, e `test_app_da_v3_nao_depende_do_app_da_v2` proíbe rota da V2 dentro
+deste app. Renomear manteve a guarda intacta em vez de afrouxá-la.
+
+### Defeitos que só o navegador achou
+
+A regra do projeto — lote com tela não fecha por leitura — pagou três vezes aqui.
+Nenhum dos três apareceria na suíte como ela estava, porque os três são
+comportamento do navegador, não do servidor.
+
+**1. Página atrás de sessão servida do cache.** Depois de sair de um admin e
+entrar como visualizador, `GET /administracao` **não chegou ao servidor** — o
+`FileResponse` manda `ETag`/`Last-Modified`, o Chrome devolveu o HTML guardado, e
+o desvio para a Matriz nunca teve chance de rodar. Não houve vazamento de dado
+(as APIs responderam 403 e as tabelas ficaram vazias), mas a tela errada abrir é
+defeito por si — e num computador compartilhado a página do colega voltaria pelo
+botão de voltar.
+
+Correção: `Cache-Control: no-store` nas páginas protegidas (`_pagina()` no
+`app.py`). O `/logo.png` continua cacheável de propósito — é estático, público, e
+são 147 KB em toda navegação. Fixado em
+`test_pagina_atras_de_sessao_nao_pode_ficar_no_cache`.
+
+Detalhe honesto da verificação: depois da correção, o navegador **continuou**
+mostrando a tela antiga — `no-store` impede guardar, não apaga o que já estava
+guardado. A prova de que a correção funciona veio de uma URL sem entrada no
+cache: duas navegações seguidas, as duas chegando ao servidor com 303 para a
+Matriz.
+
+**2. Campo de senha ilegível com autofill.** No primeiro carregamento da tela de
+login, com senha salva no Chrome, o campo preenchido pelo autofill virou
+**branco** — e o texto branco da tela escura ficou ilegível. O navegador sobrepõe
+o `background` com um estilo interno que só `-webkit-box-shadow` inset cobre.
+Corrigido no `login.html`. Ressalva honesta: a correção segue o padrão conhecido
+para `:-webkit-autofill`, mas **não foi reproduzida no Playwright** — o autofill
+depende da senha salva no perfil do Chrome, e o teste automatizado digita o
+campo, então nunca dispara a pseudo-classe.
+
+**3. 403 caindo como `TypeError`.** O `busca()` da tela de administração só
+tratava 401. Quando o papel muda com a tela aberta, o 403 chegava como
+`TypeError: lista is not iterable` — que manda quem está depurando olhar o JSON
+em vez da autorização. Agora 403 devolve a pessoa para a Matriz, o mesmo desvio
+que o servidor faz numa navegação.
+
+O fluxo do rebaixamento foi exercitado no navegador de ponta a ponta: com a tela
+de admin aberta, o papel foi trocado no banco e o clique seguinte já foi recusado
+— o cabeçalho passou a dizer VISUALIZADOR e o link de Administração desapareceu,
+com o **mesmo cookie**.
+
+### Aceite
+
+`python -m pytest tests/test_catering_*.py tests/test_migracao.py` — **188
+passando** (25/ago/2026), dos quais 53 são o `test_catering_seguranca.py` novo.
+Suíte completa: **754 passando + 2 xfailed** (os dois conhecidos da V2), 13min29.
+
+Três testes são afirmação de contrato, e não detalhe de implementação:
+
+1. `test_usuario_sem_senha_local_tem_papel_mas_nao_entra` — a costura do AD;
+2. `test_papel_vem_do_banco_e_nao_do_cookie` — revogação vale no request seguinte;
+3. `test_recusa_nao_distingue_login_inexistente_de_senha_errada` — sem oráculo de
+   enumeração.
+
+A `cliente_v3` de `test_catering_app.py` passou a entrar logada como admin. A
+exigência de sessão em si ficou no arquivo novo, de propósito: se a autenticação
+quebrar, o sinal tem que chegar como falha de segurança, e não como catorze
+falhas de Matriz apontando para o lugar errado.
+
+### Arquivos
+
+- `alembic/versions/0022_cat_usuarios.py`
+- `catering/seguranca/{__init__,__main__,senha,usuarios,identidade,sessao}.py`
+- `catering/auditoria.py` (`registrar_login`)
+- `catering/app.py` (`/login`, `/logout`, `/api/eu`, `/api/usuarios`,
+  `/api/auditoria`, `/administracao`, e `Depends(exigir_login)` nas rotas de dado)
+- `catering/web/login.html`, `catering/web/administracao.html`,
+  `catering/web/matriz.html` (cabeçalho de sessão e desvio de 401)
+- `tests/test_catering_seguranca.py` (53), `tests/test_catering_app.py` (fixture
+  autenticada), `tests/conftest.py` (`CAT_SECRET_KEY`)
+
+### O que este lote NÃO fez
+
+- **AD de verdade** — só o desenho que o permite (`senha_hash` nulável e a
+  autenticação isolada em um módulo).
+- **HTTPS**, e por isso o cookie vai sem `secure`. Declarado acima.
+- **Expirar sessão na troca de senha.** Quem já está logado continua logado
+  depois de um reset; a alavanca que corta acesso na hora é `ativo = false`, que
+  é a que importa operacionalmente.
+- **Persistir o freio de tentativas** — ele mora em memória e zera num restart do
+  container, como na V2.
+- Oracle (V3.5), deploy (V3.6).
+
+---
+
 ## Regras de trabalho
 
 Um lote por vez; validar migrations (upgrade e downgrade), atualizar este
@@ -778,8 +1063,11 @@ console e exercita o fluxo. No V3.2 isso achou três defeitos, um deles um
 python -m pytest tests/test_catering_*.py tests/test_migracao.py
 ```
 
-**98 testes, ~72s, verde** (medido em 24/ago/2026), contra 11min37 da suíte
-inteira. A V2 está congelada e a V3 não importa nem altera `backend/` — rodar
+**188 testes, ~4min30, verde** (medido em 25/ago/2026, ao fechar o V3.4), contra
+11min37 da suíte inteira. O tempo subiu do V3.3 (98 testes, ~72s) porque o login
+custa scrypt de propósito: ~51 ms por hash, e a suíte de segurança cria usuário e
+autentica em quase todo teste. É o mesmo custo que torna força bruta caro — pagar
+isso no CI é o preço de ter, e não um desperdício a otimizar. A V2 está congelada e a V3 não importa nem altera `backend/` — rodar
 os testes dela a cada lote da V3 é pagar 10x no loop de feedback para provar
 algo que não mudou.
 

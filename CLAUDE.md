@@ -35,11 +35,15 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `docs/EXECUCAO_LOCAL.md` — fonte oficial do método real de subir, testar e
   encerrar o projeto nesta máquina.
 - Fase atual: **construção da V3 — volumetria de catering lendo o DW Oracle**
-  (aberta em 24/ago/2026; **V3.0 (contrato + schema) e V3.1 (carregador) feitos
-  em 24/ago**; V3.2 em diante não autorizado — status em `docs/V3_PLANO.md`). O
+  (aberta em 24/ago/2026; **V3.0 a V3.3 feitos em 24/ago e V3.4 (login e papéis)
+  em 25/ago**; V3.5 em diante não autorizado — status em `docs/V3_PLANO.md`). O
   código novo vive em `catering/`; a fonte é o DW, **não** o SharePoint DataHub.
   Não construir código sem pedido explícito da Maria, e a autorização é
   **por lote**.
+- O app da V3 **exige login** desde o V3.4: `catering/seguranca/` (papel separado
+  de identidade, para o AD entrar depois), e local ele precisa de `CAT_SECRET_KEY`
+  no ambiente — ver `docs/EXECUCAO_LOCAL.md`, caminho C. Credencial vai para o
+  `.env`, nunca no chat nem em commit.
 - **A V2 está congelada** (Maria, 24/ago/2026): não se mexe mais nela. Ela
   continua sendo o que está em produção na VM, então `backend/`, `frontend/` e
   as migrations até a 0018 ficam **intactos** — a V3 não altera nem importa

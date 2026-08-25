@@ -12,12 +12,13 @@ congelada. `test_app_da_v3_nao_depende_do_app_da_v2` existe para que "separado"
 nao vire promessa: se alguem importar um router do `backend/` aqui, o teste
 quebra. Sem ele, a separacao dura ate o primeiro atalho conveniente.
 
-## Sem login neste lote
+## Com login, a partir do V3.4
 
-Login e o V3.4 e o deploy e o V3.6, nesta ordem de proposito -- nada sem
-autenticacao chega a VM. Estes testes batem no app sem credencial porque e assim
-que ele existe hoje; quando o V3.4 entrar, e aqui que a exigencia de sessao vai
-ser fixada.
+A `cliente_v3` entra **logada como admin**. A exigencia de sessao em si (401 sem
+cookie, 403 de visualizador no que e de admin, cookie forjado recusado) vive em
+`test_catering_seguranca.py` -- separada de proposito: se a autenticacao quebrar,
+o sinal tem que aparecer como falha de seguranca, e nao como catorze falhas de
+Matriz apontando para o lugar errado.
 """
 
 from decimal import Decimal
@@ -27,13 +28,31 @@ from fastapi.testclient import TestClient
 
 from catering import contrato
 from catering.app import app
+from catering.seguranca import identidade, usuarios
 from tests.conftest import consultar
 from tests.test_catering_matriz import _semear_entrada, _semear_saida
 
 
+SENHA_DE_TESTE = "senha-de-teste-v3"
+
+
 @pytest.fixture
 def cliente_v3(banco_migrado):
+    """Cliente **autenticado** como admin.
+
+    A partir do V3.4 todo endpoint de dado exige sessao. Estes testes cuidam do
+    encaixe HTTP da consulta, nao do login -- entao entram logados, e a prova de
+    que o app **recusa** quem nao esta logada mora em
+    `test_catering_seguranca.py`. Se a exigencia de sessao fosse verificada aqui,
+    cada teste de consulta passaria a depender do login e uma quebra de
+    autenticacao apareceria como 14 falhas de Matriz."""
+    identidade.zerar_freio()
+    usuarios.criar("teste.admin", "Admin de teste", "admin", SENHA_DE_TESTE)
     with TestClient(app) as c:
+        entrada = c.post(
+            "/login", data={"login": "teste.admin", "senha": SENHA_DE_TESTE}
+        )
+        assert entrada.status_code == 200, entrada.text
         yield c
 
 

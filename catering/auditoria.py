@@ -17,12 +17,16 @@ Por isso: `abrir()` grava e commita **antes** de a primeira linha sair, e
 `fechar()`/`falhar()` atualizam depois. Mesmo padrao do `cat_cargas`, pela mesma
 razao.
 
-## `usuario` fica nulo neste lote
+## `usuario`: nulo ate o V3.3, preenchido a partir do V3.4
 
-Login e o V3.4. O que tem valor agora nao depende de identidade: qual recorte,
-quantas linhas, quando, qual formato. O V3.4 passa a preencher `usuario` e nada
-mais muda de forma. Nao inventamos `'anonimo'` -- isso criaria um ator que nao
-existe e depois ninguem distinguiria "antes do login" de "usuario apagado".
+O V3.3 nao tinha identidade, e o que tinha valor nao dependia dela: qual recorte,
+quantas linhas, quando, qual formato. O V3.4 trouxe login e passou a preencher
+`usuario` -- e nada mais mudou de forma, como estava previsto. A coluna segue
+nulavel: registro antigo continua sem ator, e nao inventamos `'anonimo'`, que
+faria "antes do login" e "usuario apagado" virarem a mesma coisa.
+
+Registro de login **nao tem** recorte, formato nem linhas -- nao ha o que
+preencher, e coluna nula aqui significa "nao se aplica a este evento".
 """
 
 import json
@@ -76,7 +80,37 @@ def falhar(registro, erro) -> None:
     """Marca a tentativa como falha. Download interrompido nao pode aparecer
     como concluido."""
     _atualizar(registro, "erro", erro=str(erro)[:2000])
-    logger.warning("auditoria %s: download falhou -- %s", registro, erro)
+    logger.warning("auditoria %s: tentativa falhou -- %s", registro, erro)
+
+
+def registrar_login(usuario, ip=None, ok=True, motivo=None) -> int:
+    """Grava a tentativa de login **ja fechada** (V3.4).
+
+    Download tem duas fases (`abrir` -> `fechar`/`falhar`) porque e um stream que
+    pode morrer no meio. Login nao tem meio: ou a credencial confere, ou nao.
+    Duas escritas para isso seriam duas idas ao banco em cada tentativa,
+    inclusive nas erradas -- que sao justamente as que podem vir em rajada.
+
+    **Sucesso e falha, os dois.** "Quem tentou entrar e nao conseguiu" e o que
+    uma auditoria de acesso serve para responder. A senha nunca entra aqui: o que
+    se guarda e o login tentado e o motivo da recusa."""
+    conn = _conexao()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO cat_auditoria
+                    (evento, usuario, ip, status, erro, terminado_em)
+                VALUES ('login', %s, %s, %s, %s, now())
+                RETURNING id
+                """,
+                (usuario, ip, "ok" if ok else "erro", motivo),
+            )
+            registro = cur.fetchone()[0]
+        conn.commit()
+        return registro
+    finally:
+        conn.close()
 
 
 def _atualizar(registro, status, linhas=None, erro=None) -> None:

@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar — Volumetria de catering</title>
+<link rel="icon" href="/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --brand-azul-institucional:#071A3A; --brand-azul-corporativo:#0A2A5E;
+  --brand-azul-principal:#1E6FD9; --brand-azul-conexao:#3FA9F5;
+  --brand-amarelo:#FFC400; --brand-amarelo-suave:#FFD84D;
+  --brand-branco:#FFFFFF; --brand-cinza-claro:#C7D2E3; --brand-azul-escuro:#050F24;
+  --grad-institucional:linear-gradient(135deg,#050F24 0%,#071A3A 50%,#0A2A5E 100%);
+  --font-primary:'Montserrat',sans-serif;
+  --radius-sm:6px; --radius-md:12px;
+  --shadow-md:0 6px 20px rgba(7,26,58,.18);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:var(--font-primary);background:var(--grad-institucional);
+     color:var(--brand-branco);min-height:100vh;display:flex;align-items:center;
+     justify-content:center;padding:24px;position:relative;overflow:hidden}
+
+/* brilho/luz: pontos de #3FA9F5 sobre superficie escura (motivo da marca) */
+.brilho{position:absolute;border-radius:50%;filter:blur(70px);opacity:.35;z-index:0}
+.brilho.a{width:340px;height:340px;background:#1E6FD9;top:-90px;left:-60px}
+.brilho.b{width:280px;height:280px;background:#3FA9F5;bottom:-70px;right:-40px}
+
+.cartao{position:relative;z-index:2;width:100%;max-width:380px;
+  background:rgba(255,255,255,.04);border:1px solid rgba(199,210,227,.22);
+  border-radius:var(--radius-md);box-shadow:var(--shadow-md);
+  padding:30px 28px 26px;backdrop-filter:blur(2px)}
+.marca{display:flex;justify-content:center;margin:0 0 20px}
+.marca img{height:42px}
+h1{font-size:16px;font-weight:700;margin:0 0 4px;text-align:center}
+.sub{font-size:11px;color:var(--brand-cinza-claro);text-align:center;margin:0 0 22px;
+  line-height:1.5}
+
+label{display:block;font-size:10px;font-weight:600;text-transform:uppercase;
+  letter-spacing:.6px;color:var(--brand-cinza-claro);margin:0 0 5px}
+input{width:100%;font-family:var(--font-primary);font-size:13px;padding:9px 11px;
+  border:1px solid rgba(199,210,227,.35);border-radius:var(--radius-sm);
+  background:rgba(5,15,36,.55);color:var(--brand-branco);margin:0 0 16px}
+input:focus{outline:0;border-color:var(--brand-azul-conexao);
+  box-shadow:0 0 0 3px rgba(63,169,245,.18)}
+/* Achado na validacao do V3.4, no navegador: com senha salva no Chrome, o campo
+   preenchido pelo autofill vira BRANCO e o texto branco fica ilegivel -- o
+   navegador sobrepoe `background` com um estilo interno que so o
+   `-webkit-box-shadow` inset consegue cobrir. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus{
+  -webkit-text-fill-color:var(--brand-branco);
+  -webkit-box-shadow:0 0 0 1000px #0B1E42 inset;
+  caret-color:var(--brand-branco)}
+button{width:100%;font-family:var(--font-primary);font-weight:700;font-size:13px;
+  padding:11px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
+  background:var(--brand-amarelo);color:var(--brand-azul-institucional)}
+button:disabled{opacity:.6;cursor:progress}
+
+.erro{background:rgba(255,196,0,.12);border-left:3px solid var(--brand-amarelo);
+  padding:9px 12px;border-radius:var(--radius-sm);font-size:12px;line-height:1.45;
+  margin:0 0 16px;display:none}
+.erro.visivel{display:block}
+.pe{margin:20px 0 0;font-size:10px;color:var(--brand-cinza-claro);text-align:center;
+  line-height:1.6;opacity:.85}
+
+/* ondas da marca, no rodape */
+.ondas{position:absolute;left:0;right:0;bottom:0;height:70px;z-index:1;opacity:.5}
+</style>
+</head>
+<body>
+<div class="brilho a"></div>
+<div class="brilho b"></div>
+
+<form class="cartao" id="forma" autocomplete="on">
+  <div class="marca"><img src="/logo.png" alt="IceStar | SuperFrio"></div>
+  <h1>Volumetria de catering</h1>
+  <p class="sub">Acesso restrito — CSC SuperFrio</p>
+
+  <div class="erro" id="erro" role="alert"></div>
+
+  <label for="login">Login</label>
+  <input id="login" name="login" type="text" autocomplete="username" required
+         autocapitalize="none" spellcheck="false" autofocus>
+
+  <label for="senha">Senha</label>
+  <input id="senha" name="senha" type="password" autocomplete="current-password" required>
+
+  <button type="submit" id="botao">Entrar</button>
+
+  <p class="pe">Acessos e downloads são registrados.<br>
+     Dúvidas de acesso: fale com o time do CSC.</p>
+</form>
+
+<svg class="ondas" viewBox="0 0 1200 70" preserveAspectRatio="none" aria-hidden="true">
+  <path d="M0,44 C220,14 380,66 600,38 C820,10 980,62 1200,28 L1200,70 L0,70 Z" fill="#1E6FD9" opacity=".38"/>
+  <path d="M0,56 C240,30 420,68 640,48 C860,28 1000,66 1200,42 L1200,70 L0,70 Z" fill="#3FA9F5" opacity=".3"/>
+  <path d="M0,64 C240,40 420,70 640,56 C860,38 1000,68 1200,50" fill="none" stroke="#FFC400" stroke-width="1.4" opacity=".8"/>
+</svg>
+
+<script>
+const forma = document.getElementById('forma');
+const caixaErro = document.getElementById('erro');
+const botao = document.getElementById('botao');
+
+function mostraErro(texto){
+  caixaErro.textContent = texto;
+  caixaErro.classList.add('visivel');
+}
+
+forma.addEventListener('submit', async (evento) => {
+  evento.preventDefault();
+  caixaErro.classList.remove('visivel');
+  botao.disabled = true;
+  botao.textContent = 'Entrando…';
+
+  const dados = new FormData();
+  dados.append('login', document.getElementById('login').value);
+  dados.append('senha', document.getElementById('senha').value);
+
+  let resposta;
+  try {
+    resposta = await fetch('/login', {method: 'POST', body: dados});
+  } catch (e) {
+    botao.disabled = false; botao.textContent = 'Entrar';
+    mostraErro('Sem resposta do servidor. Verifique a conexão e tente de novo.');
+    return;
+  }
+
+  if (resposta.ok) {
+    // recarrega em vez de trocar a tela por JS: o cookie ja veio na resposta,
+    // e a pagina protegida tem que ser buscada com ele
+    window.location.replace('/');
+    return;
+  }
+
+  botao.disabled = false; botao.textContent = 'Entrar';
+  document.getElementById('senha').value = '';
+  let detalhe = 'Não foi possível entrar.';
+  try { detalhe = (await resposta.json()).detail || detalhe; } catch (e) {}
+  mostraErro(resposta.status === 429
+    ? detalhe
+    : 'Login ou senha inválidos.');
+});
+</script>
+</body>
+</html>

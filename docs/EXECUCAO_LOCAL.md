@@ -95,12 +95,51 @@ usada da última vez (V2.5). Qualquer porta livre serve; o que importa é
 
 URL: `http://localhost:8003/admin`.
 
+**C) O app da V3 (`catering/`), `uvicorn` bare na porta 8003** — a V3 é uma
+FastAPI **própria** (`catering/app.py`), separada da V2 congelada. Não há
+serviço no `docker-compose.yml` para ela ainda (isso é o V3.6), então local é
+sempre bare.
+
+Mesmo pré-requisito do caminho B: `nuvem-teste-db` de pé em `localhost:5433`.
+As migrations da V3 estão na **mesma cadeia** do Alembic, e o app da V3 **não**
+as roda no startup — quem migra é o pytest ou um `alembic upgrade head` à mão.
+
+```
+$env:DATABASE_URL = "postgresql://nuvem:teste@localhost:5433/nuvem_teste"
+$env:CAT_SECRET_KEY = "chave-v3-de-teste-nao-usar-em-prod"
+$env:CAT_ADMIN_LOGIN = "maria.watanabe"
+$env:CAT_ADMIN_SENHA = "<escolher na hora, não versionar>"
+python -m uvicorn catering.app:app --host 127.0.0.1 --port 8003
+```
+
+URL: `http://localhost:8003/` — cai em `/login`, porque a partir do V3.4 tudo
+exige sessão (só `/health`, `/logo.png` e `/login` ficam abertos).
+
+Sobre as variáveis (detalhe e motivo em `docs/V3_PLANO.md`, lote V3.4):
+
+- **`CAT_SECRET_KEY` é obrigatória** e é **própria da V3** — não é a
+  `SECRET_KEY` da V2. Sem ela o app sobe e o `/health` responde, mas login e
+  sessão levantam erro nomeando a variável.
+- `CAT_ADMIN_LOGIN`/`CAT_ADMIN_SENHA` criam o **primeiro** admin, e só quando a
+  `cat_usuarios` está vazia. Depois disso são inertes — não recriam nem trocam
+  senha de quem existe. **Senha não vai para o chat nem para commit.**
+- `CAT_COOKIE_SECURE` fica desligada local (não há HTTPS).
+
+Usuário depois do primeiro: `python -m catering.seguranca criar --login ...`
+(a senha é pedida por `getpass`, nunca por argumento de linha de comando).
+
+> **Porta:** 8002 é a V2 no compose, **8003 é o app da V3**. Uma execução bare da
+> V2 (caminho B) usou 8003 no V2.5 — hoje ela deve escolher outra (8004, por
+> exemplo) para não colidir com a V3. Qualquer porta livre serve; o que importa é
+> **anunciar qual foi escolhida**.
+
 ### O que precisa estar rodando antes
 
 | Caminho | Precisa antes |
 |---|---|
 | A (compose completo) | WSL com integração Docker Desktop ligada; `.env` na raiz; o `nuvem-app` já espera o `nuvem-db` ficar `healthy` (`depends_on: condition: service_healthy`, confirmado no compose) |
-| B (uvicorn bare) | WSL com Docker; container `nuvem-teste-db` de pé em `localhost:5433`; `DATABASE_URL`/`ADMIN_PASSWORD`/`SECRET_KEY` exportadas na mesma sessão de shell que roda o `uvicorn` |
+| B (uvicorn bare, V2) | WSL com Docker; container `nuvem-teste-db` de pé em `localhost:5433`; `DATABASE_URL`/`ADMIN_PASSWORD`/`SECRET_KEY` exportadas na mesma sessão de shell que roda o `uvicorn` |
+| C (uvicorn bare, V3) | o mesmo container `nuvem-teste-db`; schema já migrado (pytest ou `alembic upgrade head`); `DATABASE_URL` e `CAT_SECRET_KEY` exportadas; um usuário em `cat_usuarios` (via `CAT_ADMIN_*` ou o CLI) — sem usuário não há como entrar |
 
 ### Dev vs. teste automatizado vs. validação manual
 
@@ -123,6 +162,15 @@ URL: `http://localhost:8003/admin`.
 
 - **Comando**: `python -m pytest -q` (não `pytest` sozinho — não está no
   PATH desta máquina).
+- **Ao fechar um lote da V3**, a suíte do lote basta:
+  `python -m pytest tests/test_catering_*.py tests/test_migracao.py`
+  (188 testes, ~4min30 em 25/ago/2026, contra ~13min29 da suíte inteira). O
+  motivo e o que o `test_migracao.py` faz ali estão em `docs/V3_PLANO.md`,
+  seção "Qual suíte roda ao fechar um lote da V3". A suíte **completa** volta a
+  ser obrigatória antes de um deploy.
+- **A suíte inteira tem 2 `xfail` esperados** (`test_volumetria.py` e
+  `test_volumetria_router.py`, V2 congelada) — verde com `xfailed`, e não
+  vermelho. Ver `docs/V3_PLANO.md`.
 - **Ambiente**: Python global do Windows, sem venv.
 - **Dependências**: `pip install -r requirements-dev.txt` (já puxa
   `requirements.txt`). **Atenção**: `alembic` é dependência de runtime

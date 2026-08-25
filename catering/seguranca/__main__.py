@@ -1,0 +1,136 @@
+"""CLI de usuarios: `python -m catering.seguranca <comando>`.
+
+O dia a dia tem tela (a `/admin`, restrita a admin). Este CLI existe para o que
+a tela nao alcanca: criar o primeiro admin sem depender do `.env`, e recuperar
+acesso quando ninguem consegue entrar.
+
+## A senha e pedida, nao passada como argumento
+
+`--senha minha-senha` iria para o historico do shell, para o `ps` de quem
+estiver na maquina e para o log de qualquer terminal gravado. Por isso a senha
+vem por `getpass`, que nao ecoa. Nao ha flag para passar senha na linha de
+comando -- de proposito.
+
+Exemplos:
+
+    python -m catering.seguranca listar
+    python -m catering.seguranca criar --login maria.watanabe --nome "Maria" --papel admin
+    python -m catering.seguranca criar --login joao.silva --nome "Joao" --papel visualizador --sem-senha
+    python -m catering.seguranca senha --login maria.watanabe
+    python -m catering.seguranca papel --login joao.silva --papel admin
+    python -m catering.seguranca desativar --login joao.silva
+"""
+
+import argparse
+import getpass
+import sys
+
+from catering.seguranca import usuarios
+
+
+def _pedir_senha() -> str:
+    primeira = getpass.getpass("senha: ")
+    segunda = getpass.getpass("repita: ")
+    if primeira != segunda:
+        raise SystemExit("as senhas nao conferem")
+    if len(primeira.strip()) < 8:
+        raise SystemExit("senha curta -- minimo de 8 caracteres")
+    return primeira
+
+
+def _listar(_args) -> int:
+    linhas = usuarios.listar()
+    if not linhas:
+        print("nenhum usuario cadastrado")
+        return 0
+    print(f"{'login':<32} {'papel':<14} {'ativo':<6} senha local")
+    for u in linhas:
+        print(
+            f"{u.login:<32} {u.papel:<14} "
+            f"{'sim' if u.ativo else 'NAO':<6} "
+            f"{'sim' if u.tem_senha_local else 'nao (AD)'}"
+        )
+    return 0
+
+
+def _criar(args) -> int:
+    segredo = None if args.sem_senha else _pedir_senha()
+    try:
+        usuario = usuarios.criar(
+            login=args.login, nome=args.nome, papel=args.papel, senha=segredo
+        )
+    except usuarios.UsuarioInvalido as erro:
+        raise SystemExit(str(erro)) from None
+    print(
+        f"criado: {usuario.login} ({usuario.papel}), "
+        f"senha local: {'sim' if usuario.tem_senha_local else 'nao'}"
+    )
+    return 0
+
+
+def _senha(args) -> int:
+    if not usuarios.definir_senha(args.login, _pedir_senha()):
+        raise SystemExit(f"login nao encontrado: {args.login}")
+    print(f"senha de {usuarios.normalizar(args.login)} atualizada")
+    return 0
+
+
+def _papel(args) -> int:
+    if not usuarios.definir_papel(args.login, args.papel):
+        raise SystemExit(f"login nao encontrado: {args.login}")
+    print(f"papel de {usuarios.normalizar(args.login)}: {args.papel}")
+    return 0
+
+
+def _ativo(args, ativo) -> int:
+    if not usuarios.definir_ativo(args.login, ativo):
+        raise SystemExit(f"login nao encontrado: {args.login}")
+    print(
+        f"{usuarios.normalizar(args.login)}: "
+        f"{'ativo' if ativo else 'desativado'}"
+    )
+    return 0
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python -m catering.seguranca",
+        description="usuarios e papeis da V3 (cat_usuarios)",
+    )
+    sub = parser.add_subparsers(dest="comando", required=True)
+
+    sub.add_parser("listar", help="lista os usuarios").set_defaults(func=_listar)
+
+    p = sub.add_parser("criar", help="cria um usuario")
+    p.add_argument("--login", required=True)
+    p.add_argument("--nome", required=True)
+    p.add_argument("--papel", required=True, choices=usuarios.PAPEIS)
+    p.add_argument(
+        "--sem-senha", action="store_true",
+        help="cria com papel e sem credencial local (o caso do AD)",
+    )
+    p.set_defaults(func=_criar)
+
+    p = sub.add_parser("senha", help="define a senha local")
+    p.add_argument("--login", required=True)
+    p.set_defaults(func=_senha)
+
+    p = sub.add_parser("papel", help="troca o papel")
+    p.add_argument("--login", required=True)
+    p.add_argument("--papel", required=True, choices=usuarios.PAPEIS)
+    p.set_defaults(func=_papel)
+
+    p = sub.add_parser("desativar", help="corta o acesso, preservando o rastro")
+    p.add_argument("--login", required=True)
+    p.set_defaults(func=lambda args: _ativo(args, False))
+
+    p = sub.add_parser("ativar", help="devolve o acesso")
+    p.add_argument("--login", required=True)
+    p.set_defaults(func=lambda args: _ativo(args, True))
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

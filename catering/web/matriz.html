@@ -31,6 +31,16 @@ header img{height:34px}
 .titulo{font-weight:700;font-size:15px;letter-spacing:.2px}
 .titulo span{display:block;font-weight:400;font-size:11px;color:var(--brand-cinza-claro)}
 .ondas{position:absolute;left:0;right:0;bottom:-2px;height:26px;z-index:1;opacity:.55}
+.sessao{margin-left:auto;display:flex;align-items:center;gap:12px;font-size:11px}
+.sessao .quem{text-align:right;line-height:1.35}
+.sessao .quem b{display:block;font-size:12px}
+.sessao .papel{color:var(--brand-amarelo);font-weight:600;text-transform:uppercase;
+  letter-spacing:.5px;font-size:10px}
+.sessao a,.sessao button{font-family:var(--font-primary);font-size:11px;font-weight:600;
+  padding:6px 12px;border-radius:var(--radius-sm);cursor:pointer;text-decoration:none;
+  border:1px solid rgba(199,210,227,.45);background:transparent;
+  color:var(--brand-branco)}
+.sessao a[hidden]{display:none}
 
 /* ---------- barra de filtros ---------- */
 .filtros{background:var(--brand-branco);border-bottom:1px solid var(--brand-cinza-claro);
@@ -144,6 +154,11 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
     <img src="/logo.png" alt="IceStar | SuperFrio">
     <div class="titulo">Volumetria de catering
       <span>Fonte: DW Oracle — <code>FATO_VOL_REC_CAT</code> / <code>FATO_VOL_EXP_CAT</code></span>
+    </div>
+    <div class="sessao">
+      <div class="quem"><b id="eu-nome">—</b><span class="papel" id="eu-papel"></span></div>
+      <a href="/administracao" id="link-admin" hidden>Administração</a>
+      <button id="sair" type="button">Sair</button>
     </div>
   </div>
   <svg class="ondas" viewBox="0 0 1200 26" preserveAspectRatio="none" aria-hidden="true">
@@ -441,6 +456,24 @@ function urlDownload(formato){
   return '/api/download?' + p.toString();
 }
 
+/* V3.4: 401 e "a sessao expirou", nao "o servidor deu erro". Sem este desvio, a
+   tela mostraria "Recorte recusado: sessao ausente ou expirada" -- que manda a
+   pessoa mexer nos filtros para resolver um problema de login. */
+async function busca(url, opcoes){
+  const resposta = await fetch(url, opcoes);
+  if (resposta.status === 401){ window.location.replace('/login'); throw new Error('401'); }
+  return resposta;
+}
+
+async function carregaEu(){
+  const eu = await (await busca('/api/eu')).json();
+  $('#eu-nome').textContent = eu.nome;
+  $('#eu-papel').textContent = eu.papel;
+  // o link so aparece para quem ele serve -- visualizador que clicasse seria
+  // devolvido para ca pelo proprio servidor
+  $('#link-admin').hidden = eu.papel !== 'admin';
+}
+
 async function carrega(){
   if (ESTADO.visao === 'planilha') return carregaPlanilha();
   // `.rolagem` e o container ESTAVEL: o `#corpo` inicial e substituido
@@ -448,7 +481,7 @@ async function carrega(){
   const alvo = $('.rolagem');
   alvo.innerHTML = '<div class="carregando">Carregando…</div>';
   let resposta;
-  try { resposta = await fetch('/api/matriz?' + parametros().toString()); }
+  try { resposta = await busca('/api/matriz?' + parametros().toString()); }
   catch (e) { alvo.innerHTML = `<div class="erro">Falha de rede: ${e}</div>`; return; }
   if (!resposta.ok){
     let detalhe = resposta.statusText;
@@ -547,7 +580,7 @@ async function carregaPlanilha(){
   const alvo = $('.rolagem');
   alvo.innerHTML = '<div class="carregando">Carregando…</div>';
   let resposta;
-  try { resposta = await fetch('/api/planilha?' + parametros().toString()); }
+  try { resposta = await busca('/api/planilha?' + parametros().toString()); }
   catch (e) { alvo.innerHTML = `<div class="erro">Falha de rede: ${e}</div>`; return; }
   if (!resposta.ok){
     let detalhe = resposta.statusText;
@@ -567,7 +600,12 @@ async function carregaPlanilha(){
 }
 
 async function inicia(){
-  OPCOES = await (await fetch('/api/opcoes')).json();
+  await carregaEu();
+  $('#sair').onclick = async () => {
+    await fetch('/logout', {method: 'POST'});
+    window.location.replace('/login');
+  };
+  OPCOES = await (await busca('/api/opcoes')).json();
   $('#de').value = OPCOES.periodo.de || '2026-01';
   $('#ate').value = OPCOES.periodo.ate || '2026-08';
   opcoesSelect('#unidade', OPCOES.unidades);
@@ -584,8 +622,14 @@ async function inicia(){
     'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
     + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
     + 'identificador, baixe em Excel (xlsx), que preserva.';
-  $('#baixar-csv').onclick = () => { window.location = urlDownload('csv'); };
-  $('#baixar-xlsx').onclick = () => { window.location = urlDownload('xlsx'); };
+  // O download navega (nao e fetch), entao um 401 apareceria como JSON cru na
+  // tela. Confere a sessao antes de navegar -- `busca` redireciona se caiu.
+  const baixa = async (formato) => {
+    await busca('/api/eu');
+    window.location = urlDownload(formato);
+  };
+  $('#baixar-csv').onclick = () => baixa('csv');
+  $('#baixar-xlsx').onclick = () => baixa('xlsx');
   $('#limpar').onclick = () => {
     ['#unidade','#cliente','#tipo','#operacao'].forEach(s =>
       Array.from($(s).options).forEach(o => o.selected = false));
