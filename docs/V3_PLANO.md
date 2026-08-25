@@ -1485,9 +1485,72 @@ certa); a 4ª, `sem_dado` ou poucas linhas.
 **O que a rodada REPROVOU:** a chave natural, e o volume presumido. Ver a seção
 "A carga real derrubou a chave natural" acima — foi o achado central do lote.
 
-**O que ainda falta para o aceite:** a carga completa concluir com a 0023
-aplicada, e as duas rodadas de idempotência. Nenhuma delas rodou até o fim
-ainda.
+**A carga completa concluiu às 18h02 de 25/ago/2026**, já com a 0023 e o piso
+de 2026:
+
+| rodada | resultado |
+|---|---|
+| `--fonte oracle` (completa) | rec **36.678 lidas / 36.678 inseridas** (12s); exp **42.726 / 42.726** (15s); **0 fora de escopo** nos dois |
+| dimensões | 6 unidades, 40 nomes de estoque, 14 clientes (7 canonizados) |
+| `--fonte oracle --incremental` | **`sem_dado`** nos dois — a marca d'água (13:48:12 e 13:48:24) é exatamente o teto do que entrou |
+| conferência no banco | `cat_cargas` com `fonte='oracle'` e o nome qualificado; **zero linha antes de 2026** nas duas tabelas; `nk_calendario` de 02/jan a 25/ago |
+
+O número da sondagem e o da carga coincidem (42.726 na janela, 42.726 gravadas),
+então nada se perdeu entre contar e gravar.
+
+**Falta uma coisa para o aceite fechar:** a **segunda carga completa**, que prova
+o `WHERE ... IS DISTINCT FROM` contra o Oracle (esperado: `0 inserida, 0
+atualizada`). A suíte já prova isso com CSV e com fonte falsa; contra o Oracle
+ainda não rodou.
+
+### A verificação que a carga real permitiu: Oracle x CSV, célula por célula
+
+Com o dado carregado, comparei o que veio do **Oracle hoje** contra os **CSVs de
+21/ago** — mesmo período, mesma agregação por `nk_calendario`. É a verificação
+mais forte possível sem tocar no DW, e ela prova a cadeia inteira (leitura,
+coerção, upsert, gravação) contra uma referência independente.
+
+**Contagem de linhas: jan–jul bate em zero**, nos dois movimentos. Agosto difere
+em +378 (rec) e +408 (exp) — os quatro dias novos entre 21 e 25/ago.
+
+**Medidas, jan–jul/2026 (o período comum), soma exata em `Decimal`:**
+
+| movimento | medidas conferidas | resultado |
+|---|---|---|
+| recebimento | `qtde_peso2`, `qtde_pbrt2`, `qtde_vlr`, `qtde_vol2`, `qtde_pallet` | **5 de 5 byte a byte idênticas** |
+| expedição | `qtde_peso_solicitado`, `qtde_pbrt_atendido`, `qtde_vol_atendido`, `qtde_pedido` | **4 de 4 idênticas** |
+| expedição | `qtde_vlr_separado` | **diverge: +391.943,152 (+0,03%)** |
+
+Isso fecha, com número e não com teste, a promessa do `fetch_decimals`:
+143.561.956,719 kg somados dos dois lados dão o mesmo `Decimal`. Se houvesse
+float no caminho, não daria.
+
+#### A única divergência é a fonte revisando, e ela vale mais que o resto
+
+Investigada linha por linha: **306 linhas de 38.827 (0,79%)** com
+`qtde_vlr_separado` diferente, e **zero chave natural sem par** — a identidade
+casou 100% entre CSV e DW, o que é uma validação extra da 0023.
+
+Três coisas dizem que é revisão da fonte, e não defeito nosso:
+
+1. **só uma medida mudou**, e é a que amadurece por último (o valor do que foi
+   fisicamente separado depende de a separação terminar e ser valorizada). As
+   outras nove, mesmas linhas, não mudaram nada;
+2. **a distribuição cresce com a proximidade:** jan 9, fev 4, mar 10, abr 42,
+   mai 57, jun 86, **jul 98**. Quanto mais recente o mês, mais revisão pendente;
+3. **todas carregam `DW_DATA_ALTERACAO` do mesmo instante do rebuild**
+   (25/ago 13:47:14), e oito delas saíram de vazio/zero para ter valor.
+
+O que isso prova sobre a decisão de trocar de fonte: **extração em arquivo
+envelhece em silêncio.** Quem lê o CSV de 21/ago está com 391.943,15 de valor
+separado desatualizado e não tem como saber. Ler o DW ao vivo, com incremento
+por `DW_DATA_ALTERACAO`, é o que faz essa revisão chegar — e a rodada de amanhã
+às 07h05 a traria sozinha.
+
+Registrado também em `memory/fato-volumetria-dw.md`, que dizia "o DW revisa
+número **para baixo**": revisa nos **dois** sentidos, e agora há medida nas
+tabelas de catering, não só na `FATO_VOLUMETRIA`.
+
 
 ### Suíte
 

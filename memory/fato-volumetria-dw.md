@@ -47,9 +47,23 @@ essa união revelou e que valem para qualquer extração futura:
   mudaram entre as duas extrações são *todas* de 16/07, o dia em que a primeira
   rodou (16:33). Uma delas quase dobrou: PIMENTA VERDE, recebimento de 17,0 t →
   31,8 t. Descartar o último dia, ou declará-lo.
-- **O DW revisa número para baixo, retroativamente.** 111 PKs mudaram de medida;
-  as maiores são MDLZ_PRD/CWBII com **−846,9 t** num único dia. Número do DW não
-  é imutável depois de publicado.
+- **O DW revisa número retroativamente, e nos DOIS sentidos.** 111 PKs mudaram
+  de medida na `FATO_VOLUMETRIA`; as maiores são MDLZ_PRD/CWBII com **−846,9 t**
+  num único dia. Número do DW não é imutável depois de publicado.
+  **Medido de novo em 25/ago/2026, agora nas tabelas de catering
+  (`FATO_VOL_EXP_CAT_V01`), e para CIMA:** comparando linha por linha o CSV de
+  21/ago contra o DW de 25/ago em jan–jul/2026, **306 linhas de 38.827 (0,79%)**
+  tiveram `QTDE_VLR_SEPARADO` alterado, somando **+391.943,15**. Nove das dez
+  medidas conferidas ficaram byte a byte idênticas — só o **valor separado**
+  mudou, que é a medida que amadurece por último (depende da separação física
+  ser concluída e valorizada). A distribuição cresce com a proximidade: jan 9,
+  fev 4, mar 10, abr 42, mai 57, jun 86, **jul 98** — quanto mais recente o mês,
+  mais revisão pendente. Oito linhas saíram de vazio/zero para ter valor. Todas
+  carregam `DW_DATA_ALTERACAO` do mesmo instante do rebuild. **Consequência
+  prática: extração em arquivo envelhece em silêncio** — quem lê o CSV de
+  21/ago está com o valor separado desatualizado e não tem como saber. É o
+  argumento mais concreto a favor de ler o DW ao vivo com carga incremental por
+  `DW_DATA_ALTERACAO`, que é o que a V3.5 faz.
 - **`NOME_FANTASIA` em `clientesDw.csv` é truncado em 20 caracteres**
   ("SODEXO DO BRASIL COM", "GR SERVICOS E ALIMEN"). Quando `len(fant) >= 20`,
   usar `RAZAO_SOCIAL` — é a única versão completa.
