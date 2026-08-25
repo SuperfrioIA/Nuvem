@@ -48,16 +48,13 @@ def _sondagem(fonte, movimentos) -> int:
         ident = resumo.get("identidade") or {}
         if ident:
             total = ident["total"]
-            print("  identidade (a chave natural ainda e unica?)")
-            for rotulo, chave in (
-                ("chave de hoje          ", "chave_atual"),
-                ("+ nk_calendario        ", "chave_mais_nk_calendario"),
-                ("+ data_solic           ", "chave_mais_data_solic"),
-            ):
-                valor = ident[chave]
+            print("  identidade -- a chave certa e a PRIMEIRA que fica unica:")
+            for rotulo, valor in ident["candidatos"]:
                 falta = total - valor
                 veredito = "UNICA" if falta == 0 else f"repete em {falta} linha(s)"
-                print(f"    {rotulo} {valor} distinta(s) de {total}  -> {veredito}")
+                print(f"    {rotulo:<24} {valor} de {total}  -> {veredito}")
+            discordam = ident["ano_solic_discorda_de_data_solic"]
+            print(f"    ano_solic discorda do ano de data_solic em {discordam} linha(s)")
         for gem, filial, quantas, de, ate in resumo.get("colisoes") or ():
             mesma_data = de == ate
             print(f"    colisao: gem {gem} / {filial} aparece {quantas}x, "

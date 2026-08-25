@@ -268,23 +268,56 @@ def _chave_concatenada(movimento) -> str:
     return f" || {_SEPARADOR} || ".join(partes)
 
 
-def sql_identidade(movimento) -> str:
-    """Mede se a chave natural ainda e unica, e o que a consertaria.
+# Candidatos a identidade, do MAIS GROSSO para o mais fino. A ordem e a
+# decisao: a chave certa e a primeira que fica unica.
+#
+# Por que grosso e melhor que fino, e nao o contrario: identidade fina significa
+# que qualquer correcao na coluna extra deixa de ser update e passa a ser INSERT
+# de linha nova, com a antiga sobrevivendo ao lado -- numero dobrado, sem
+# alarme. Se o que separa `num_gem` reciclado e o ANO, botar a data inteira na
+# chave compra 364 chances por ano de duplicar por correcao de dia, e nao compra
+# unicidade nenhuma a mais.
+CANDIDATOS_DE_IDENTIDADE = (
+    ("chave de hoje", None),
+    ("+ ano_solic", "TO_CHAR({ano_solic})"),
+    ("+ ano de nk_calendario", "TO_CHAR({nk_calendario}, 'YYYY')"),
+    ("+ data_solic", "TO_CHAR({data_solic}, 'YYYY-MM-DD')"),
+    ("+ nk_calendario", "TO_CHAR({nk_calendario}, 'YYYY-MM-DD')"),
+)
 
-    Quatro numeros na mesma varredura: o total, os distintos pela chave de hoje,
-    e os distintos somando cada uma das duas datas do fato. Se a chave de hoje
-    ficar abaixo do total e alguma das outras empatar com ele, a resposta e qual
-    coluna falta -- e nao um chute."""
+
+def _colunas_do_movimento(movimento) -> dict:
+    """Os nomes do DW usados nas expressoes dos candidatos."""
+    return {
+        nossa: contrato.coluna_dw(nossa, movimento)
+        for nossa in ("ano_solic", "data_solic", "nk_calendario")
+    }
+
+
+def sql_identidade(movimento) -> str:
+    """Mede, numa varredura, qual identidade ainda e unica.
+
+    Devolve, na ordem: o total, um distinto por candidato de
+    `CANDIDATOS_DE_IDENTIDADE`, e por ultimo quantas linhas tem `ano_solic`
+    discordando do ano de `data_solic` -- porque escolher `ano_solic` como parte
+    da identidade so faz sentido se as duas colunas concordarem, e "deve
+    concordar" nao e medicao."""
     chave = _chave_concatenada(movimento)
-    calendario = contrato.coluna_dw("nk_calendario", movimento)
-    solicitacao = contrato.coluna_dw("data_solic", movimento)
-    return (
-        "SELECT COUNT(*), "
-        f"COUNT(DISTINCT {chave}), "
-        f"COUNT(DISTINCT {chave} || {_SEPARADOR} || TO_CHAR({calendario}, 'YYYY-MM-DD')), "
-        f"COUNT(DISTINCT {chave} || {_SEPARADOR} || TO_CHAR({solicitacao}, 'YYYY-MM-DD')) "
-        "FROM " + contrato.tabela(movimento)
+    colunas = _colunas_do_movimento(movimento)
+
+    contagens = ["COUNT(*)"]
+    for _rotulo, expressao in CANDIDATOS_DE_IDENTIDADE:
+        if expressao is None:
+            contagens.append(f"COUNT(DISTINCT {chave})")
+        else:
+            extra = expressao.format(**colunas)
+            contagens.append(f"COUNT(DISTINCT {chave} || {_SEPARADOR} || {extra})")
+
+    contagens.append(
+        f"SUM(CASE WHEN {colunas['ano_solic']} <> "
+        f"EXTRACT(YEAR FROM {colunas['data_solic']}) THEN 1 ELSE 0 END)"
     )
+    return "SELECT " + ", ".join(contagens) + " FROM " + contrato.tabela(movimento)
 
 
 def sql_colisoes(movimento, quantas=3) -> str:
@@ -401,13 +434,19 @@ class FonteOracle:
                 cur.execute(sql_resumo(movimento))
                 linhas, cal_min, cal_max, alt_min, alt_max = cur.fetchone()
                 cur.execute(sql_identidade(movimento))
-                total, so_chave, com_calendario, com_solicitacao = cur.fetchone()
+                medido = cur.fetchone()
+                total, *resto = medido
+                distintos = resto[:len(CANDIDATOS_DE_IDENTIDADE)]
                 identidade = {
                     "total": total,
-                    "chave_atual": so_chave,
-                    "chave_mais_nk_calendario": com_calendario,
-                    "chave_mais_data_solic": com_solicitacao,
+                    "candidatos": [
+                        (rotulo, valor)
+                        for (rotulo, _expr), valor
+                        in zip(CANDIDATOS_DE_IDENTIDADE, distintos)
+                    ],
+                    "ano_solic_discorda_de_data_solic": resto[-1],
                 }
+                so_chave = distintos[0]
                 colisoes = []
                 if so_chave is not None and total is not None and so_chave < total:
                     cur.execute(sql_colisoes(movimento))

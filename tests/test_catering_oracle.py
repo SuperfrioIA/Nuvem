@@ -159,8 +159,11 @@ class ConexaoFalsa:
         ]
         self.linhas = list(linhas)
         self.resumo = resumo
-        # (total, distintas pela chave de hoje, + nk_calendario, + data_solic)
-        self.identidade = identidade or (1, 1, 1, 1)
+        # (total, um distinto por candidato de CANDIDATOS_DE_IDENTIDADE, e por
+        # ultimo as linhas em que ano_solic discorda do ano de data_solic)
+        self.identidade = identidade or (
+            (1,) * (1 + len(fonte_oracle.CANDIDATOS_DE_IDENTIDADE)) + (0,)
+        )
         self.colisoes = list(colisoes)
         self.erro = erro
         self.executados = []
@@ -527,29 +530,41 @@ def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
 
     Esta medicao existe para a decisao ser tomada com numero, e nao com chute:
     ela diz se a chave de hoje repete, e se somar uma das duas datas resolve."""
+    # total, e um distinto por candidato: chave de hoje repete; do ano_solic em
+    # diante fica unica. Zero linha com ano_solic discordando de data_solic.
     conexao = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec")],
         resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
                 datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
-        identidade=(Decimal("201848"), Decimal("195000"), Decimal("201848"),
-                    Decimal("201000")),
-        colisoes=[("0000013953", "RMSPII", Decimal("2"),
-                   datetime(2023, 5, 4), datetime(2026, 2, 1))],
+        identidade=(Decimal("201848"), Decimal("174014"), Decimal("201848"),
+                    Decimal("201848"), Decimal("201848"), Decimal("201848"),
+                    Decimal("0")),
+        colisoes=[("0000000020", "RMSPII", Decimal("4"),
+                   datetime(2023, 1, 3), datetime(2026, 1, 5))],
     )
     resumo = fonte_com(conexao).sondar("rec")
 
     ident = resumo["identidade"]
     assert ident["total"] == Decimal("201848")
-    assert ident["chave_atual"] < ident["total"], "e o caso que quebrou a carga"
-    assert ident["chave_mais_nk_calendario"] == ident["total"],         "somar o calendario tornaria a chave unica neste cenario"
-    assert ident["chave_mais_data_solic"] < ident["total"]
+    rotulos = [rotulo for rotulo, _valor in ident["candidatos"]]
+    assert rotulos[0] == "chave de hoje" and rotulos[1] == "+ ano_solic", (
+        "a ordem e a decisao: do mais grosso para o mais fino, e a chave certa "
+        f"e a primeira unica. Veio {rotulos}"
+    )
+    por_rotulo = dict(ident["candidatos"])
+    assert por_rotulo["chave de hoje"] < ident["total"], "e o caso que quebrou a carga"
+    assert por_rotulo["+ ano_solic"] == ident["total"],         "o ano da solicitacao bastaria neste cenario"
+    assert ident["ano_solic_discorda_de_data_solic"] == Decimal("0")
 
     # e a colisao vem com o intervalo de datas, que e o que separa as duas
     # explicacoes: gem reciclado entre anos, ou linha repetida no mesmo dia
     gem, filial, quantas, de, ate = resumo["colisoes"][0]
-    assert (gem, filial, quantas) == ("0000013953", "RMSPII", Decimal("2"))
-    assert de.year != ate.year
+    assert (gem, filial, quantas) == ("0000000020", "RMSPII", Decimal("4"))
+    assert de.year != ate.year, (
+        "anos diferentes e o que diz que o num_gem se recicla; mesmo dia diria "
+        "que o DW passou a publicar linha repetida, que pede resposta oposta"
+    )
 
 
 def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
@@ -560,8 +575,7 @@ def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
         linhas=[linha_nativa("rec")],
         resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
                 datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
-        identidade=(Decimal("36592"), Decimal("36592"), Decimal("36592"),
-                    Decimal("36592")),
+        identidade=(Decimal("36592"),) * 6 + (Decimal("0"),),
     )
     resumo = fonte_com(conexao).sondar("rec")
     assert resumo["colisoes"] == []
@@ -581,6 +595,22 @@ def test_chave_concatenada_sai_do_contrato_e_protege_nulo():
             assert f"NVL(TO_CHAR({nome}), ' ')" in sql, f"{movimento}: {nome}"
         assert sql.count("CHR(31)") >= len(contrato.CHAVE_NATURAL) - 1
         assert "'|'" not in sql, "separador tem que ser impossivel no dado"
+
+
+def test_candidatos_de_identidade_vao_do_mais_grosso_ao_mais_fino():
+    """A ordem nao e estetica, e a regra de decisao. Identidade fina significa
+    que correcao na coluna extra deixa de ser update e passa a ser INSERT, com a
+    linha antiga sobrevivendo ao lado -- numero dobrado, sem alarme."""
+    rotulos = [r for r, _e in fonte_oracle.CANDIDATOS_DE_IDENTIDADE]
+    assert rotulos == [
+        "chave de hoje", "+ ano_solic", "+ ano de nk_calendario",
+        "+ data_solic", "+ nk_calendario",
+    ]
+    sql = fonte_oracle.sql_identidade("rec")
+    assert sql.index("TO_CHAR(ANO_SOLIC)") < sql.index("'YYYY-MM-DD'"),         "o ano tem que ser medido antes da data inteira"
+    # e a conferencia de que escolher ano_solic e legitimo: ele tem que
+    # concordar com o ano de data_solic, e isso e medido, nao suposto
+    assert "EXTRACT(YEAR FROM DATA_SOLIC)" in sql
 
 
 # =================================================== somente leitura
