@@ -244,6 +244,14 @@ Variáveis, e o que cada uma exige:
 Instant Client). `DW_TABELA_REC`/`DW_TABELA_EXP` também têm padrão — só existem
 para trocar de versão do objeto sem commit.
 
+**`DW_ANO_MINIMO` (padrão 2026)** é o primeiro ano que a carga lê, por
+`nk_calendario`. A V3 lê de 2026 para frente (decisão da Maria, 25/ago/2026);
+para comparar 2025 com 2026, `$env:DW_ANO_MINIMO = "2025"` na mesma sessão e
+rodar a carga de novo — ela traz o passado sem tocar em código. **Subir o piso
+de volta não apaga o que já entrou:** a carga só insere e atualiza, então
+desfazer exige `DELETE` à mão. Ano inválido (`26`, `20226`) falha nomeando a
+variável, em vez de carregar tudo ou nada em silêncio.
+
 > **A mesma armadilha do `.env` do caminho C vale aqui**: o projeto não usa
 > `python-dotenv`, então num `python` bare a credencial tem que estar exportada
 > na sessão do shell. Carregue o `.env` na sessão (não imprime nada):

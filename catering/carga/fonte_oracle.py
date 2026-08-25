@@ -211,22 +211,39 @@ def colunas_dw(movimento):
 def sql_select(movimento, desde=None):
     """`(sql, binds)` da leitura de um movimento.
 
-    O `desde` entra como **bind**, nunca concatenado: valor de fora do codigo
+    Duas restricoes, e elas respondem perguntas diferentes:
+
+      - o **piso de periodo** (`nk_calendario >= :piso`) e escopo: a V3 le de
+        2026 para frente (ver `contrato.piso_do_periodo()`). Ele vale em toda
+        rodada, completa ou incremental;
+      - o **`desde`** (`dw_data_alteracao > :desde`) e frescor: e a marca d'agua
+        da rodada anterior, e so aparece no incremental.
+
+    Os dois entram como **bind**, nunca concatenados: valor de fora do codigo
     dentro de uma string de SQL e o defeito que nao se ve na revisao e que
-    ninguem consegue explicar depois. O nome do objeto e concatenado porque
-    nome de objeto nao pode ser bind -- e por isso ele passa pela guarda de
-    `contrato.tabela()`."""
+    ninguem consegue explicar depois. O nome do objeto e concatenado porque nome
+    de objeto nao pode ser bind -- e por isso ele passa pela guarda de
+    `contrato.tabela()`.
+
+    O piso fica no SQL, e nao em Python como o filtro de instancia SLIN, porque
+    sao coisas diferentes: instancia fora de escopo e **tripwire** (queremos
+    contar e logar se aparecer), e periodo fora da janela e recorte conhecido --
+    trazer 5x mais linha duas vezes por dia para descartar seria desperdicio."""
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
     sql = (
         "SELECT " + ", ".join(colunas_dw(movimento))
         + " FROM " + contrato.tabela(movimento)
+        + f" WHERE {calendario} >= :piso"
     )
+    binds = {"piso": contrato.piso_do_periodo()}
     if desde is None:
-        return sql, {}
-    coluna = contrato.coluna_dw("dw_data_alteracao", movimento)
+        return sql, binds
+    alteracao = contrato.coluna_dw("dw_data_alteracao", movimento)
     # Maior, e nao maior-ou-igual: igual e a linha que a rodada anterior ja
     # carregou, e reprocessa-la nao mudaria nada alem de inflar `linhas_lidas`.
     # Mesma decisao da `FonteCSV`, para as duas fontes se comportarem igual.
-    return sql + f" WHERE {coluna} > :desde", {"desde": desde}
+    binds["desde"] = desde
+    return sql + f" AND {alteracao} > :desde", binds
 
 
 def sql_colunas(movimento):
@@ -238,12 +255,22 @@ def sql_colunas(movimento):
 
 
 def sql_resumo(movimento):
-    """Contagem e as duas marcas d'agua -- o que o `--sondar` mostra."""
+    """Contagem e marcas d'agua -- da tabela INTEIRA e da janela, na mesma
+    varredura.
+
+    Os dois lados de proposito: o total responde "o que a fonte tem", a janela
+    responde "o que a gente le", e ver a diferenca e o que impede alguem de
+    concluir que o DW esta faltando dado quando na verdade o recorte e nosso.
+    Sai de graca -- e a mesma leitura."""
     calendario = contrato.coluna_dw("nk_calendario", movimento)
     alteracao = contrato.coluna_dw("dw_data_alteracao", movimento)
+    na_janela = f"CASE WHEN {calendario} >= :piso THEN"
     return (
-        f"SELECT COUNT(*), MIN({calendario}), MAX({calendario}), "
-        f"MIN({alteracao}), MAX({alteracao}) "
+        "SELECT "
+        f"COUNT(*), MIN({calendario}), MAX({calendario}), "
+        f"COUNT({na_janela} 1 END), "
+        f"MIN({na_janela} {calendario} END), MAX({na_janela} {calendario} END), "
+        f"MIN({na_janela} {alteracao} END), MAX({na_janela} {alteracao} END) "
         "FROM " + contrato.tabela(movimento)
     )
 
@@ -324,7 +351,14 @@ def sql_identidade(movimento) -> str:
         f"SUM(CASE WHEN {colunas['ano_solic']} <> "
         f"EXTRACT(YEAR FROM {colunas['data_solic']}) THEN 1 ELSE 0 END)"
     )
-    return "SELECT " + ", ".join(contagens) + " FROM " + contrato.tabela(movimento)
+    # Dentro da JANELA: o que importa e a chave ser unica no que a carga grava.
+    # Quem quiser saber se ela aguenta um periodo maior baixa o
+    # `DW_ANO_MINIMO` e roda o sondar de novo -- que e o fluxo certo antes de
+    # ampliar a janela, e nao um numero decorativo aqui.
+    return (
+        "SELECT " + ", ".join(contagens) + " FROM " + contrato.tabela(movimento)
+        + f" WHERE {colunas['nk_calendario']} >= :piso"
+    )
 
 
 def sql_colisoes(movimento, quantas=3) -> str:
@@ -343,6 +377,7 @@ def sql_colisoes(movimento, quantas=3) -> str:
     return (
         f"SELECT {gem}, {filial}, COUNT(*), MIN({calendario}), MAX({calendario}) "
         "FROM " + contrato.tabela(movimento) + " "
+        f"WHERE {calendario} >= :piso "
         f"GROUP BY {grupo} HAVING COUNT(*) > 1 "
         f"ORDER BY COUNT(*) DESC FETCH FIRST {int(quantas)} ROWS ONLY"
     )
@@ -365,7 +400,7 @@ def sql_ano_discordante(movimento, quantas=8) -> str:
         f"TO_CHAR(MAX({solic}), 'YYYY-MM-DD'), "
         f"TO_CHAR(MIN({calendario}), 'YYYY-MM-DD'), COUNT(*) "
         "FROM " + contrato.tabela(movimento) + " "
-        f"WHERE {ano} <> EXTRACT(YEAR FROM {solic}) "
+        f"WHERE {calendario} >= :piso AND {ano} <> EXTRACT(YEAR FROM {solic}) "
         f"GROUP BY {ano} ORDER BY {ano} FETCH FIRST {int(quantas)} ROWS ONLY"
     )
 
@@ -449,20 +484,23 @@ class FonteOracle:
         vale, o contrato bate coluna por coluna, o volume e comparavel ao que a
         sondagem de 25/ago mediu, e o numero chega tipado como o Postgres
         precisa."""
+        piso = {"piso": contrato.piso_do_periodo()}
         resumo = {
             "movimento": movimento,
             "tabela": contrato.tabela(movimento),
             "dsn": dsn(),
             "colunas_no_contrato": len(colunas_dw(movimento)),
+            "piso": piso["piso"],
         }
 
         conexao = self._abrir_conexao()
         try:
             with conexao.cursor() as cur:
                 self._conferir_contrato(cur, movimento)
-                cur.execute(sql_resumo(movimento))
-                linhas, cal_min, cal_max, alt_min, alt_max = cur.fetchone()
-                cur.execute(sql_identidade(movimento))
+                cur.execute(sql_resumo(movimento), piso)
+                (linhas, cal_min, cal_max, na_janela, jan_cal_min, jan_cal_max,
+                 alt_min, alt_max) = cur.fetchone()
+                cur.execute(sql_identidade(movimento), piso)
                 medido = cur.fetchone()
                 total, *resto = medido
                 distintos = resto[:len(CANDIDATOS_DE_IDENTIDADE)]
@@ -478,17 +516,19 @@ class FonteOracle:
                 so_chave = distintos[0]
                 colisoes = []
                 if so_chave is not None and total is not None and so_chave < total:
-                    cur.execute(sql_colisoes(movimento))
+                    cur.execute(sql_colisoes(movimento), piso)
                     colisoes = list(cur)
                 discordantes = []
                 if resto[-1]:
-                    cur.execute(sql_ano_discordante(movimento))
+                    cur.execute(sql_ano_discordante(movimento), piso)
                     discordantes = list(cur)
         finally:
             conexao.close()
 
         resumo["linhas"] = linhas
+        resumo["linhas_na_janela"] = na_janela
         resumo["nk_calendario"] = (cal_min, cal_max)
+        resumo["nk_calendario_na_janela"] = (jan_cal_min, jan_cal_max)
         resumo["dw_data_alteracao"] = (alt_min, alt_max)
         resumo["identidade"] = identidade
         resumo["colisoes"] = colisoes

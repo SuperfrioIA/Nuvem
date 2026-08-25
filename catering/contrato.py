@@ -52,6 +52,7 @@ tabela ganhou schema e sufixo de versao, a coluna nao.
 
 import os
 import re
+from datetime import date
 
 MOVIMENTOS = ("rec", "exp")
 
@@ -120,6 +121,62 @@ def tabela(movimento: str) -> str:
 # outras instancias do DW (DISTROMAQ_PRD, MDLZ_PRD, DISTRO_PRD, SEEDS_PRD,
 # ATIVA_*) sao outro negocio e ficam FORA -- nao e dado faltando.
 PREFIXO_INSTANCIA = "SLIN_"
+
+# --------------------------------------------------------- piso de periodo
+# Escopo de PERIODO (Maria, 25/ago/2026): a V3 le **de 2026 para frente**.
+#
+# Por que isto existe: em 25/ago o DW reconstruiu as duas tabelas com historico
+# desde 02/jan/2023, e elas passaram de 79 mil para 434 mil linhas. Ler 2023-2025
+# nao serve a tela de hoje -- e a Maria decidiu o recorte olhando o que a Matriz
+# mostra, nao o que a fonte tem.
+#
+# Fica em **configuracao** e nao como constante enterrada porque a propria Maria
+# nomeou o caso de uso: comparar 2025 com 2026 um dia. Trocar para 2025 e uma
+# variavel de ambiente, sem commit e sem migration.
+#
+# Duas coisas que valem saber antes de mexer nele:
+#
+#   1. o piso corta por **`nk_calendario`**, a data do movimento -- a mesma que a
+#      Matriz agrega (A-5). Guia pedida em dez/2025 e movimentada em jan/2026
+#      ENTRA, porque ela conta em 2026;
+#   2. **baixar o piso carrega o passado; subir o piso nao apaga nada.** A carga
+#      so insere e atualiza (decisao do V3.1), entao linha que ja entrou fica.
+#      Voltar atras de um piso mais baixo exige DELETE a mao, deliberado.
+ANO_MINIMO_PADRAO = 2026
+ENV_ANO_MINIMO = "DW_ANO_MINIMO"
+
+# Faixa sa. O que isto pega e o dedo errado -- `20226`, `26`, `2o26` -- que sem
+# guarda viraria "carrega tudo" ou "carrega nada" em silencio.
+_ANO_MIN, _ANO_MAX = 2000, 2100
+
+
+class AnoMinimoInvalido(ValueError):
+    """Valor de `DW_ANO_MINIMO` que nao e ano."""
+
+
+def ano_minimo() -> int:
+    """O primeiro ano que a carga le, do ambiente ou do padrao."""
+    bruto = (os.environ.get(ENV_ANO_MINIMO) or "").strip()
+    if not bruto:
+        return ANO_MINIMO_PADRAO
+    try:
+        ano = int(bruto)
+    except ValueError:
+        raise AnoMinimoInvalido(
+            f"{ENV_ANO_MINIMO}={bruto!r} nao e um ano"
+        ) from None
+    if not _ANO_MIN <= ano <= _ANO_MAX:
+        raise AnoMinimoInvalido(
+            f"{ENV_ANO_MINIMO}={ano} esta fora de {_ANO_MIN}..{_ANO_MAX}"
+        )
+    return ano
+
+
+def piso_do_periodo() -> date:
+    """O primeiro dia que a carga le. `date` e nao ano porque e assim que ele
+    entra no bind do SQL e na comparacao do CSV -- converter em dois lugares e
+    como as duas pontas comecam a divergir."""
+    return date(ano_minimo(), 1, 1)
 
 # ------------------------------------------------------------ identidade
 # Sem `nk_cliente` sobra 1 duplicata no recebimento e 65 na expedicao; sem

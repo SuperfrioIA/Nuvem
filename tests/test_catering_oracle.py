@@ -136,7 +136,7 @@ class CursorFalso:
             self._resultado = iter([self.conexao.identidade])
         elif "HAVING COUNT(*) > 1" in sql.upper():
             self._resultado = iter(self.conexao.colisoes)
-        elif "EXTRACT(YEAR" in sql.upper() and "WHERE" in sql.upper():
+        elif "GROUP BY ANO_SOLIC" in sql.upper():
             self._resultado = iter(self.conexao.discordantes)
         elif sql.lstrip().upper().startswith("SELECT COUNT(*)"):
             self._resultado = iter([self.conexao.resumo])
@@ -179,6 +179,22 @@ class ConexaoFalsa:
         self.fechada = True
 
 
+def _resumo_falso(na_tabela, na_janela):
+    """O que `sql_resumo` devolve: 8 posicoes -- contagem e datas da tabela
+    inteira, e as mesmas coisas dentro da janela.
+
+    Duas contagens porque o `--sondar` mostra as duas, e ver a diferenca e o que
+    impede alguem de concluir que o DW esta faltando dado quando o recorte e
+    nosso."""
+    return (
+        Decimal(str(na_tabela)),
+        datetime(2023, 1, 2), datetime(2026, 8, 25),            # na tabela
+        Decimal(str(na_janela)),
+        datetime(2026, 1, 2), datetime(2026, 8, 25),            # na janela
+        datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48),
+    )
+
+
 def fonte_com(conexao):
     """`FonteOracle` apontada para uma conexao falsa. A injecao existe so para
     o teste: em producao o padrao e a conexao real."""
@@ -202,9 +218,13 @@ def test_select_e_gerado_do_contrato_e_nunca_estrela():
             f"ordem do schema. Veio: {sql[:200]}"
         )
         assert "SELECT *" not in sql, f"{movimento}: leitura de dado com estrela"
-        assert sql.endswith(contrato.tabela(movimento)), \
-            f"{movimento}: a tabela precisa ser a qualificada de contrato.tabela()"
-        assert binds == {}, "sem `desde` nao existe bind nenhum"
+        assert f" FROM {contrato.tabela(movimento)}" in sql, (
+            f"{movimento}: a tabela precisa ser a qualificada de "
+            "contrato.tabela()"
+        )
+        assert binds == {"piso": contrato.piso_do_periodo()}, (
+            "o piso de periodo vale em toda rodada, com ou sem `desde`"
+        )
 
 
 def test_desde_entra_como_bind_e_nunca_concatenado():
@@ -213,20 +233,28 @@ def test_desde_entra_como_bind_e_nunca_concatenado():
     desde = datetime(2026, 8, 24, 17, 46, 39)
     sql, binds = fonte_oracle.sql_select("rec", desde)
 
-    assert sql.endswith("WHERE DW_DATA_ALTERACAO > :desde"), sql[-80:]
-    assert binds == {"desde": desde}
+    assert sql.endswith("AND DW_DATA_ALTERACAO > :desde"), sql[-80:]
+    assert binds == {"piso": contrato.piso_do_periodo(), "desde": desde}
     assert "2026" not in sql, \
         "o valor do `desde` nao pode aparecer no SQL -- ele vai por bind"
     # Maior, e nao maior-ou-igual: `>=` releria a ultima linha da rodada
     # anterior a cada rodada, inflando `linhas_lidas` sem mudar nada.
-    assert ">=" not in sql
+    _antes, _, marca = sql.partition("AND ")
+    assert marca == "DW_DATA_ALTERACAO > :desde", (
+        "a marca d'agua compara com `>` e nao `>=`: igual e a linha que a "
+        f"rodada anterior ja carregou. Veio: {marca}"
+    )
 
 
-def test_sem_desde_nao_ha_where_nenhum():
-    """Carga completa le a tabela inteira -- a premissa "tabelas inteiras, sem
-    filtro" do contrato fechado."""
-    sql, _binds = fonte_oracle.sql_select("exp")
-    assert "WHERE" not in sql.upper()
+def test_sem_desde_o_unico_filtro_e_o_piso_de_periodo():
+    """A premissa "tabelas inteiras, sem filtro" do contrato valeu ate
+    25/ago/2026, quando o DW passou a publicar 2023-2026 e a Maria recortou o
+    escopo em 2026. Carga completa hoje significa "a janela inteira", e o
+    `desde` continua sendo a unica coisa que o incremental acrescenta."""
+    sql, binds = fonte_oracle.sql_select("exp")
+    _antes, _, onde = sql.partition(" WHERE ")
+    assert onde == "NK_CALENDARIO >= :piso"
+    assert set(binds) == {"piso"}
 
 
 def test_escopo_nao_e_filtrado_no_sql():
@@ -238,8 +266,9 @@ def test_escopo_nao_e_filtrado_no_sql():
         # a clausula inteira, e nao "nao contem SLIN": `NK_SLIN_EMPRESA` e uma
         # coluna legitima da lista do SELECT, e procurar substring ali daria
         # falso positivo eterno
-        assert onde == "DW_DATA_ALTERACAO > :desde", (
-            f"{movimento}: o WHERE tem que ser so a marca d'agua. Veio: {onde}"
+        assert onde == "NK_CALENDARIO >= :piso AND DW_DATA_ALTERACAO > :desde", (
+            f"{movimento}: o WHERE tem que ser o piso e a marca d'agua, e "
+            f"nada mais. Veio: {onde}"
         )
         assert "LIKE" not in sql.upper()
         assert f"'{contrato.PREFIXO_INSTANCIA}" not in sql,             "instancia como literal no SQL significa escopo filtrado no banco"
@@ -263,7 +292,7 @@ def test_nome_da_tabela_vem_de_configuracao(monkeypatch):
     monkeypatch.setenv("DW_TABELA_REC", "DM_VOLUMETRIA.FATO_VOL_REC_CAT_V02")
     assert contrato.tabela("rec") == "DM_VOLUMETRIA.FATO_VOL_REC_CAT_V02"
     sql, _ = fonte_oracle.sql_select("rec")
-    assert sql.endswith("DM_VOLUMETRIA.FATO_VOL_REC_CAT_V02")
+    assert " FROM DM_VOLUMETRIA.FATO_VOL_REC_CAT_V02" in sql
     # o outro movimento nao e afetado pela variavel do primeiro
     assert contrato.tabela("exp") == "DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01"
 
@@ -497,16 +526,23 @@ def test_sondar_devolve_a_evidencia_do_aceite():
     conexao = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec", qtde_peso2=Decimal("25290.217"))],
-        resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
-                datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
+        resumo=_resumo_falso(36592, 36592),
     )
     resumo = fonte_com(conexao).sondar("rec")
 
     assert resumo["tabela"] == "DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01"
-    assert resumo["linhas"] == Decimal("36592")
+    assert resumo["linhas"] == Decimal("36592"), "o que a tabela tem"
+    assert resumo["linhas_na_janela"] == Decimal("36592"), "o que a carga grava"
+    assert resumo["piso"] == contrato.piso_do_periodo()
     assert resumo["colunas_no_contrato"] == len(contrato.colunas("rec"))
-    assert resumo["nk_calendario"] == (datetime(2026, 1, 2), datetime(2026, 8, 24))
-    assert resumo["dw_data_alteracao"][1] == datetime(2026, 8, 24, 17, 46)
+    assert resumo["nk_calendario"] == (datetime(2023, 1, 2), datetime(2026, 8, 25)), (
+        "o intervalo da TABELA -- e o que mostra que existe 2023 la, fora da "
+        "nossa janela"
+    )
+    assert resumo["nk_calendario_na_janela"] == (
+        datetime(2026, 1, 2), datetime(2026, 8, 25),
+    ), "e o intervalo do que a carga grava"
+    assert resumo["dw_data_alteracao"][1] == datetime(2026, 8, 25, 13, 48)
 
     # a amostra mostra o tipo que o driver entregou E o valor que o banco
     # recebe: e onde `fetch_decimals` aparece ou nao aparece
@@ -538,8 +574,7 @@ def test_sondar_mede_se_a_chave_natural_ainda_e_unica():
     conexao = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec")],
-        resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
-                datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
+        resumo=_resumo_falso(201848, 36592),
         identidade=(Decimal("201848"), Decimal("174014"), Decimal("201848"),
                     Decimal("201848"), Decimal("201836"), Decimal("201848"),
                     Decimal("201848"), Decimal("0")),
@@ -583,8 +618,7 @@ def test_sondar_detalha_o_ano_discordante_so_quando_ele_existe():
     conexao = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec")],
-        resumo=(Decimal("201848"), datetime(2023, 1, 2), datetime(2026, 8, 25),
-                datetime(2026, 8, 25, 10, 31), datetime(2026, 8, 25, 13, 48)),
+        resumo=_resumo_falso(201848, 36592),
         identidade=(Decimal("201848"),) * 7 + (Decimal("15"),),
         discordantes=[(Decimal("2025"), "2026-01-02", "2026-01-09",
                        "2026-01-05", Decimal("15"))],
@@ -598,13 +632,13 @@ def test_sondar_detalha_o_ano_discordante_so_quando_ele_existe():
     limpa = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec")],
-        resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
-                datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
+        resumo=_resumo_falso(36592, 36592),
         identidade=(Decimal("36592"),) * 7 + (Decimal("0"),),
     )
     assert fonte_com(limpa).sondar("rec")["ano_discordante"] == []
-    assert not any("EXTRACT(YEAR" in sql and "WHERE" in sql
-                   for sql, _ in limpa.executados)
+    assert not any("GROUP BY ANO_SOLIC" in sql for sql, _ in limpa.executados), (
+        "a consulta de detalhe so roda quando a contagem acusou discordancia"
+    )
 
 
 def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
@@ -613,8 +647,7 @@ def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
     conexao = ConexaoFalsa(
         "rec",
         linhas=[linha_nativa("rec")],
-        resumo=(Decimal("36592"), datetime(2026, 1, 2), datetime(2026, 8, 24),
-                datetime(2026, 8, 20, 15, 26), datetime(2026, 8, 24, 17, 46)),
+        resumo=_resumo_falso(36592, 36592),
         identidade=(Decimal("36592"),) * 7 + (Decimal("0"),),
     )
     resumo = fonte_com(conexao).sondar("rec")
@@ -716,8 +749,7 @@ def test_guarda_de_runtime_todo_comando_emitido_e_select():
     conexao = ConexaoFalsa(
         "exp",
         linhas=[linha_nativa("exp")],
-        resumo=(Decimal("42789"), datetime(2025, 12, 31), datetime(2026, 8, 24),
-                datetime(2026, 8, 20, 15, 40), datetime(2026, 8, 24, 17, 47)),
+        resumo=_resumo_falso(42789, 42639),
     )
     fonte = fonte_com(conexao)
     list(fonte.extrair("exp", datetime(2026, 8, 20)))
@@ -726,6 +758,55 @@ def test_guarda_de_runtime_todo_comando_emitido_e_select():
     assert conexao.executados, "o teste nao exercitou nada"
     for sql, _binds in conexao.executados:
         assert sql.lstrip().upper().startswith("SELECT"), sql
+
+
+def test_piso_de_periodo_vale_em_toda_rodada():
+    """O recorte da Maria (25/ago/2026): a V3 le de 2026 para frente.
+
+    Vale na carga completa e na incremental -- sao perguntas diferentes: o piso e
+    ESCOPO (que periodo interessa), o `desde` e FRESCOR (o que mudou desde a
+    ultima rodada). Confundir os dois faria a carga completa trazer 2023."""
+    for movimento in contrato.MOVIMENTOS:
+        for desde in (None, datetime(2026, 8, 25, 13, 48)):
+            sql, binds = fonte_oracle.sql_select(movimento, desde)
+            assert "NK_CALENDARIO >= :piso" in sql, f"{movimento}/{desde}"
+            assert binds["piso"] == contrato.piso_do_periodo()
+            assert "2026-01-01" not in sql, "o piso vai por bind, nao concatenado"
+
+
+def test_piso_configuravel_muda_o_bind_e_nao_o_sql(monkeypatch):
+    """A Maria nomeou o caso de uso ao decidir: comparar 2025 com 2026 um dia.
+    Trocar o piso e uma variavel de ambiente -- e o SQL nem muda, porque o valor
+    viaja como parametro. Consulta que muda de texto por configuracao perde o
+    plano em cache e some do log agrupado."""
+    sql_padrao, binds_padrao = fonte_oracle.sql_select("rec")
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2025")
+    sql_outro, binds_outro = fonte_oracle.sql_select("rec")
+
+    assert sql_outro == sql_padrao
+    assert binds_padrao["piso"] == date(2026, 1, 1)
+    assert binds_outro["piso"] == date(2025, 1, 1)
+
+
+def test_piso_vale_tambem_para_medir_identidade():
+    """A medicao tem que descrever o que a carga GRAVA.
+
+    Sem o piso, a identidade seria medida na tabela inteira e acusaria as 27.834
+    colisoes de 2023-2025 num recorte que nao le 2023 -- alarme sobre dado que
+    nao entra. Quem quiser saber se a chave aguenta um periodo maior baixa o
+    `DW_ANO_MINIMO` e roda o sondar de novo, que e o fluxo certo ANTES de
+    ampliar a janela."""
+    for gerador in (fonte_oracle.sql_identidade, fonte_oracle.sql_colisoes,
+                    fonte_oracle.sql_ano_discordante):
+        assert "NK_CALENDARIO >= :piso" in gerador("rec"), gerador.__name__
+
+
+def test_ano_minimo_invalido_nao_gera_sql(monkeypatch):
+    """Ano digitado errado nao pode virar "carrega tudo" nem "carrega nada"."""
+    for ruim in ("26", "20226", "dois mil e vinte e seis", "2026.5"):
+        monkeypatch.setenv(contrato.ENV_ANO_MINIMO, ruim)
+        with pytest.raises(contrato.AnoMinimoInvalido, match=contrato.ENV_ANO_MINIMO):
+            fonte_oracle.sql_select("rec")
 
 
 # ================================================= rodada de verdade

@@ -32,19 +32,28 @@ import argparse
 import logging
 import sys
 
+from catering import contrato
+
 
 def _sondagem(fonte, movimentos) -> int:
     """Imprime a evidencia de leitura do DW. Nada aqui toca no Postgres."""
     for movimento in movimentos:
         resumo = fonte.sondar(movimento)
         cal_de, cal_ate = resumo["nk_calendario"]
+        jan_de, jan_ate = resumo["nk_calendario_na_janela"]
         alt_de, alt_ate = resumo["dw_data_alteracao"]
+        na_tabela = f"{resumo['linhas']:,}".replace(",", ".")
+        na_janela = f"{resumo['linhas_na_janela']:,}".replace(",", ".")
         print(f"\n{resumo['tabela']}  ({resumo['dsn']})")
         print(f"  contrato          : {resumo['colunas_no_contrato']} coluna(s), "
               "conferidas contra o que o cursor descreve -- sem divergencia")
-        print(f"  linhas            : {resumo['linhas']:,}".replace(",", "."))
-        print(f"  nk_calendario     : {cal_de} a {cal_ate}")
-        print(f"  dw_data_alteracao : {alt_de} a {alt_ate}   <- o `desde` do incremental")
+        print(f"  janela            : de {resumo['piso']} em diante "
+              f"({contrato.ENV_ANO_MINIMO} para mudar)")
+        print(f"  linhas            : {na_tabela} na tabela  |  {na_janela} na janela")
+        print(f"  nk_calendario     : {cal_de} a {cal_ate} na tabela  |  "
+              f"{jan_de} a {jan_ate} na janela")
+        print(f"  dw_data_alteracao : {alt_de} a {alt_ate} na janela"
+              "   <- o `desde` do incremental")
         ident = resumo.get("identidade") or {}
         if ident:
             total = ident["total"]

@@ -107,7 +107,7 @@ sai quando o novo provar o mesmo número, não antes.
 
 | item | decisão |
 |---|---|
-| **Fonte** | Oracle `pdwgener` (`oracleprd-aws.superfrio.com.br:1521`, `service_name`, cliente `oracledb` em modo thin) — **`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`** + **`DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01`** (nome confirmado pela Maria em 25/ago/2026; o registrado antes, `FATO_VOL_REC_CAT`, estava sem o schema e sem o sufixo `_V01`, e por isso a sondagem levou `ORA-00942`); `FATO_VOLUMETRIA` só para conciliação. São **tabelas inteiras**, sem filtro de extração |
+| **Fonte** | Oracle `pdwgener` (`oracleprd-aws.superfrio.com.br:1521`, `service_name`, cliente `oracledb` em modo thin) — **`DM_VOLUMETRIA.FATO_VOL_REC_CAT_V01`** + **`DM_VOLUMETRIA.FATO_VOL_EXP_CAT_V01`** (nome confirmado pela Maria em 25/ago/2026; o registrado antes, `FATO_VOL_REC_CAT`, estava sem o schema e sem o sufixo `_V01`, e por isso a sondagem levou `ORA-00942`); `FATO_VOLUMETRIA` só para conciliação. ~~São **tabelas inteiras**, sem filtro de extração~~ — **corrigido em 25/ago/2026:** o DW reconstruiu as duas tabelas com histórico desde 02/jan/2023 (434 mil linhas), e a Maria recortou o escopo: **a V3 lê de 2026 para frente**, por `nk_calendario`, com o piso em configuração (`DW_ANO_MINIMO`, padrão 2026) porque comparar 2025 com 2026 é caso de uso previsto. Ver a seção do V3.5 |
 | **Escopo** | **catering = instâncias SLIN**. Volume de outras instâncias (`DISTROMAQ_PRD`, `MDLZ_PRD`, `DISTRO_PRD`, `SEEDS_PRD`, `ATIVA_*`) é outro negócio e está corretamente fora. Declarar na tela; guardar a instância como coluna de procedência |
 | **Carga** | 2× ao dia: **07h05 e 15h05**. O processo do DW (`catering_to_dw_volumetry_v01`) roda a cada 2h, de 6h35 a 23h35 — lemos 30 min depois, nunca no horário |
 | **Incremento** | por **`DW_DATA_ALTERACAO`**, não só `DW_DATA_INCLUSAO` (linha muda entre extrações). Idempotente pela PK. **O DW insere e altera, nunca apaga** — **confirmado com o time do DW pela Maria em 25/ago/2026**, e nao mais heranca sem fonte: o processo so insere e atualiza, **so guia confirmada entra na tabela**, e **nao existe desconfirmar**. Logo uma linha que entrou nao tem por onde sair, e nao precisa de varredura de PKs para detectar remocao. Consequencia: o alarme de contagem que se discutiu para o V3.5 **nao sera construido** — vigiaria uma condicao sem mecanismo. O gatilho que o traria de volta e o WMS passar a permitir cancelar guia ja confirmada. Fica tambem registrado um caso estreito **conhecido e nao tratado**: se o `nk_instancia` de um movimento mudasse de `SLIN_*` para outra instancia, o DW nao teria apagado nada mas a linha sairia do nosso escopo, e a nossa copia ficaria com ela — nao tratado porque significaria o volume passar a pertencer a outro negocio, o que nao e correcao plausivel de cadastro|
@@ -1341,6 +1341,69 @@ e loga linha fora de escopo como tripwire (medido: zero linha nos dois CSVs).
 Empurrar o filtro para o banco economizaria tráfego de linha que ninguém tem, ao
 preço de nunca mais saber que instância nova apareceu.
 
+### O piso de período: a V3 lê de 2026 para frente
+
+**Decisão da Maria, 25/ago/2026**, depois de ver a reconstrução: *"o certo é a
+gente só pegar de 2026 pra frente"*. Isso corrige uma linha do contrato fechado
+— "são tabelas inteiras, sem filtro de extração" valeu enquanto a fonte só tinha
+o ano corrente.
+
+| | antes do piso | com o piso |
+|---|---|---|
+| recebimento | 201.848 linhas, desde 02/jan/2023 | o que houver de 2026 em diante |
+| expedição | 231.886 linhas, desde 02/jan/2023 | idem |
+| CSVs de 21/ago (medido) | 36.300 e 42.468 | **36.300 e 42.318** |
+
+As 150 linhas que a expedição perde são **dez/2025** — 128,7 t solicitadas. O
+recebimento não tem nenhuma linha anterior a 2026, então ele não muda. Está
+fixado em teste contra o arquivo de verdade, porque é o número que denuncia um
+piso mexido sem querer.
+
+**Corta por `nk_calendario`**, a data do movimento — a mesma que a Matriz agrega
+(A-5). Guia pedida em dez/2025 e movimentada em jan/2026 **entra**, porque ela
+conta em 2026.
+
+**Fica em configuração** (`DW_ANO_MINIMO`, padrão 2026) porque a própria Maria
+nomeou o caso de uso ao decidir: *"de acordo, se quiser comparar 2025-2026"*.
+Trocar para 2025 é uma variável de ambiente — sem commit, sem migration. O valor
+é validado (2000..2100): `26`, `20226` ou `2o26` falham nomeando a variável, em
+vez de virar "carrega tudo" ou "carrega nada" em silêncio.
+
+**No SQL, e não em Python.** Aqui a decisão é oposta à do filtro de instância
+SLIN, e por um motivo concreto: instância fora de escopo é **tripwire** (queremos
+contar e logar se aparecer), período fora da janela é recorte conhecido. Trazer
+5x mais linha duas vezes por dia para descartar em Python seria desperdício —
+foi exatamente o que a reconstrução tornou palpável.
+
+**A `FonteCSV` aplica o mesmo piso**, ainda que os CSVs sejam 2026. Se as duas
+fontes recortassem diferente, comparar uma com a outra deixaria de provar
+qualquer coisa.
+
+**A medição de identidade também respeita a janela.** Sem isso, o `--sondar`
+acusaria as 27.834 colisões de 2023–2025 num recorte que não lê 2023 — alarme
+sobre dado que não entra. Quem quiser saber se a chave aguenta um período maior
+baixa o `DW_ANO_MINIMO` e roda o sondar de novo, que é o fluxo certo **antes** de
+ampliar a janela.
+
+**O `--sondar` passou a mostrar os dois números** — o que a tabela tem e o que a
+janela lê. Sai da mesma varredura, e é o que impede alguém de concluir que o DW
+está faltando dado quando o recorte é nosso.
+
+Três consequências que valem estar escritas:
+
+1. **Baixar o piso carrega o passado; subir o piso não apaga nada.** A carga só
+   insere e atualiza (decisão do V3.1), então linha que já entrou fica. Voltar
+   atrás de um piso mais baixo exige `DELETE` à mão, deliberado.
+2. **A 0023 continua necessária.** Com dado só de 2026 a chave de seis colunas
+   voltaria a funcionar *hoje* e quebraria em **janeiro de 2027**, quando o GEM
+   reiniciar e 2026 e 2027 conviverem na mesma tabela. A reciclagem é fato da
+   fonte, não do filtro.
+3. **O aceite do V3.2 volta a valer inteiro** — ele foi conferido célula por
+   célula contra 2026, que passou a ser exatamente o que a tela mostra. E as 16
+   linhas com `data_solic` impossível (2105, 2002, 2005) têm movimento em
+   2024/2025: **saem com o piso**. Sobra só o caso benigno de virada de ano no
+   recebimento.
+
 ### Somente leitura, provado de duas formas
 
 Mesmo par do cliente do Graph, pelo mesmo motivo:
@@ -1428,8 +1491,8 @@ ainda.
 
 ### Suíte
 
-**228 passed** (`python -m pytest tests/test_catering_*.py tests/test_migracao.py`,
-Postgres real em `localhost:5433`, 6min13), com as extrações de 21/ago presentes
+**234 passed** (`python -m pytest tests/test_catering_*.py tests/test_migracao.py`,
+Postgres real em `localhost:5433`, 7min39), com as extrações de 21/ago presentes
 na máquina — então os testes `@tem_extracao` rodaram em vez de pular. 34 testes
 novos em `tests/test_catering_oracle.py`, mais os três da identidade em
 `test_catering_carga.py` (a regressão da carga real, o furo conhecido do alarme
@@ -1445,7 +1508,9 @@ anteriores.
 - `alembic/versions/0023_identidade_ano_solic.py` (novo — a identidade de sete
   colunas)
 - `catering/contrato.py` (nome qualificado, `tabela()`, `PK_DW` desacoplada,
-  `CHAVE_NATURAL` com `ano_solic`)
+  `CHAVE_NATURAL` com `ano_solic`, `piso_do_periodo()`)
+- `catering/carga/fonte_csv.py` (o mesmo piso, para as duas fontes não
+  divergirem)
 - `catering/carga/destino.py` (`tabela_origem()` virou função)
 - `catering/carga/__init__.py` (`CargaVazia`)
 - `catering/carga/__main__.py` (`--fonte`, `--sondar`)

@@ -48,7 +48,14 @@ from tests.conftest import consultar
 # --------------------------------------------------------------- medido
 # Numeros das extracoes de 21/ago/2026, medidos antes de escrever o codigo.
 DIRETORIO_DW = Path(__file__).resolve().parent.parent / "docs" / "Analise"
-LINHAS = {"rec": 36_300, "exp": 42_468}
+# O que a fonte ENTREGA com o piso de periodo de 2026 (contrato.piso_do_periodo).
+# Os arquivos tem 36.300 e 42.468 linhas; as 150 linhas de diferenca na
+# expedicao sao **dez/2025** (128,7 t solicitadas), que saem da janela pela
+# decisao da Maria de 25/ago/2026 -- a V3 le de 2026 para frente. O recebimento
+# nao tem linha anterior a 2026, entao ele nao muda.
+NO_ARQUIVO = {"rec": 36_300, "exp": 42_468}
+LINHAS = {"rec": 36_300, "exp": 42_318}
+FORA_DA_JANELA = {"rec": 0, "exp": 150}
 UNIDADES = 6
 NOMES_ESTOQUE = 40
 RAIZES_CLIENTE = 14
@@ -592,6 +599,39 @@ def test_dimensoes_guardam_as_nossas_decisoes(banco_migrado):
     assert _contar("cat_unidades") == 2
     assert _contar("cat_tipos_estoque") == 3
     assert _contar("cat_clientes") == 2
+
+
+@tem_extracao
+def test_piso_de_periodo_corta_2025_e_e_configuravel(monkeypatch):
+    """O recorte da Maria (25/ago/2026): a V3 le de 2026 para frente.
+
+    Fixado contra o arquivo de verdade porque o numero importa: sao **150**
+    linhas de dez/2025 na expedicao, e o recebimento nao tem nenhuma. Se um dia
+    o piso mudar sem querer, e aqui que aparece.
+
+    O piso vive em configuracao porque a Maria nomeou o caso de uso -- comparar
+    2025 com 2026 -- e a segunda metade do teste e essa promessa: baixar o piso
+    devolve as linhas, sem tocar em codigo."""
+    fonte = FonteCSV(DIRETORIO_DW)
+    for movimento in ("rec", "exp"):
+        entregues = sum(1 for _ in fonte.extrair(movimento))
+        assert entregues == LINHAS[movimento], f"{movimento}: janela de 2026"
+        assert NO_ARQUIVO[movimento] - entregues == FORA_DA_JANELA[movimento],             f"{movimento}: o arquivo tem mais linha do que a janela devolve"
+
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2025")
+    assert sum(1 for _ in fonte.extrair("exp")) == NO_ARQUIVO["exp"],         "baixar o piso tem que devolver dez/2025 sem mexer em codigo"
+
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2027")
+    assert sum(1 for _ in fonte.extrair("exp")) == 0
+
+
+def test_piso_invalido_falha_antes_de_ler_qualquer_linha(monkeypatch):
+    """Ano digitado errado nao pode virar "carrega tudo" nem "carrega nada"."""
+    fonte = FonteCSV(DIRETORIO_DW)
+    for ruim in ("26", "20226", "dois mil e vinte e seis"):
+        monkeypatch.setenv(contrato.ENV_ANO_MINIMO, ruim)
+        with pytest.raises(contrato.AnoMinimoInvalido, match=contrato.ENV_ANO_MINIMO):
+            next(fonte.extrair("rec"))
 
 
 @tem_extracao
