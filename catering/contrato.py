@@ -29,7 +29,9 @@ tabela ganhou schema e sufixo de versao, a coluna nao.
    `DW_DATA_INCLUSAO` em 20 ou 21/ago/2026 -- ou seja, as duas tabelas foram
    criadas inteiras naquele dia. Nao ha evidencia de como o processo se
    comporta ao longo do tempo. Guardamos a PK como procedencia, mas a
-   identidade e a CHAVE_NATURAL abaixo.
+   identidade e a CHAVE_NATURAL abaixo. Em 25/ago/2026 a tabela FOI
+   reconstruida, com 3,6 anos de historico e todo `dw_data_alteracao` novo --
+   entao isto deixou de ser precaucao e passou a ser fato observado.
 
 2. **Identificador com zero a esquerda e TEXTO, nunca numero.** `NUM_GEM` vem
    como `'0000000001'`, `NK_FILIAL` como `'02060862000569'`, `NK_CLIENTE` como
@@ -120,14 +122,38 @@ def tabela(movimento: str) -> str:
 PREFIXO_INSTANCIA = "SLIN_"
 
 # ------------------------------------------------------------ identidade
-# Unica em 36.300/36.300 e 42.468/42.468 linhas medidas. Menos que isto NAO
-# serve: sem `nk_cliente` sobra 1 duplicata no recebimento e 65 na expedicao;
-# sem `descr_oper_wms` sobram 202 e 93; so (instancia, filial, gem) repete ate
-# 3 vezes -- e o grao de tipo de estoque dentro da guia.
+# Sem `nk_cliente` sobra 1 duplicata no recebimento e 65 na expedicao; sem
+# `descr_oper_wms` sobram 202 e 93; so (instancia, filial, gem) repete ate 3
+# vezes -- e o grao de tipo de estoque dentro da guia.
+#
+# **`ano_solic` entrou em 25/ago/2026 (migration 0023), e foi a primeira carga
+# real que cobrou.** As seis primeiras colunas foram medidas unicas em
+# 36.300/36.300 e 42.468/42.468 linhas -- nos CSVs de 21/ago, que tinham **um
+# ano so**. Quando o DW passou a publicar 2023-2026 (201.848 e 231.886 linhas),
+# a chave repetiu em 27.834 e 44.187 linhas, porque **`num_gem` se recicla por
+# ano**: a mesma guia aparece 4x, uma por ano, em datas proximas dentro do ano.
+# Generalizar unicidade de uma amostra de um ano para a serie inteira foi a
+# falha -- e o upsert recusou alto, que era o que ele tinha que fazer.
+#
+# Por que `ano_solic` e nao uma das duas datas (as duas tambem ficariam unicas):
+#
+#   1. o espaco de numeracao e o ano do PEDIDO, nao o do movimento -- somar o
+#      ano de `nk_calendario` NAO fica unico (12 linhas no recebimento, 79 na
+#      expedicao: as viradas de ano);
+#   2. a identidade certa e a mais GROSSA que ainda seja unica, porque
+#      identidade fina transforma correcao em INSERT duplicado;
+#   3. `data_solic` tem lixo (`2105-04-29`, `2002-04-29`, `2005-05-07` em 16
+#      linhas da expedicao, com `nk_calendario` sao) e `ano_solic` nao. Existe
+#      defeito na fonte que alguem vai corrigir, e com a data na chave essa
+#      correcao duplicaria a linha em silencio.
+#
+# `ano_solic` fica depois do `num_gem` porque ele qualifica o numero da guia: a
+# chave se le como "o GEM e unico dentro do ano do pedido".
 CHAVE_NATURAL = (
     "nk_instancia",
     "nk_wms_filial",
     "num_gem",
+    "ano_solic",
     "nome_estoque",
     "descr_oper_wms",
     "nk_cliente",

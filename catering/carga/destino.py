@@ -38,8 +38,22 @@ numero?*
 
 O Postgres recusa (`ON CONFLICT DO UPDATE command cannot affect row a second
 time`) e a rodada morre. E o comportamento desejado: e o mesmo alarme que o
-UNIQUE da 0019 existe para dar. Medido nos CSVs de 21/ago: 36.300/36.300 e
-42.468/42.468 chaves unicas, zero repeticao.
+UNIQUE da 0019 existe para dar -- e foi ele que barrou a primeira carga real
+contra o DW, em 25/ago/2026, quando a tabela ganhou 2023-2026 e o `num_gem`
+reciclado por ano passou a colidir. A identidade virou sete colunas na 0023.
+
+**O alarme tem um furo, e ele e conhecido.** Ele so dispara quando as duas
+linhas do lote realmente ESCREVEM na mesma linha. O `WHERE ... IS DISTINCT
+FROM` logo acima faz uma linha identica a do banco nao afetar nada -- e ai a
+companheira divergente escreve sozinha, sem alarme, e vence. Para isso
+acontecer a fonte precisa publicar a mesma chave duas vezes com conteudo
+diferente E uma das duas ser byte a byte igual ao gravado, `pk_dw` e
+`dw_data_alteracao` inclusive (que mudam sempre que o DW toca a linha). Nao foi
+fechado porque fechar custa guardar a chave de cada linha da rodada em memoria
+-- uma pagina nao basta, a repeticao pode cair entre paginas -- e o estado que
+sobra e defensavel. Ha teste fixando o furo
+(`test_o_alarme_de_chave_repetida_tem_um_furo_conhecido`), para ninguem confiar
+no alarme sem saber onde ele nao alcanca.
 
 ## Por que `cat_cargas` usa conexao propria
 

@@ -1104,8 +1104,9 @@ falhas de Matriz apontando para o lugar errado.
 
 Autorizado pela Maria em 25/ago/2026. Entregou `catering/carga/fonte_oracle.py`,
 o comando de carga sob demanda, o `--sondar` e o script do agendamento **pronto e
-desligado**. **Sem migration** — o CHECK da 0020 já aceitava `fonte='oracle'`
-desde o V3.1, justamente para este lote não precisar de uma.
+desligado**. Começou **sem migration** — o CHECK da 0020 já aceitava `fonte='oracle'` desde
+o V3.1 — e ganhou uma, a **0023**, quando a primeira carga real derrubou a chave
+natural. Essa é a história do lote, e está contada abaixo.
 
 **Limite que definiu o lote: a IA não conectou no DW.** O DW é produção, e a
 política do projeto é que a IA não conecta nele. Todo o código foi escrito e
@@ -1207,6 +1208,132 @@ linha nenhuma" é problema no DW ou no acesso; "todas fora do escopo do catering
 é a instância ter mudado, que é problema de negócio. Um teste existente mudou de
 expectativa por causa disso — o que era um teste só virou dois, um por caso.
 
+### A carga real derrubou a chave natural — e a 0023 é a resposta
+
+**Isto é o achado central do lote, e ele veio da rodada da Maria, não da suíte.**
+O `--sondar` passou em tudo; a carga recusou:
+
+```
+ON CONFLICT DO UPDATE command cannot affect row a second time
+```
+
+O que aconteceu no DW entre 24 e 25/ago, medido às 16h31:
+
+| | 25/ago 09h (sondagem 2) | 25/ago 16h (primeira carga) |
+|---|---|---|
+| recebimento | 36.592 linhas, desde jan/2026 | **201.848**, desde **02/jan/2023** |
+| expedição | 42.789 linhas, desde dez/2025 | **231.886**, desde **02/jan/2023** |
+| `dw_data_alteracao` mínimo | 20/ago 15:26 | **25/ago 10:31** — toda linha reescrita |
+
+O DW **reconstruiu as duas tabelas com 3,6 anos de histórico**. O V3.0 tinha
+registrado isso como hipótese ("se um dia o DW recriar a tabela"); aconteceu um
+dia depois de a hipótese ser escrita.
+
+E com o histórico veio o defeito real: **`num_gem` se recicla por ano.** As
+colisões aparecem **4x** — 2023, 2024, 2025, 2026 — e em datas próximas dentro
+do ano (gem `0000000020` em 03/jan/2023 e 05/jan/2026). A chave natural de seis
+colunas repetia em **27.834 de 201.848** linhas no recebimento (13,8%) e
+**44.187 de 231.886** na expedição (19,1%).
+
+**A falha foi de raciocínio, não de código.** A chave foi medida única em
+36.300/36.300 e 42.468/42.468 linhas — e essas linhas eram de **um ano só**.
+Generalizar unicidade de uma amostra de um ano para a série inteira é o erro, e
+ele vale escrever com essas palavras porque é do tipo que se repete. O que
+funcionou foi a disciplina em volta: o upsert **recusou alto**, com rollback,
+em vez de duplicar em silêncio — exatamente o que o V3.0 desenhou ao registrar
+que a PK do DW não serve de identidade.
+
+#### Por que `ano_solic`, e não uma das duas datas
+
+Quatro candidatos ficaram únicos. Três medições escolheram entre eles:
+
+| candidato | recebimento | expedição |
+|---|---|---|
+| chave de hoje (6 colunas) | repete em 27.834 | repete em 44.187 |
+| **+ `ano_solic`** | **única** | **única** |
+| + ano de `data_solic` | única | única |
+| + ano de `nk_calendario` | **repete em 12** | **repete em 79** |
+| + `data_solic` | única | única |
+| + `nk_calendario` | única | única |
+
+1. **O espaço de numeração é o ano do PEDIDO, não o do movimento.** É o que as
+   12 e 79 linhas provam: são as viradas de ano — guia pedida em dezembro e
+   movimentada em janeiro pertence à sequência do ano anterior.
+2. **A identidade certa é a mais GROSSA que ainda seja única**, porque
+   identidade fina transforma correção em `INSERT` duplicado: qualquer conserto
+   na coluna extra deixa de ser update e a linha antiga sobrevive ao lado.
+   `ano_solic` (SMALLINT) é a mais grossa das quatro.
+3. **`data_solic` tem lixo, e `ano_solic` não.** Nas 16 linhas da expedição em
+   que as duas discordam, `data_solic` traz **2105-04-29**, `2002-04-29` e
+   `2005-05-07`, com `nk_calendario` são em 2024/2025 — quem está errada é a
+   data. No recebimento são 15 linhas do caso benigno (`ano_solic` 2025 com
+   `data_solic` em 04/jan/2026, virada de ano).
+
+O item 3 é o que fecha a decisão, e não é preferência estética: **existe defeito
+visível na fonte que alguém vai corrigir um dia.** Com `data_solic` na chave,
+corrigir `2105` → `2025` mudaria a identidade da linha e duplicaria o número em
+silêncio. Com `ano_solic` na chave, a mesma correção é um `UPDATE`.
+
+A identidade passou a ser, na migration **0023**:
+
+```
+(nk_instancia, nk_wms_filial, num_gem, ano_solic, nome_estoque,
+ descr_oper_wms, nk_cliente)
+```
+
+`ano_solic` fica depois do `num_gem` porque qualifica o número da guia — a chave
+se lê como *"o GEM é único dentro do ano do pedido"*.
+
+**O upsert não precisou de uma linha de mudança**: ele é gerado de
+`contrato.CHAVE_NATURAL`, então acrescentar a coluna ao contrato bastou, e
+`ano_solic` saiu do `SET` sozinho. É o desenho do V3.1 pagando de novo.
+
+**A 0023 descobre o nome da restrição no catálogo** em vez de escrevê-lo: a 0019
+criou o `UNIQUE` sem nome, e o nome que o Postgres gerou foi truncado em 63
+caracteres — e ficou **diferente** nas duas tabelas (`..._num_gem_nome__key` e
+`..._num_gem_nom_key`), porque a truncagem depende do tamanho do nome da tabela.
+A restrição nova é nomeada, para a próxima migration não repetir esse trabalho.
+O `downgrade` volta para seis colunas e **falha de propósito** num banco que já
+tenha mais de um ano de histórico — a alternativa seria apagar linha para o
+passado caber.
+
+#### Um furo do alarme, achado ao escrever o teste da regressão
+
+O `ON CONFLICT` só grita quando as duas linhas do lote **realmente escrevem** na
+mesma linha. O `WHERE ... IS DISTINCT FROM` — que existe para
+`linhas_atualizadas` significar o que diz — faz uma linha idêntica à do banco
+não afetar nada, e aí a companheira divergente escreve sozinha, **sem alarme**, e
+vence.
+
+Para o furo aparecer é preciso a conjunção: a fonte publicar a mesma chave duas
+vezes com conteúdo diferente **e** uma das duas ser byte a byte igual ao
+gravado, `pk_dw` e `dw_data_alteracao` inclusive — ou seja, só com linha que o DW
+não tocou desde a nossa última carga.
+
+**Não foi fechado**, e o motivo é custo: fechar exige guardar a chave de cada
+linha da rodada em memória (uma página não basta — a repetição pode cair entre
+páginas), ~80 MB para 232 mil linhas, ou trocar por hash e aceitar alarme falso.
+O estado que sobra é defensável (a linha divergente vence, nenhuma medida se
+perde). Fica **fixado em teste**
+(`test_o_alarme_de_chave_repetida_tem_um_furo_conhecido`), porque alarme em que
+se confia sem saber onde ele não alcança é pior que alarme com limite escrito.
+
+#### O que mais isto muda, e que não é defeito
+
+- **O volume da V3 mudou de escala:** ~434 mil linhas em vez de ~79 mil, e a
+  tela passa a mostrar 2023–2026. Segue pequeno para Postgres, e a projeção de
+  ~120 mil/ano do contrato estava certa — errada era a profundidade do
+  histórico. O aceite célula por célula do V3.2 não fica inválido, fica
+  **parcial**: ele cobriu 2026.
+- **O rebuild deixou de ser hipótese**, com uma consequência concreta para o
+  V3.6: a rodada das 07h05 pode, sem aviso, ter que carregar 434 mil linhas em
+  vez de 10 mil.
+- **`data_solic` tem data impossível em 16 linhas** (ano 2105, 2002, 2005). Não
+  é corrigido nem classificado por conta própria — a disciplina do projeto é que
+  ambiguidade vira sentinela visível, nunca chute silencioso. Fica registrado
+  aqui, e a Matriz não é afetada porque ela agrega por `nk_calendario` (A-5).
+  **Decisão aberta:** se a planilha e o download devem declarar essas linhas.
+
 ### O escopo continua sendo filtrado em Python
 
 Não existe `WHERE NK_INSTANCIA LIKE 'SLIN_%'` no SQL, de propósito. O V3.1 conta
@@ -1274,18 +1401,39 @@ python -m catering.carga --fonte oracle --incremental
 ```
 
 O que cada uma responde: a 1ª, sessão + GRANT + contrato coluna por coluna +
-volume comparável aos 36.592/42.789 de 25/ago + o tipo que chega; a 2ª, a carga
-de verdade; a 3ª, idempotência (`0 inserida, 0 atualizada`, ou o que o DW mexeu
-no meio, que também é resposta certa); a 4ª, `sem_dado` ou poucas linhas.
+volume + o tipo que chega; a 2ª, a carga de verdade; a 3ª, idempotência
+(`0 inserida, 0 atualizada`, ou o que o DW mexeu no meio, que também é resposta
+certa); a 4ª, `sem_dado` ou poucas linhas.
 
-**Evidência da rodada real: pendente** — colar aqui quando a Maria executar.
+**Executado pela Maria em 25/ago/2026, e o resultado dividiu o aceite em dois.**
+
+**O que a rodada PROVOU (a leitura está fechada):**
+
+| pergunta | resposta da rodada real |
+|---|---|
+| a sessão abre em modo thin, sem Instant Client | sim, contra o `pdwgener` |
+| o GRANT vale | sim — leu as duas tabelas inteiras |
+| o contrato bate | **36 e 46 colunas, sem divergência**, conferidas contra o que o cursor descreve |
+| o nome da coluna da PK | `PK_FATO_VOL_REC_CAT`, **sem** o `_V01` da tabela — a dúvida que sobrou da sondagem, fechada |
+| o número chega tipado | `Decimal('18584.492')` e `Decimal('194.6')` → `NUMERIC(18,3)`, **sem float no caminho** |
+| o zero à esquerda sobrevive | `'0000013953'` continua texto |
+| `nk_calendario` DATE → `date` | sim, hora descartada |
+
+**O que a rodada REPROVOU:** a chave natural, e o volume presumido. Ver a seção
+"A carga real derrubou a chave natural" acima — foi o achado central do lote.
+
+**O que ainda falta para o aceite:** a carga completa concluir com a 0023
+aplicada, e as duas rodadas de idempotência. Nenhuma delas rodou até o fim
+ainda.
 
 ### Suíte
 
-**221 passed** (`python -m pytest tests/test_catering_*.py tests/test_migracao.py`,
-Postgres real em `localhost:5433`, 6min17), com as extrações de 21/ago presentes
-na máquina — então os testes `@tem_extracao` rodaram em vez de pular. 29 testes
-novos em `tests/test_catering_oracle.py`.
+**228 passed** (`python -m pytest tests/test_catering_*.py tests/test_migracao.py`,
+Postgres real em `localhost:5433`, 6min13), com as extrações de 21/ago presentes
+na máquina — então os testes `@tem_extracao` rodaram em vez de pular. 34 testes
+novos em `tests/test_catering_oracle.py`, mais os três da identidade em
+`test_catering_carga.py` (a regressão da carga real, o furo conhecido do alarme
+e a carga completa vazia).
 
 O container de teste foi derrubado pelo Docker Desktop no meio de uma rodada, de
 novo — o keep-alive de `memory/suite-testes-local.md` resolveu, como nas vezes
@@ -1294,7 +1442,10 @@ anteriores.
 ### Arquivos
 
 - `catering/carga/fonte_oracle.py` (novo)
-- `catering/contrato.py` (nome qualificado, `tabela()`, `PK_DW` desacoplada)
+- `alembic/versions/0023_identidade_ano_solic.py` (novo — a identidade de sete
+  colunas)
+- `catering/contrato.py` (nome qualificado, `tabela()`, `PK_DW` desacoplada,
+  `CHAVE_NATURAL` com `ano_solic`)
 - `catering/carga/destino.py` (`tabela_origem()` virou função)
 - `catering/carga/__init__.py` (`CargaVazia`)
 - `catering/carga/__main__.py` (`--fonte`, `--sondar`)

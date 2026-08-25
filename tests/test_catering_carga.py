@@ -424,6 +424,91 @@ def test_fora_de_escopo_e_pulado_e_incremental_vazio_e_sem_dado(banco_migrado):
     assert destino.marca_dagua("rec") == datetime(2026, 8, 20, 15, 26, 39)
 
 
+def test_mesmo_gem_em_anos_diferentes_convive(banco_migrado):
+    """A regressao da primeira carga real (25/ago/2026).
+
+    O DW reconstruiu a tabela com 2023-2026 e a carga morreu com `ON CONFLICT DO
+    UPDATE command cannot affect row a second time`: `num_gem` se recicla por
+    ano, e a chave natural de seis colunas nao tinha ano. Repetia em 27.834
+    linhas de 201.848 no recebimento.
+
+    Este teste e o mesmo cenario em miniatura -- a MESMA guia em quatro anos, no
+    mesmo lote, como a fonte a entrega. Sem `ano_solic` na identidade ele morre
+    exatamente como a producao morreu."""
+    quatro_anos = [
+        linha_crua(
+            "rec",
+            num_gem="0000000020",
+            ano_solic=str(ano),
+            data_solic=f"{ano}-01-03 00:00:00.000",
+            nk_calendario=f"{ano}-01-03 00:00:00.000",
+        )
+        for ano in (2023, 2024, 2025, 2026)
+    ]
+    resultado = carregar_movimento(FonteFalsa({"rec": quatro_anos}), "rec")
+
+    assert (resultado.status, resultado.inseridas) == ("ok", 4),         "as quatro sao guias distintas: mesmo numero, anos diferentes"
+    assert consultar(
+        "SELECT ano_solic FROM cat_fato_recebimento"
+        " WHERE num_gem = '0000000020' ORDER BY ano_solic"
+    ) == [(2023,), (2024,), (2025,), (2026,)]
+
+    # e a idempotencia continua valendo com a chave nova: reapresentar as
+    # mesmas quatro nao mexe em nada
+    de_novo = carregar_movimento(FonteFalsa({"rec": quatro_anos}), "rec")
+    assert (de_novo.inseridas, de_novo.atualizadas, de_novo.iguais) == (0, 0, 4)
+
+    # E a mesma chave com conteudo DIFERENTE no mesmo lote segue sendo alarme --
+    # foi assim que a producao morreu: a segunda linha tentava atualizar a que a
+    # primeira acabara de inserir. Chave nova de proposito, e o paragrafo abaixo
+    # explica por que isso importa.
+    nova = linha_crua("rec", num_gem="0000000021", ano_solic="2023",
+                      data_solic="2023-01-03 00:00:00.000",
+                      nk_calendario="2023-01-03 00:00:00.000")
+    divergente = dict(nova)
+    divergente[contrato.coluna_dw("qtde_peso2", "rec")] = "999.000"
+    with pytest.raises(Exception, match="affect row a second time"):
+        carregar_movimento(FonteFalsa({"rec": [nova, divergente]}), "rec")
+
+
+def test_o_alarme_de_chave_repetida_tem_um_furo_conhecido(banco_migrado):
+    """Limite do alarme, medido em 25/ago/2026 -- fixado aqui para ninguem
+    acreditar que ele e total.
+
+    O `ON CONFLICT DO UPDATE` so grita ("cannot affect row a second time")
+    quando duas linhas do mesmo lote realmente ESCREVEM na mesma linha. O
+    `WHERE ... IS DISTINCT FROM` (que existe para `linhas_atualizadas` significar
+    o que diz) faz uma linha identica a do banco nao afetar nada -- e nesse caso
+    a companheira divergente escreve sozinha, sem alarme, e vence.
+
+    Para o furo aparecer e preciso a conjuncao: a fonte publicar a mesma chave
+    duas vezes com conteudo diferente, E uma das duas ser byte a byte igual ao
+    que ja esta gravado -- inclusive `pk_dw` e `dw_data_alteracao`, que mudam
+    sempre que o DW reconstroi ou toca a linha. Ou seja: so acontece com linha
+    que o DW nao tocou desde a nossa ultima carga.
+
+    Nao foi fechado, e a razao e custo: fechar exige guardar a chave de cada
+    linha da rodada em memoria (uma pagina nao basta, porque a repeticao pode
+    cair entre paginas) -- ~80 MB para 232 mil linhas -- ou trocar por hash e
+    aceitar alarme falso. O estado que sobra e defensavel (a linha divergente
+    vence, e nenhuma medida se perde), e um furo escrito e melhor que um alarme
+    em que se confia sem saber onde ele nao alcanca."""
+    linha = linha_crua("rec", num_gem="0000000777", ano_solic="2024",
+                       data_solic="2024-03-01 00:00:00.000",
+                       nk_calendario="2024-03-01 00:00:00.000")
+    primeira = carregar_movimento(FonteFalsa({"rec": [linha]}), "rec")
+    assert primeira.inseridas == 1
+
+    divergente = dict(linha)
+    divergente[contrato.coluna_dw("qtde_peso2", "rec")] = "999.000"
+    # a identica nao afeta nada; a divergente escreve sozinha -> sem alarme
+    passou = carregar_movimento(FonteFalsa({"rec": [linha, divergente]}), "rec")
+    assert (passou.status, passou.atualizadas) == ("ok", 1)
+    assert consultar(
+        "SELECT qtde_peso2 FROM cat_fato_recebimento WHERE num_gem = '0000000777'"
+    ) == [(Decimal("999.000"),)], "a divergente venceu, e em silencio"
+
+
 def test_carga_completa_vazia_e_erro_e_nao_sem_dado(banco_migrado):
     """V3.5, A-7: a carga nunca pode reportar desfecho normal com zero linha.
 
