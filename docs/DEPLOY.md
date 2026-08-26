@@ -514,6 +514,182 @@ docker run --rm --network nuvem-teste \
 O banco de teste é **zerado** a cada teste — nunca aponte `TEST_DATABASE_URL` pro
 banco de verdade.
 
+## V3.6 — Subir a V3 e desligar a V2 (procedimento)
+
+*Escrito em 26/ago/2026. **A ordem é a segurança** — os passos estão numerados
+porque dois deles não têm volta, e o que vem antes de cada um existe para poder
+desistir.*
+
+### O que muda, em uma frase
+
+A V3 entra no ar na porta 8003 e a V2 sai do ar inteira — decisão da Maria em
+26/ago/2026: nenhuma das telas dela era usada por ninguém.
+
+**O que sai do ar junto:** `/admin`, `/nuvem`, `/cockpit`, `/laboratorio`,
+`/linhagem` e a ingestão do DataHub (o "Sincronizar agora" daquela tela).
+
+**O que NÃO é tocado:** `backend/` e `frontend/` (o código fica, intacto), o
+volume `nuvem_db_data`, as tabelas da V1/V2 dentro dele, o backup diário das 3h
+(`scripts/backup.sh` fala com o `nuvem-db`, que fica) e — principalmente — o
+Conciliador e o Hub.
+
+**Reativar o laboratório**, se um dia voltar a fazer sentido: descomentar o
+bloco `nuvem-app` no `docker-compose.yml` e `docker compose up -d`. É por isso
+que ele está comentado e não deletado.
+
+### Por que as migrations rodam à mão, e não pelo startup
+
+Até o V3.5, as migrations da V3 (0019–0023) entrariam em produção **de carona no
+startup da V2**: o `Dockerfile` copia `alembic/` e `backend/main.py` chama
+`migracao.migrar()` ao subir. Consequência: uma migration da V3 com defeito
+derrubaria a **V2**.
+
+Como a V2 não vai mais subir, isso deixou de ser necessário — e a troca é boa em
+si. Em produção o `migrar()` cai no caminho *gerenciado* (a `alembic_version`
+existe), que é literalmente `upgrade head`: o comando explícito faz o mesmo, no
+momento escolhido, sem acoplar a V3 ao ciclo de vida de um app que está saindo.
+
+### Pré-requisitos, antes de abrir a janela
+
+- [ ] `.env` da VM com **`CAT_SECRET_KEY`** (obrigatória, própria da V3 — sem
+      ela o app sobe, o `/health` responde 200 e o **login estoura**),
+      `DW_USER`, `DW_SENHA`. Ver `.env.example`;
+- [ ] suíte completa verde na máquina de desenvolvimento (não só a do lote);
+- [ ] saber que a porta 8003 está livre na VM (`sudo ss -tlnp | grep 8003`).
+
+### O procedimento
+
+```bash
+cd /home/ubuntu/nuvemIA
+```
+
+**1. Trazer o código e registrar o que subiu.**
+
+```bash
+git pull
+git rev-parse --short HEAD          # anote: é o que você vai comparar num rollback
+```
+
+**2. Backup. Antes do ponto sem volta.**
+
+```bash
+./scripts/backup.sh
+ls -lh backups/ | tail -3
+```
+
+**3. Conferir de onde a cadeia parte** (esperado: `0018...`, o que confirma o
+caminho *gerenciado* do Alembic):
+
+```bash
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c   "SELECT version_num FROM alembic_version"
+```
+
+**4. Construir a imagem.** Ainda não serve nada — dá para parar aqui sem efeito.
+
+```bash
+docker compose build
+```
+
+**5. ⚠ NÃO-RETORNO 1 — aplicar as migrations da V3.**
+
+```bash
+docker compose run --rm nuvem-cat alembic upgrade head
+```
+
+Se isto falhar, **pare**. Não tente o passo seguinte: o backup do passo 2 é o
+caminho de volta, e a seção "Rollback" abaixo tem o procedimento.
+
+**6. Conferir o que a migration criou.**
+
+```bash
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c   "SELECT version_num FROM alembic_version"          # esperado: 0023_identidade_ano_solic
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c   "SELECT tablename FROM pg_tables WHERE tablename LIKE 'cat_%' ORDER BY 1"
+```
+
+Esperado: `cat_auditoria`, `cat_cargas`, `cat_clientes`, `cat_fato_expedicao`,
+`cat_fato_recebimento`, `cat_tipos_estoque`, `cat_unidades`, `cat_usuarios`.
+
+**7. Subir a V3.**
+
+```bash
+docker compose up -d nuvem-cat
+docker compose ps
+```
+
+**8. Validar na própria VM, antes de qualquer rede.**
+
+```bash
+curl -s localhost:8003/health          # esperado: {"ok":true,"banco":"ok",...}
+```
+
+**9. Criar o primeiro usuário.** Pelo CLI, e não por variável no `.env` — a
+senha é pedida por `getpass` e não fica em arquivo nem no histórico do shell:
+
+```bash
+docker compose run --rm nuvem-cat python -m catering.seguranca criar   --login maria.watanabe --papel admin
+```
+
+**10. Carga inicial** (cerca de 79 mil linhas, uns 30 segundos):
+
+```bash
+MODO=completa ./scripts/carga_catering.sh
+tail -20 logs/carga_catering.log
+```
+
+**11. Abrir a tela e conferir com dado real.** A Matriz com jan–ago/2026, o
+rodapé "De quando é o dado" dizendo `oracle` **e com a hora certa** (o fuso de
+exibição é o V3.5.1 — se aparecer três horas adiantado, `CAT_FUSO_EXIBICAO` não
+chegou no container).
+
+**Até aqui, a V2 ainda está no ar.** Se algo estiver errado, o rollback é
+`docker compose stop nuvem-cat` e nada foi perdido.
+
+**12. ⚠ NÃO-RETORNO 2 — desligar a V2.** Só depois do 11 passar.
+
+```bash
+docker compose up -d --remove-orphans
+docker compose ps                      # esperado: nuvem-cat e nuvem-db, sem nuvem-app
+```
+
+O `--remove-orphans` é o que remove o container da V2, agora que o serviço não
+existe mais no arquivo. **Sem ele o container antigo continua rodando**, servindo
+a 8002, e o desligamento não aconteceu de fato.
+
+**13. Conferir que o vizinho não foi afetado.** Este passo existe porque é a
+pergunta que dá medo, e medo se responde com evidência:
+
+```bash
+docker ps --format '{{.Names}}	{{.Status}}'
+curl -s -o /dev/null -w '%{http_code}
+' localhost:80       # Conciliador
+curl -s -o /dev/null -w '%{http_code}
+' localhost:8001     # Hub
+```
+
+Esperado: os containers do Conciliador (3) e do Hub (2) de pé, e os dois
+respondendo.
+
+**14. Ligar o agendamento.** As duas linhas em UTC — ver a seção da carga
+agendada abaixo, e o aviso de não "corrigir" os horários.
+
+### Se der errado
+
+| sintoma | o que fazer |
+|---|---|
+| passo 5 falhou (migration) | **pare**. Restaurar do backup do passo 2 (seção "Backup e restauração") |
+| a V3 não sobe no passo 7 | `docker compose logs nuvem-cat`. A V2 ainda está no ar — não há pressa |
+| `/health` responde mas o login estoura | `CAT_SECRET_KEY` não chegou no container: `docker compose exec nuvem-cat printenv CAT_SECRET_KEY` |
+| a carga falha no passo 10 | a mensagem nomeia a camada (credencial, DNS, contrato). `cat_cargas` guarda o motivo |
+| a hora do rodapé está adiantada | `CAT_FUSO_EXIBICAO` não chegou. É exibição, não dado — o banco está certo |
+| preciso a V2 de volta | descomentar o bloco `nuvem-app` no compose e `docker compose up -d` |
+
+**Nada disso pede os comandos da tabela do Passo 1.1.** `docker stop $(docker ps
+-q)`, `docker system prune --volumes` e `docker compose down` no diretório errado
+continuam proibidos — o risco para o Conciliador e o Hub nunca esteve no deploy,
+está no comando de emergência digitado com pressa.
+
+---
+
 ## Carga agendada da V3 — construída no V3.5, **ligada no V3.6**
 
 `scripts/carga_catering.sh` já existe e funciona. **Não instale o crontab
@@ -521,28 +697,19 @@ agora**: faltam duas coisas que só o V3.6 resolve, e ligar antes disso produz
 uma carga que falha todo dia às 07h05 ou, pior, uma que roda no horário errado
 sem ninguém notar.
 
-### Pendência 1 — o serviço da V3 no compose
+### Pendência 1 — FECHADA no V3.6: o serviço `nuvem-cat` existe
 
-A imagem de hoje **não contém `catering/`**: o `Dockerfile` faz `COPY` de
-`backend/` e `frontend/`, e nada mais. Então `docker compose run --rm <serviço>
-python -m catering.carga` não tem o que rodar até o V3.6 acrescentar o serviço.
+O `Dockerfile` passou a copiar `catering/` e `scripts/carga_catering.sh`, e o
+compose ganhou o serviço **`nuvem-cat`** na porta **8003** — o nome que o script
+já esperava (`SERVICO_CATERING`, padrão `nuvem-cat`).
 
-O script falha alto nesse caso, listando os serviços que existem — de propósito:
-numa VM com quatro projetos, a mensagem crua do Compose manda quem estiver de
-plantão para o lugar errado. O nome vem de `SERVICO_CATERING` (padrão
-`nuvem-cat`).
+Enquanto isso não existia, o script falhava alto listando os serviços presentes,
+de propósito: numa VM com quatro projetos, a mensagem crua do Compose manda quem
+estiver de plantão para o lugar errado.
 
-O serviço da V3 precisará das variáveis do DW, que o Compose lê do `.env` da VM:
-
-```yaml
-    environment:
-      DW_USER: ${DW_USER}
-      DW_SENHA: ${DW_SENHA}
-```
-
-A credencial chega no container **por variável de ambiente do Compose**, nunca
-como argumento de linha de comando — argumento aparece em `ps`, em log de shell
-e no histórico.
+A credencial do DW chega no container **por variável de ambiente do Compose**,
+nunca como argumento de linha de comando — argumento aparece em `ps`, em log de
+shell e no histórico.
 
 ### Pendência 2 — DECIDIDA: o cron é escrito em UTC (26/ago/2026)
 

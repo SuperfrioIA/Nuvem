@@ -1,24 +1,83 @@
 services:
-  nuvem-app:
+# A V2 saiu do ar no V3.6 (26/ago/2026), por decisao da Maria: nenhuma das
+# telas dela era usada por ninguem. O bloco fica COMENTADO e nao deletado --
+# reativar o laboratorio, se um dia voltar a fazer sentido, e descomentar aqui
+# em vez de fazer arqueologia no git. O codigo continua em `backend/` e
+# `frontend/`, intocado, e o DADO continua no banco: o volume nao foi tocado e
+# as tabelas da V1/V2 seguem la.
+#
+# O que saiu do ar junto: /admin, /nuvem, /cockpit, /laboratorio, /linhagem e a
+# ingestao do DataHub (o "Sincronizar agora" daquela tela). O backup diario NAO
+# depende deste servico -- `scripts/backup.sh` fala com o `nuvem-db`, que fica.
+#
+# As migrations da V3 (0019-0023) NAO entraram pelo startup deste servico, que e
+# como teriam entrado se ele subisse: foram aplicadas explicitamente, com
+# `docker compose run --rm nuvem-cat alembic upgrade head` (ver docs/DEPLOY.md).
+# Assim uma migration da V3 com defeito nunca derruba a V2 -- ela nem sobe.
+#  nuvem-app:
+#    build: .
+#    ports:
+#      - "8002:8000"
+#    environment:
+#      DATABASE_URL: postgresql://nuvem:${POSTGRES_PASSWORD}@nuvem-db:5432/nuvem
+#      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+#      SECRET_KEY: ${SECRET_KEY}
+#      UPLOADS_DIR: /app/data/uploads
+#      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-50}
+#      GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
+#      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
+#      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
+#      GRAPH_SITE_PATH: ${GRAPH_SITE_PATH:-}
+#      GRAPH_PASTA: ${GRAPH_PASTA:-}
+#      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+#      IA_MODELO: ${IA_MODELO:-claude-sonnet-5}
+#      IA_EFFORT: ${IA_EFFORT:-medium}
+#    volumes:
+#      - ${UPLOADS_HOST_PATH:-./data/uploads}:/app/data/uploads
+#    depends_on:
+#      nuvem-db:
+#        condition: service_healthy
+#    healthcheck:
+#      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status == 200 else 1)"]
+#      interval: 15s
+#      timeout: 8s
+#      retries: 5
+#      start_period: 15s
+#    restart: unless-stopped
+
+  # A V3 -- volumetria de catering, app propria (`catering/app.py`), MESMA
+  # imagem. Porta 8003 no host: 80 e o Conciliador, 8001 o Hub, 8002 era a V2.
+  # 8003 e a mesma porta do caminho C local, de proposito -- porta diferente
+  # entre ambientes e um mal-entendido esperando a hora.
+  nuvem-cat:
     build: .
+    # `--no-access-log` aqui por motivo DIFERENTE da V2. A V2 tem middleware
+    # proprio que loga metodo+path sem query string; a V3 nao tem nenhum, e o
+    # access log do uvicorn loga a URL inteira -- o recorte da tela viaja em
+    # query string (`clientes=`, `unidades=`), entao seria cliente e filial em
+    # claro no log: exatamente o defeito que o Bloco G corrigiu na V2.
+    #
+    # O que fica no lugar e MELHOR que access log: a V3 audita em banco
+    # (`cat_auditoria`, V3.3/V3.4) usuario, evento, recorte, formato, linhas e
+    # IP. Log de requisicao morre com o container; auditoria em banco entra no
+    # backup.
+    command: ["uvicorn", "catering.app:app", "--host", "0.0.0.0",
+              "--port", "8000", "--workers", "1", "--no-access-log"]
     ports:
-      - "8002:8000"
+      - "8003:8000"
     environment:
+      # Mesmo banco da V2, de proposito (V3.0): a cadeia de migrations e uma so.
       DATABASE_URL: postgresql://nuvem:${POSTGRES_PASSWORD}@nuvem-db:5432/nuvem
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      SECRET_KEY: ${SECRET_KEY}
-      UPLOADS_DIR: /app/data/uploads
-      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-50}
-      GRAPH_TENANT_ID: ${GRAPH_TENANT_ID:-}
-      GRAPH_CLIENT_ID: ${GRAPH_CLIENT_ID:-}
-      GRAPH_CLIENT_SECRET: ${GRAPH_CLIENT_SECRET:-}
-      GRAPH_SITE_PATH: ${GRAPH_SITE_PATH:-}
-      GRAPH_PASTA: ${GRAPH_PASTA:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      IA_MODELO: ${IA_MODELO:-claude-sonnet-5}
-      IA_EFFORT: ${IA_EFFORT:-medium}
-    volumes:
-      - ${UPLOADS_HOST_PATH:-./data/uploads}:/app/data/uploads
+      # Chave de sessao PROPRIA da V3 -- nao e a SECRET_KEY da V2 (V3.4).
+      CAT_SECRET_KEY: ${CAT_SECRET_KEY}
+      # Fuso em que data e hora APARECEM na tela (V3.5.1). Nao confundir com o
+      # fuso do crontab, que e UTC de proposito (docs/DEPLOY.md).
+      CAT_FUSO_EXIBICAO: ${CAT_FUSO_EXIBICAO:-America/Sao_Paulo}
+      # Credencial do DW, por VARIAVEL e nunca por argumento de linha de
+      # comando -- argumento aparece em `ps` e no historico do shell.
+      DW_USER: ${DW_USER}
+      DW_SENHA: ${DW_SENHA}
+      DW_ANO_MINIMO: ${DW_ANO_MINIMO:-2026}
     depends_on:
       nuvem-db:
         condition: service_healthy

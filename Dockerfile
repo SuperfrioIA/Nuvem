@@ -15,6 +15,17 @@ COPY alembic/ alembic/
 # so fazem SELECT via `psql` do container do banco.
 COPY scripts/processar_saida.py scripts/processar_saida.py
 
+# A V3 (V3.6). App PROPRIA (`catering/app.py`), servida por outro servico do
+# compose a partir desta MESMA imagem -- nao ha router da V3 dentro do
+# `backend/`, e `backend/` nao e alterado. Uma imagem so porque as duas
+# aplicacoes tem as mesmas dependencias e a mesma cadeia de migrations; duas
+# imagens dobrariam o build para separar o que ja esta separado no processo.
+COPY catering/ catering/
+# O script da carga agendada roda `docker compose run --rm` DESTA imagem, entao
+# ele precisa estar nela. Sem este COPY, o script falha alto -- de proposito,
+# desde o V3.5 -- listando os servicos existentes.
+COPY scripts/carga_catering.sh scripts/carga_catering.sh
+
 EXPOSE 8000
 
 # --no-access-log (Bloco G / G2): o access log padrao do uvicorn loga a URL
