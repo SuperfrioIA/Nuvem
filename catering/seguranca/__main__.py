@@ -23,32 +23,11 @@ Exemplos:
 
 import argparse
 import getpass
-import os
 import sys
 
+from catering import ambiente
 from catering.seguranca import usuarios
 
-# Mensagem no lugar do KeyError (25/ago/2026): sem `DATABASE_URL`, o CLI morria
-# com `KeyError: 'DATABASE_URL'` e quinze linhas de traceback apontando para o
-# `psycopg2`. Isso e defeito de ferramenta de recuperacao: ela e usada justamente
-# quando algo esta errado, e nessa hora o traceback manda olhar o lugar errado.
-#
-# A armadilha e concreta e apareceu no uso real: as variaveis valem por sessao de
-# shell, entao um SEGUNDO terminal aberto na mesma pasta nao tem nada exportado.
-FALTA_BANCO = """falta a variavel DATABASE_URL nesta sessao do terminal.
-
-Variavel de ambiente vale por terminal -- se voce exportou noutra janela, esta
-nao herda. O `.env` da raiz nao serve aqui: ele e lido pelo docker-compose, nao
-pelo Python (ver docs/EXECUCAO_LOCAL.md).
-
-No PowerShell, na raiz do repositorio:
-
-    $env:DATABASE_URL = "postgresql://nuvem:teste@localhost:5433/nuvem_teste"
-
-Ou, para carregar o .env inteiro nesta sessao:
-
-    Get-Content .env | Where-Object { $_ -match '^\\s*[A-Z_]' } | ForEach-Object { $n,$v = $_ -split '=',2; Set-Item "env:$n" $v }
-"""
 
 
 def _pedir_senha() -> str:
@@ -169,8 +148,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     # depois do parse, de proposito: `--help` e argumento errado nao dependem de
     # banco, e exigir a variavel para ler a ajuda seria hostil
-    if not (os.environ.get("DATABASE_URL") or "").strip():
-        raise SystemExit(FALTA_BANCO)
+    ambiente.exigir_banco()
     return args.func(args)
 
 

@@ -544,31 +544,52 @@ A credencial chega no container **por variável de ambiente do Compose**, nunca
 como argumento de linha de comando — argumento aparece em `ps`, em log de shell
 e no histórico.
 
-### Pendência 2 — o fuso da VM (conferir antes de ligar)
+### Pendência 2 — DECIDIDA: o cron é escrito em UTC (26/ago/2026)
 
 O contrato diz **07h05 e 15h05**, 30 minutos depois das rodadas do processo do
 DW (que roda a cada 2h, de 6h35 a 23h35). Se a VM estiver em UTC, `5 7 * * *`
 dispara às **04h05 locais** — antes da primeira rodada do DW do dia — e a carga
 leria sempre a véspera, entregando número velho com cara de número novo.
 
+Havia duas saídas, e a decisão da Maria foi a segunda:
+
+| saída | por que não / por que sim |
+|---|---|
+| ajustar o fuso da VM para `America/Sao_Paulo` | mais limpo de ler, e **afeta os outros três projetos da VM** — deixa de ser decisão de um time só, e o ganho não paga a negociação |
+| **escrever o cron em UTC** | escolhida. Não toca em nada de ninguém. O preço é ficar escrito, e está escrito aqui |
+
+Confira o fuso antes de colar as linhas — a decisão pressupõe VM em UTC, que é
+o padrão de servidor, mas pressuposto não conferido é o começo de um incidente:
+
 ```bash
-timedatectl                 # esperado: Time zone: America/Sao_Paulo
+timedatectl                 # esperado aqui: Time zone: Etc/UTC
 date -Iseconds
 ```
 
-Se estiver em UTC, são duas saídas: ajustar o fuso da VM (afeta os outros três
-projetos, então é decisão a combinar) ou escrever o cron em UTC — `5 10` e
-`5 18` para 07h05/15h05 de Brasília. Escolher a segunda **exige** deixar
-escrito aqui que os horários estão em UTC, senão a próxima pessoa "corrige" de
-volta.
+> ### ⚠ Os horários do crontab estão em UTC, e é de propósito
+>
+> `5 10` é **07h05 de Brasília** e `5 18` é **15h05 de Brasília**.
+>
+> **Não "corrija" para `5 7` e `5 15`.** Parece errado e não é: em UTC, `5 7`
+> dispararia às 04h05 locais, antes da primeira rodada do DW do dia, e a carga
+> passaria a ler sempre a véspera — todo dia, no horário errado, sem ninguém
+> notar. É pior que uma carga que falha, porque falha aparece.
+>
+> Se o fuso da VM mudar algum dia, **estas duas linhas mudam junto.** Quem
+> mexer no fuso da VM tem que passar por aqui.
+>
+> Horário de verão: o Brasil não observa desde 2019. Se voltar, `America/Sao_Paulo`
+> passa a oscilar entre UTC-3 e UTC-2 e estas linhas precisam de revisão — o
+> cron em UTC não acompanha DST sozinho. É a fraqueza conhecida desta escolha.
 
 ### As duas linhas, quando as duas pendências estiverem fechadas
 
 ```bash
 crontab -e
-# adicionar (horários LOCAIS — ver a pendência 2 antes de colar):
-5 7  * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
-5 15 * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+# adicionar -- horarios em UTC: 5 10 = 07h05 BRT, 5 18 = 15h05 BRT.
+# NAO trocar por 5 7 / 5 15 (ver o aviso acima).
+5 10 * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+5 18 * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
 ```
 
 Antes: `mkdir -p /home/ubuntu/nuvemIA/logs`.

@@ -737,3 +737,86 @@ def test_carregador_nao_usa_o_pool_do_app():
                 "a conexao do carregador nao deve herdar limite de statement"
     finally:
         conn.close()
+
+
+# ------------------------------------------- o que o CLI diz quando falta algo
+# Duas vezes na mesma sessao, no fechamento do V3.5 (26/ago/2026), a carga morreu
+# com `carga falhou: 'DATABASE_URL'` -- um `KeyError` cru vazando pelo tratamento
+# generico. A mensagem nao mentia, so nao ajudava: nao dizia que variavel de
+# ambiente vale por terminal, nem que o `.env` da raiz e lido pelo
+# docker-compose e nao pelo Python.
+#
+# O CLI de usuarios (V3.4) ja tinha resolvido isto. O carregador nao herdou --
+# e e por isso que o texto agora mora em `catering/ambiente.py`, importado pelos
+# dois.
+def _rodar_cli(argv):
+    """Chama o CLI e devolve o texto do `SystemExit`, ou None se nao saiu."""
+    from catering.carga.__main__ import main
+
+    try:
+        main(argv)
+    except SystemExit as saida:
+        return str(saida.code)
+    return None
+
+
+def test_sem_database_url_o_cli_diz_o_que_fazer(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    texto = _rodar_cli(["--de", "docs/Analise"])
+    assert texto and "DATABASE_URL" in texto
+    assert "vale por terminal" in texto, \
+        "a mensagem tem que explicar a armadilha, nao so nomear a variavel"
+    assert "docker-compose" in texto, "e que o .env nao e lido pelo Python"
+    assert "KeyError" not in texto
+
+
+def test_sondar_nao_exige_database_url(monkeypatch):
+    """`--sondar` nao toca no Postgres -- exigir a variavel ali seria pedagio
+    por nada, e ele e justamente o primeiro comando numa maquina onde o banco
+    local ainda nao existe."""
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setenv("DW_USER", "nao-conecta")
+    monkeypatch.setenv("DW_SENHA", "nao-conecta")
+    texto = _rodar_cli(["--fonte", "oracle", "--sondar", "--movimento", "rec"])
+    assert not (texto and "DATABASE_URL" in texto), \
+        "--sondar cobrou DATABASE_URL, que ele nao usa"
+
+
+def test_sem_credencial_do_dw_o_cli_nomeia_as_duas(monkeypatch):
+    """Antes de abrir conexao e antes de registrar rodada: a falta e conhecida
+    na entrada, e recusar ali evita uma linha em `cat_cargas` com
+    `status='erro'` por um motivo que se poderia saber antes de comecar."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x/y")
+    monkeypatch.delenv("DW_USER", raising=False)
+    monkeypatch.delenv("DW_SENHA", raising=False)
+    texto = _rodar_cli(["--fonte", "oracle"])
+    assert texto and "DW_USER" in texto and "DW_SENHA" in texto, \
+        "nomear so uma manda conferir o lugar errado"
+    assert "argumento de linha de comando" in texto, \
+        "a mensagem tem que dizer para NAO passar senha como argumento"
+
+
+def test_a_orientacao_de_ambiente_nao_carrega_valor_de_credencial(monkeypatch):
+    """A mensagem e impressa no terminal e colada em chat e em ticket. Ela pode
+    dizer o NOME da variavel; nunca o valor."""
+    SEGREDOS = ("usuario-secreto-de-teste", "senha-secreta-de-teste")
+
+    # ramo 1: falta o banco, e as credenciais do DW ESTAO no ambiente -- o caso
+    # em que teria como vazar, porque o valor existe
+    monkeypatch.setenv("DW_USER", SEGREDOS[0])
+    monkeypatch.setenv("DW_SENHA", SEGREDOS[1])
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    sem_banco = _rodar_cli(["--de", "docs/Analise"]) or ""
+    assert "DATABASE_URL" in sem_banco, "nao caiu no ramo esperado"
+
+    # ramo 2: falta a credencial do DW
+    monkeypatch.setenv("DATABASE_URL", "postgresql://x/y")
+    monkeypatch.delenv("DW_USER")
+    monkeypatch.setenv("DW_SENHA", SEGREDOS[1])
+    sem_dw = _rodar_cli(["--fonte", "oracle"]) or ""
+    assert "DW_USER" in sem_dw, "nao caiu no ramo esperado"
+
+    for texto in (sem_banco, sem_dw):
+        for segredo in SEGREDOS:
+            assert segredo not in texto, \
+                "valor de credencial dentro de mensagem de erro"

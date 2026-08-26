@@ -319,3 +319,97 @@ def test_download_ignora_pagina_e_recusa_formato_desconhecido(cliente_v3, cursor
     )
     assert ruim.status_code == 400
     assert "formato" in ruim.json()["detail"]
+
+
+# ---------------------------------------------------------- fuso de exibicao
+# O dado sempre esteve certo: `terminada_em` e `criado_em` sao `timestamptz` e
+# guardam UTC. O defeito era na LEITURA -- o `to_char` renderiza no fuso da
+# sessao do Postgres, `Etc/UTC` no container, e uma carga das 09h45 aparecia
+# como 12h45. Medido no fechamento do V3.5, em 26/ago/2026.
+#
+# Estes testes gravam um instante UTC **conhecido** e conferem o texto que o
+# endpoint devolve. Sem valor fixo eles passariam por acidente em qualquer
+# maquina cujo Postgres ja estivesse no fuso certo -- e falhariam na VM.
+INSTANTE_UTC = "2026-08-26 12:45:33+00"
+EM_SAO_PAULO = "26/08/2026 09:45"      # UTC-3
+EM_MANAUS = "26/08/2026 08:45"         # UTC-4, para provar que e configuravel
+
+
+def test_o_rodape_diz_a_hora_no_fuso_de_exibicao_e_nao_em_utc(cliente_v3, cursor):
+    """Rodape com hora no futuro destroi a confianca no proprio rodape: ele
+    existe para dizer de quando o dado e."""
+    semear(cursor, _semear_entrada)
+    cursor.execute("UPDATE cat_cargas SET terminada_em = %s", (INSTANTE_UTC,))
+    cursor.connection.commit()
+
+    cargas = cliente_v3.get("/api/opcoes").json()["cargas"]
+    assert cargas, "sem carga nao ha o que conferir"
+    assert cargas[0]["quando"] == EM_SAO_PAULO, (
+        f"a tela mostrou {cargas[0]['quando']!r} para um instante que e "
+        f"{EM_SAO_PAULO} em Sao Paulo -- provavelmente esta exibindo UTC cru"
+    )
+
+
+def test_a_auditoria_diz_a_hora_no_fuso_de_exibicao(cliente_v3, cursor):
+    """Este e o que pesa mais que o rodape: hora errada em registro de auditoria
+    e problema de rastreabilidade. E o que se consulta quando alguem pergunta
+    quem baixou o que, e quando."""
+    # o proprio login do `cliente_v3` ja gerou o registro
+    cursor.execute("UPDATE cat_auditoria SET criado_em = %s", (INSTANTE_UTC,))
+    cursor.connection.commit()
+
+    linhas = cliente_v3.get("/api/auditoria").json()
+    assert linhas, "o login da fixture devia ter deixado rastro"
+    assert linhas[0]["quando"].startswith(EM_SAO_PAULO), (
+        f"a auditoria mostrou {linhas[0]['quando']!r}, e nao {EM_SAO_PAULO}"
+    )
+
+
+def test_o_fuso_de_exibicao_vem_da_configuracao(cliente_v3, cursor, monkeypatch):
+    """Configuracao e nao constante enterrada: o dia em que a exibicao passar a
+    ser no fuso de quem le, tem que haver **um** lugar para mexer."""
+    semear(cursor, _semear_entrada)
+    cursor.execute("UPDATE cat_cargas SET terminada_em = %s", (INSTANTE_UTC,))
+    cursor.connection.commit()
+
+    monkeypatch.setenv(contrato.ENV_FUSO_EXIBICAO, "America/Manaus")
+    cargas = cliente_v3.get("/api/opcoes").json()["cargas"]
+    assert cargas[0]["quando"] == EM_MANAUS, (
+        "trocar CAT_FUSO_EXIBICAO nao mudou o que a tela mostra"
+    )
+
+
+def test_fuso_invalido_falha_nomeando_a_variavel(monkeypatch):
+    """Na LEITURA, nao no uso. A alternativa e o Postgres estourar no meio de
+    uma consulta de tela, com uma mensagem que nao aponta para a configuracao.
+
+    `America/SaoPaulo` (sem o `_`) e o erro que de fato se comete."""
+    monkeypatch.setenv(contrato.ENV_FUSO_EXIBICAO, "America/SaoPaulo")
+    with pytest.raises(contrato.FusoInvalido) as erro:
+        contrato.fuso_exibicao()
+    assert contrato.ENV_FUSO_EXIBICAO in str(erro.value), \
+        "a mensagem tem que nomear a variavel, senao nao ajuda"
+
+    monkeypatch.delenv(contrato.ENV_FUSO_EXIBICAO)
+    assert contrato.fuso_exibicao() == contrato.FUSO_EXIBICAO_PADRAO
+
+
+def test_o_fuso_entra_por_bind_e_nao_por_concatenacao():
+    """Nome de fuso vem de variavel de ambiente, e variavel de ambiente
+    concatenada em SQL e injecao esperando a vez -- mesmo local, mesmo validada
+    antes. A guarda e estatica porque o caminho de ataque nao aparece em teste
+    de comportamento: ele aparece na forma como o statement foi montado."""
+    import ast
+    import pathlib
+
+    fonte = pathlib.Path("catering/app.py").read_text(encoding="utf-8")
+    assert "AT TIME ZONE %s" in fonte, "o fuso deixou de entrar por bind"
+    for proibido in ('AT TIME ZONE \'" +', "AT TIME ZONE '{", 'f"AT TIME ZONE'):
+        assert proibido not in fonte, f"fuso interpolado em SQL: {proibido!r}"
+
+    # e nenhum literal do modulo carrega o nome do fuso: ele vem do contrato
+    arvore = ast.parse(fonte)
+    literais = [n.value for n in ast.walk(arvore)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    assert not [l for l in literais if "America/" in l], \
+        "nome de fuso escrito no app -- ele pertence a contrato.fuso_exibicao()"

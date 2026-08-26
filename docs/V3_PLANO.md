@@ -1461,10 +1461,17 @@ Duas coisas que só o V3.6 fecha, e estão escritas no `DEPLOY.md`: o **nome do
 serviço** e o **fuso da VM** — se ela estiver em UTC, `5 7 * * *` é 04h05 local,
 antes da rodada de 06h35 do DW, e a carga leria sempre a véspera.
 
-### Três coisas achadas no fechamento, e adiadas de propósito
+### Três coisas achadas no fechamento — duas feitas no V3.5.1, uma aberta
 
 Decisão da Maria, 26/ago/2026: fechar o V3.5 com a troca de fonte provada e não
-abrir código novo antes do deploy. As três vão para o escopo do V3.6.
+abrir código novo antes do deploy. **Horas depois a decisão foi revista para as
+duas primeiras**, que viraram o lote V3.5.1 (branch `v3.5.1-fuso`, seção
+própria abaixo) — o gatilho foi perceber que a decisão de fuso já estava tomada,
+e decisão tomada que não é escrita volta a ser discutida. A terceira segue
+aberta.
+
+O diagnóstico abaixo é o que estava escrito **antes** do conserto, e fica como
+registro do que foi medido.
 
 **1. O fuso não fica só no cron — ele vaza para a tela.** Medido no fechamento: a
 carga terminou às **09h45** no relógio da máquina e o rodapé "De quando é o dado"
@@ -1707,6 +1714,117 @@ laboratório (V3.8). Nada em `backend/`, `frontend/` ou nas migrations antigas. 
 nenhuma conexão da IA com o DW.
 
 ---
+
+---
+
+## Lote V3.5.1 — O fuso de exibição, e a mensagem que faltava (feito, 26/ago/2026)
+
+Lote pequeno, em branch própria (`v3.5.1-fuso`) e **não** empilhado no V3.5: o
+V3.5 estava pronto para revisão independente, e misturar código novo no mesmo
+diff estragaria justamente a revisão do lote que mexeu em contrato e identidade.
+
+### O dado sempre esteve certo; a leitura dele não
+
+`cat_cargas.terminada_em` e `cat_auditoria.criado_em` são `timestamptz` e guardam
+UTC — que é o certo, e não mudou. O defeito era o `to_char`, que renderiza no
+fuso da **sessão** do Postgres (`Etc/UTC` no container): uma carga das 09h45
+aparecia como **12h45**, quase três horas no futuro, no campo que existe para dar
+confiança na procedência.
+
+Dois pontos, os dois em `catering/app.py`:
+
+| onde | o que mostrava errado |
+|---|---|
+| rodapé "De quando é o dado" | a hora da última carga |
+| coluna "quando" da auditoria, em `/administracao` | a hora de cada acesso e download |
+
+**O segundo é o que pesou na decisão de não deixar para depois.** Rodapé com hora
+esquisita é ruim; registro de auditoria com hora errada é problema de
+rastreabilidade — é o que se consulta quando alguém pergunta quem baixou o quê e
+quando.
+
+`max_dw_data_alteracao` **não** entrou: ela é `timestamp without time zone` de
+propósito, porque é o relógio do DW e não o nosso.
+
+### Configuração, não constante nos dois SQL
+
+`contrato.fuso_exibicao()` lê `CAT_FUSO_EXIBICAO` (padrão `America/Sao_Paulo`),
+no mesmo formato de `ano_minimo()` e `tabela()`. Duas razões:
+
+1. **um lugar para mexer** no dia em que a exibição passar a ser no fuso de quem
+   lê (ISO-8601 para o front, formatado no navegador). Espalhar
+   `'America/Sao_Paulo'` por dois `to_char` é garantir que o terceiro nasça
+   esquecido;
+2. **valida na leitura, não no uso.** `America/SaoPaulo` (sem o `_`) é o erro que
+   de fato se comete, e ele falha nomeando a variável — em vez de o Postgres
+   estourar no meio de uma consulta de tela, com mensagem que aponta para o lugar
+   errado.
+
+O fuso entra no SQL **por bind** (`AT TIME ZONE %s`), nunca concatenado: ele vem
+de variável de ambiente, e variável de ambiente concatenada em SQL é injeção
+esperando a vez, mesmo local e mesmo validada antes. Há teste estático para isso,
+porque esse caminho não aparece em teste de comportamento — ele aparece na forma
+como o statement foi montado.
+
+### A decisão do cron: UTC, escrito em letras grandes
+
+A pendência 2 do `DEPLOY.md` está fechada: o crontab é escrito **em UTC**
+(`5 10` e `5 18` para 07h05/15h05 de Brasília), e não se ajusta o fuso da VM.
+
+Ajustar a VM seria mais limpo de ler e **afeta os outros três projetos** que
+moram nela — deixa de ser decisão de um time só, e o ganho não paga a
+negociação. O preço da escolha é ficar escrito, e ficou: o `DEPLOY.md` tem o
+aviso de não "corrigir" para `5 7`, com o efeito explicado (carga lendo a véspera
+todo dia, no horário errado, sem ninguém notar — pior que falha, porque falha
+aparece).
+
+**A fraqueza conhecida ficou registrada junto:** cron em UTC não acompanha
+horário de verão. O Brasil não observa desde 2019; se voltar, as duas linhas
+precisam de revisão. Escolha com fraqueza declarada é decisão; sem declarar, é
+armadilha.
+
+### `catering/ambiente.py` — a mensagem que o carregador não herdou
+
+O CLI de usuários (V3.4) já tinha resolvido o `KeyError: 'DATABASE_URL'` com uma
+mensagem que diz o que fazer. **O carregador não herdou**, e cobrou: duas vezes
+na mesma sessão, em 26/ago, a carga morreu com `carga falhou: 'DATABASE_URL'` —
+mensagem que não mentia e não ajudava.
+
+Duplicar o texto seria a saída curta e errada: duas cópias de instrução
+operacional envelhecem em ritmos diferentes, e a que envelhece é sempre a que
+alguém lê no pior momento. O texto passou a morar em `catering/ambiente.py`, e os
+dois CLIs importam.
+
+Duas decisões dentro disso:
+
+- **a checagem é na entrada, depois do parse.** A falta é conhecida antes de
+  qualquer trabalho, então dá para recusar com a orientação inteira em vez de
+  descobrir no meio de uma carga que já abriu sessão no DW e já registrou a
+  rodada. `--help` e argumento errado não pagam pedágio, e `--sondar` não pede
+  `DATABASE_URL`, porque não toca no Postgres;
+- **`DW_USER`/`DW_SENHA` também são exigidos na entrada.** A `FonteOracle` já
+  recusava sem eles, mas depois de a rodada estar registrada — a linha ficava em
+  `cat_cargas` com `status='erro'` por um motivo que a pessoa poderia ter sabido
+  antes de começar.
+
+Um detalhe que um teste pegou e vale escrever: a mensagem **não** pode ser
+montada com `str.format`. O corpo carrega um comando PowerShell com
+`ForEach-Object { ... }`, e `format` lê essas chaves como campo de formatação —
+`KeyError: " $_ -match ..."`. Mensagem de erro que estoura ao ser montada é o
+pior lugar possível para um defeito, porque ela só é montada quando algo já deu
+errado.
+
+### O que este lote NÃO fez
+
+Não tocou no fuso da VM, não instalou crontab, não mexeu em nada do caminho da
+carga — a mudança é de exibição e de mensagem. O terceiro item dos achados
+(ajuste visual da tela) segue aberto, sem nada específico levantado.
+
+### Suíte
+
+Nove testes novos. Os cinco do fuso foram verificados contra o defeito: com a
+correção revertida, **quatro falham** (o quinto é o do contrato, que não deveria
+falhar) — teste que passa antes e depois não prova nada.
 
 ## Regras de trabalho
 

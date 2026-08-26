@@ -53,6 +53,7 @@ tabela ganhou schema e sufixo de versao, a coluna nao.
 import os
 import re
 from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 MOVIMENTOS = ("rec", "exp")
 
@@ -177,6 +178,54 @@ def piso_do_periodo() -> date:
     entra no bind do SQL e na comparacao do CSV -- converter em dois lugares e
     como as duas pontas comecam a divergir."""
     return date(ano_minimo(), 1, 1)
+
+
+# ------------------------------------------------------- fuso de exibicao
+# **O dado nao muda; a leitura dele muda.** `cat_cargas.terminada_em` e
+# `cat_auditoria.criado_em` sao `timestamptz` e guardam UTC, que e o certo. O
+# defeito estava na exibicao: o `to_char` renderiza no fuso da SESSAO do
+# Postgres, que no container e `Etc/UTC` -- entao uma carga das 09h45 aparecia
+# como 12h45 na tela, tres horas no futuro.
+#
+# Medido em 26/ago/2026, no fechamento do V3.5, em dois lugares: o rodape "De
+# quando e o dado" e a coluna "quando" da auditoria. O segundo e o que pesa --
+# auditoria com hora errada e problema de rastreabilidade, e nao de estetica: e
+# o registro que se consulta quando alguem pergunta quem baixou o que, e quando.
+#
+# Por que configuracao e nao a constante enterrada nos dois SQL: o dia em que a
+# exibicao passar a ser no fuso de QUEM LE (ISO-8601 para o front, formatado no
+# navegador) e para haver **um** lugar para mexer. Espalhar
+# `'America/Sao_Paulo'` por dois `to_char` e garantir que o terceiro nasca
+# esquecido.
+#
+# `max_dw_data_alteracao` NAO entra aqui: ela e `timestamp without time zone`
+# de proposito, porque e o relogio do DW e nao o nosso.
+FUSO_EXIBICAO_PADRAO = "America/Sao_Paulo"
+ENV_FUSO_EXIBICAO = "CAT_FUSO_EXIBICAO"
+
+
+class FusoInvalido(ValueError):
+    """Valor de `CAT_FUSO_EXIBICAO` que o sistema nao conhece."""
+
+
+def fuso_exibicao() -> str:
+    """O fuso em que data e hora aparecem na tela, do ambiente ou do padrao.
+
+    Valida na LEITURA, nao no uso. Fuso escrito errado (`America/SaoPaulo`,
+    `BRT`) tem que falhar nomeando a variavel -- a alternativa e o Postgres
+    estourar no meio de uma consulta de tela, com uma mensagem que nao aponta
+    para a configuracao."""
+    nome = (os.environ.get(ENV_FUSO_EXIBICAO) or "").strip()
+    if not nome:
+        return FUSO_EXIBICAO_PADRAO
+    try:
+        ZoneInfo(nome)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise FusoInvalido(
+            f"{ENV_FUSO_EXIBICAO}={nome!r} nao e um fuso conhecido "
+            f"(esperado no formato de {FUSO_EXIBICAO_PADRAO!r})"
+        ) from None
+    return nome
 
 # ------------------------------------------------------------ identidade
 # Sem `nk_cliente` sobra 1 duplicata no recebimento e 65 na expedicao; sem
