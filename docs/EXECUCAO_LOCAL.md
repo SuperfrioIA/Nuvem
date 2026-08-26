@@ -214,6 +214,74 @@ Usuário depois do primeiro: `python -m catering.seguranca criar --login ...`
   código). Em suítes longas, vale checar o container periodicamente
   durante a execução, não só antes.
 
+### Carga da volumetria de catering (V3.5)
+
+O carregador é um comando à parte — não sobe processo nenhum, não abre porta, e
+termina sozinho. Duas fontes, a mesma interface:
+
+```
+# CSV (as extrações de 21/ago em docs/Analise) — continua valendo igual
+python -m catering.carga --de docs/Analise
+python -m catering.carga --de docs/Analise --incremental
+
+# DW Oracle
+python -m catering.carga --fonte oracle --sondar        # SÓ lê o DW
+python -m catering.carga --fonte oracle                 # carga completa
+python -m catering.carga --fonte oracle --incremental
+python -m catering.carga --fonte oracle --movimento rec
+```
+
+Variáveis, e o que cada uma exige:
+
+| comando | precisa de |
+|---|---|
+| `--fonte csv` | `DATABASE_URL` |
+| `--fonte oracle --sondar` | `DW_USER` e `DW_SENHA` — **e mais nada**. Não toca no Postgres |
+| `--fonte oracle` (carga) | `DATABASE_URL` + `DW_USER` + `DW_SENHA` |
+
+`DW_HOST`, `DW_PORTA` e `DW_BANCO` têm padrão no código
+(`oracleprd-aws.superfrio.com.br:1521/pdwgener`, Oracle 12.2 em modo thin, sem
+Instant Client). `DW_TABELA_REC`/`DW_TABELA_EXP` também têm padrão — só existem
+para trocar de versão do objeto sem commit.
+
+**`DW_ANO_MINIMO` (padrão 2026)** é o primeiro ano que a carga lê, por
+`nk_calendario`. A V3 lê de 2026 para frente (decisão da Maria, 25/ago/2026);
+para comparar 2025 com 2026, `$env:DW_ANO_MINIMO = "2025"` na mesma sessão e
+rodar a carga de novo — ela traz o passado sem tocar em código. **Subir o piso
+de volta não apaga o que já entrou:** a carga só insere e atualiza, então
+desfazer exige `DELETE` à mão. Ano inválido (`26`, `20226`) falha nomeando a
+variável, em vez de carregar tudo ou nada em silêncio.
+
+> **A mesma armadilha do `.env` do caminho C vale aqui**: o projeto não usa
+> `python-dotenv`, então num `python` bare a credencial tem que estar exportada
+> na sessão do shell. Carregue o `.env` na sessão (não imprime nada):
+>
+> ```
+> Get-Content .env | Where-Object { $_ -match '^\s*[A-Z_]' } | ForEach-Object { $n,$v = $_ -split '=',2; Set-Item "env:$n" $v }
+> $env:DATABASE_URL = "postgresql://nuvem:teste@localhost:5433/nuvem_teste"
+> ```
+
+Três coisas que vale saber antes de rodar a carga contra o DW nesta máquina:
+
+1. **O DW é produção, e a leitura é somente leitura por construção.** O módulo
+   só emite `SELECT`, com guarda estática e de runtime na suíte
+   (`tests/test_catering_oracle.py`). Mesmo assim, quem roda a carga contra o DW
+   é a Maria — a IA não conecta nele.
+2. **O banco de destino local é o `nuvem_teste`, que o pytest zera.** Carregar
+   78 mil linhas do DW e depois rodar a suíte apaga o que foi carregado. Isso é
+   esperado, não defeito: o schema é recriado a cada teste.
+3. **A primeira rodada contra o Oracle é completa, mesmo com `--incremental`.**
+   O V3.5 passou a gravar o nome qualificado em `cat_cargas.tabela_origem`, que
+   é a chave da marca d'água — então não existe marca d'água anterior com esse
+   nome. Foi decidido assim (ver `docs/V3_PLANO.md`, A-7).
+
+Depois da carga, para ver o dado real na tela: caminho C acima, e o bloco
+"De quando é o dado" no rodapé passa a dizer `oracle` em vez de `csv`.
+
+**Encerramento:** nada a encerrar — o comando é síncrono e sai com código 0 ou 1.
+Rodada que falha fica registrada em `cat_cargas` com `status='erro'` e a
+mensagem; `SELECT * FROM cat_cargas ORDER BY id DESC LIMIT 5` conta a história.
+
 ### Validação da aplicação
 
 - **Como subir**: caminho B da seção 1 (uvicorn bare, porta livre

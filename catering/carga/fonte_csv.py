@@ -9,9 +9,10 @@ antes do acesso existir e esta costura:
     extrair()                   <- so ele conhece a fonte
     transformar() + carregar()  <- identico nos dois casos
 
-Entao o V3.5 nao e reescrita: e uma classe `FonteOracle` com o mesmo
-`extrair(movimento, desde)`, e nada mais muda. Duas coisas aqui existem so
-para garantir isso desde agora:
+E foi o que aconteceu no V3.5: `fonte_oracle.FonteOracle` tem o mesmo
+`extrair(movimento, desde)`, e nem `transformacao.py` nem `destino.py`
+mudaram uma linha. Duas coisas aqui existiam so para garantir isso, e sao as
+que pagaram:
 
 1. **`desde` ja esta na assinatura.** No CSV ele filtra em Python por
    `DW_DATA_ALTERACAO`; no Oracle vira `WHERE DW_DATA_ALTERACAO > :desde`. Se
@@ -94,6 +95,15 @@ class FonteCSV:
     def extrair(self, movimento, desde=None):
         """Gera as linhas cruas do movimento, na ordem do arquivo.
 
+        Duas restricoes, as mesmas da `FonteOracle`, para que uma carga por
+        CSV e uma por Oracle do mesmo periodo devolvam exatamente as mesmas
+        linhas -- se as duas fontes divergirem no recorte, comparar uma com a
+        outra deixa de provar qualquer coisa:
+
+        `piso de periodo`: linha com `nk_calendario` antes de
+        `contrato.piso_do_periodo()` nao sai daqui. Nos CSVs de 21/ago isto nao
+        muda nada (eles sao 2026), e existe para nao divergir.
+
         `desde`: quando informado, so devolve linha com `DW_DATA_ALTERACAO`
         **maior** que ele -- a marca d'agua da rodada anterior
         (`cat_cargas.max_dw_data_alteracao`). Maior e nao maior-ou-igual de
@@ -112,6 +122,8 @@ class FonteCSV:
             if desde is not None
             else None
         )
+        coluna_calendario = contrato.coluna_dw("nk_calendario", movimento)
+        piso = contrato.piso_do_periodo()
 
         with caminho.open(encoding=ENCODING, newline="") as arquivo:
             leitor = csv.DictReader(arquivo, delimiter=DELIMITADOR)
@@ -120,6 +132,11 @@ class FonteCSV:
             # coluna, e nao 30 mil linhas adiante com erro de tipo.
             transformacao.conferir_colunas(leitor.fieldnames or (), movimento)
             for linha in leitor:
+                # O piso primeiro: e o recorte de escopo, e nao depende de
+                # rodada anterior nenhuma.
+                movimentada_em = transformacao.dia(linha.get(coluna_calendario))
+                if movimentada_em is None or movimentada_em < piso:
+                    continue
                 if coluna_alteracao is not None:
                     alterada_em = transformacao.instante(linha.get(coluna_alteracao))
                     if alterada_em is None or alterada_em <= desde:

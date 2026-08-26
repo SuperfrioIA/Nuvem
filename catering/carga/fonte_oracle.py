@@ -1,0 +1,555 @@
+"""A fonte Oracle -- o adaptador que o V3.1 prometeu, com a MESMA interface.
+
+## O que este modulo e
+
+    extrair(movimento, desde)   <- ESTE modulo, e a `fonte_csv.py`
+    transformar(linha)          <- nao mudou uma linha
+    gravar(cur, lote)           <- nao mudou uma linha
+
+O V3.1 construiu o carregador contra os CSVs de 21/ago/2026 e deixou `desde` na
+assinatura de proposito, para que a troca de fonte fosse uma classe nova e nao
+uma reescrita. Este arquivo e a cobranca dessa promessa: `FonteOracle` tem
+`nome`, `descrever(movimento)` e `extrair(movimento, desde)`, e nada mais no
+carregador precisou saber que a fonte mudou.
+
+## Somente leitura, e provado de duas formas
+
+O modulo so emite `SELECT`. Isso e vigiado por duas guardas no
+`tests/test_catering_oracle.py`, no mesmo padrao do cliente do Graph
+(`memory/sharepoint-datahub-somente-leitura.md`): uma **estatica**, que percorre
+a arvore sintatica e reprova palavra de escrita em qualquer literal do modulo e
+qualquer chamada a `commit`/`rollback`/`executemany`; e uma **de runtime**, que
+exercita `extrair()` e `sondar()` com um cursor que recusa comando que nao
+comece por `SELECT`. A estatica sozinha nao veria uma escrita montada por
+concatenacao; a de runtime sozinha nao veria um caminho que o teste nao
+exercita.
+
+O alvo aqui e o **DW de producao**. A politica do projeto e que a IA nao conecta
+nele: quem roda `--sondar` e a carga real e a Maria. Este modulo foi escrito e
+testado inteiro contra driver falso.
+
+## O SELECT e gerado do contrato, nunca `SELECT *`
+
+A lista de colunas sai de `contrato.colunas()` traduzida por `coluna_dw()`, na
+ordem do schema. Duas consequencias concretas:
+
+  - coluna renomeada ou removida no DW da `ORA-00904` nomeando a coluna, no
+    primeiro `execute`, e nao erro de tipo trinta mil linhas adiante;
+  - a ordem do `SELECT` e a ordem em que as chaves entram no dict, entao a
+    linha crua sai daqui com a mesma forma que o `csv.DictReader` produz.
+
+O que a lista explicita **nao** ve e coluna NOVA no DW -- e ver isso e a
+disciplina do projeto desde o V3.0 (a `FonteCSV` confere o cabecalho antes da
+primeira linha). Por isso `extrair()` faz primeiro uma consulta de zero linha e
+passa os nomes que o cursor descreve pela MESMA
+`transformacao.conferir_colunas()` que o CSV usa. Custa um round trip por
+movimento, nao le bloco nenhum, e e tambem o que confirma o unico detalhe que a
+sondagem de 25/ago/2026 deixou em aberto: a coluna da PK se chama
+`PK_FATO_VOL_REC_CAT`, sem o `_V01` que a **tabela** ganhou.
+
+## `fetch_decimals`, a linha que corrompe numero se faltar
+
+Medido em 25/ago/2026: `oracledb 4.0.2` traz `defaults.fetch_decimals = False`,
+e com isso todo `NUMBER` chega como `float`. Peso em kg com 3 decimais passando
+por binario de ponto flutuante perde precisao contra a coluna `NUMERIC(18,3)`
+do Postgres -- e perde em silencio, que e o pior tipo de perda. `conectar()`
+liga a opcao antes de abrir a sessao.
+
+Ligar isso no **import** seria mais curto e pior: quem importasse o modulo
+mudaria o comportamento global do driver sem pedir. A alternativa considerada
+foi um `outputtypehandler` por conexao, mais cirurgico; ficou de fora porque ele
+decide coluna por coluna, e uma coluna nova cair no ramo errado e exatamente o
+silencio que se esta tentando evitar aqui.
+
+## Escopo continua sendo filtrado em Python
+
+Nao existe `WHERE NK_INSTANCIA LIKE 'SLIN_%'` aqui, de proposito. O V3.1 conta e
+loga linha fora de escopo como tripwire (medido: zero linha nos dois CSVs).
+Empurrar o filtro para o banco calaria esse alarme -- economizaria trafego de
+linha que ninguem tem, ao preco de nunca mais saber que instancia nova apareceu.
+
+## Sem teto na janela
+
+`WHERE DW_DATA_ALTERACAO > :desde`, e nada do outro lado. O Oracle da
+consistencia de leitura no nivel do statement, e a marca d'agua da rodada e o
+`max` do que efetivamente entrou -- entao linha que chegar durante a leitura
+entra na rodada seguinte, sem furo. Um teto com o relogio da nossa maquina
+compraria diferenca de relogio contra o do DW sem resolver nada.
+
+Por isso tambem `janela_de`/`janela_ate` de `cat_cargas` ficam nulas: as duas
+colunas sao `DATE` e a 0019 as descreve como a janela de **data de negocio**
+relida, enquanto o incremento daqui e por timestamp de processamento -- que ja
+esta inteiro em `max_dw_data_alteracao`. Preenche-las com a data truncada do
+`desde` misturaria dois sentidos na mesma coluna.
+
+## Conexao por chamada, e nada aberto de gracas
+
+`FonteOracle(...)` **nao** conecta. `extrair()` abre, streama e fecha no
+`finally` do gerador; `sondar()` faz o mesmo. Nenhuma conexao com producao fica
+pendurada entre rodadas, e `--help` ou erro de argumento nao tocam no DW.
+
+`tcp_connect_timeout` sim, timeout de chamada nao: rede que nao responde tem que
+falhar rapido, mas cortar leitura em lote no meio so transforma rodada lenta em
+rodada perdida -- o mesmo raciocinio do "sem `statement_timeout`" do
+`destino.py`.
+"""
+
+import logging
+import os
+from contextlib import closing
+
+from catering import contrato
+from catering.carga import transformacao
+
+logger = logging.getLogger(__name__)
+
+# `cat_cargas.fonte` (migration 0020). O CHECK ja aceitava 'oracle' desde o
+# V3.1, justamente para este lote nao precisar de migration.
+NOME = "oracle"
+
+# Linhas por round trip. O default do driver e 100, e com ele 42 mil linhas
+# custam 420 idas e voltas na rede.
+LOTE_LEITURA = 1_000
+
+# Rede que nao responde tem que falhar rapido -- o agendamento roda sem ninguem
+# olhando, e processo pendurado em socket e pior que rodada que falhou.
+TIMEOUT_CONEXAO_SEGUNDOS = 15
+
+# O que a sondagem de 25/ago/2026 provou funcionar: modo thin, sem Instant
+# Client, contra o Oracle 12.2.0.1.0. Host, porta e servico tem padrao porque
+# nao sao segredo (estao no `V3_PLANO.md` e no `DEPLOY.md`); usuario e senha
+# **nao** tem padrao, e sem eles isto nao conecta em lugar nenhum.
+PADRAO_HOST = "oracleprd-aws.superfrio.com.br"
+PADRAO_PORTA = "1521"
+PADRAO_BANCO = "pdwgener"
+
+# As colunas que o `--sondar` mostra da primeira linha. Escolhidas para provar
+# o que importa e nada alem: o zero a esquerda que sobrevive, as duas datas, e
+# a medida de peso chegando como `Decimal`. Nenhuma delas e nome de cliente ou
+# CNPJ, entao a saida do sondar pode ser colada num documento.
+AMOSTRA = {
+    "rec": ("pk_dw", "num_gem", "nk_calendario", "dw_data_alteracao", "qtde_peso2"),
+    "exp": ("pk_dw", "num_gem", "nk_calendario", "dw_data_alteracao",
+            "qtde_peso_solicitado"),
+}
+
+
+class CredencialAusente(RuntimeError):
+    """Falta `DW_USER` ou `DW_SENHA` no ambiente."""
+
+
+# ------------------------------------------------------------- o driver
+def _driver():
+    """Import preguicoso do `oracledb`.
+
+    Preguicoso para que a maquina que so roda a carga por CSV, e a suite que so
+    confere o SQL gerado, nao dependam do driver estar instalado."""
+    import oracledb
+
+    return oracledb
+
+
+def configurar_driver():
+    """Liga `fetch_decimals` e devolve o modulo do driver.
+
+    Existe como funcao propria, e nao como efeito de import, para poder ser
+    exercitada por teste sem abrir conexao: e uma linha que, faltando, corrompe
+    peso em silencio."""
+    oracledb = _driver()
+    oracledb.defaults.fetch_decimals = True
+    return oracledb
+
+
+def dsn() -> str:
+    """`host:porta/servico` -- a forma que a sondagem de 25/ago/2026 usou."""
+    host = os.environ.get("DW_HOST") or PADRAO_HOST
+    porta = os.environ.get("DW_PORTA") or PADRAO_PORTA
+    banco = os.environ.get("DW_BANCO") or PADRAO_BANCO
+    return f"{host}:{porta}/{banco}"
+
+
+def conectar():
+    """Sessao nova no DW. Nunca guarda nem loga a credencial.
+
+    A credencial e conferida ANTES de mexer no driver: faltar variavel de
+    ambiente e erro de configuracao, e ele nao deve deixar rastro (o
+    `fetch_decimals` e estado global do modulo `oracledb`)."""
+    usuario = os.environ.get("DW_USER")
+    senha = os.environ.get("DW_SENHA")
+    if not usuario or not senha:
+        faltando = [
+            nome for nome, valor in (("DW_USER", usuario), ("DW_SENHA", senha))
+            if not valor
+        ]
+        raise CredencialAusente(
+            f"faltam {' e '.join(faltando)} no ambiente -- a credencial do DW "
+            "vive no .env, e o .env nao e lido sozinho num uvicorn/python bare "
+            "(ver docs/EXECUCAO_LOCAL.md)"
+        )
+    oracledb = configurar_driver()
+    # Uma linha no log antes de abrir a sessao. A carga agendada roda sem
+    # ninguem olhando, e "parou aqui" e a diferenca entre suspeitar do DW e
+    # suspeitar do Postgres quando a rodada das 07h05 nao termina.
+    logger.info("abrindo sessao no DW: %s", dsn())
+    return oracledb.connect(
+        user=usuario,
+        password=senha,
+        dsn=dsn(),
+        tcp_connect_timeout=TIMEOUT_CONEXAO_SEGUNDOS,
+    )
+
+
+# ---------------------------------------------------------------- o SQL
+def colunas_dw(movimento):
+    """Os nomes das colunas no DW, na ordem do contrato."""
+    return [
+        contrato.coluna_dw(nome, movimento)
+        for nome, _tipo, _nulo in contrato.colunas(movimento)
+    ]
+
+
+def sql_select(movimento, desde=None):
+    """`(sql, binds)` da leitura de um movimento.
+
+    Duas restricoes, e elas respondem perguntas diferentes:
+
+      - o **piso de periodo** (`nk_calendario >= :piso`) e escopo: a V3 le de
+        2026 para frente (ver `contrato.piso_do_periodo()`). Ele vale em toda
+        rodada, completa ou incremental;
+      - o **`desde`** (`dw_data_alteracao > :desde`) e frescor: e a marca d'agua
+        da rodada anterior, e so aparece no incremental.
+
+    Os dois entram como **bind**, nunca concatenados: valor de fora do codigo
+    dentro de uma string de SQL e o defeito que nao se ve na revisao e que
+    ninguem consegue explicar depois. O nome do objeto e concatenado porque nome
+    de objeto nao pode ser bind -- e por isso ele passa pela guarda de
+    `contrato.tabela()`.
+
+    O piso fica no SQL, e nao em Python como o filtro de instancia SLIN, porque
+    sao coisas diferentes: instancia fora de escopo e **tripwire** (queremos
+    contar e logar se aparecer), e periodo fora da janela e recorte conhecido --
+    trazer 5x mais linha duas vezes por dia para descartar seria desperdicio."""
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    sql = (
+        "SELECT " + ", ".join(colunas_dw(movimento))
+        + " FROM " + contrato.tabela(movimento)
+        + f" WHERE {calendario} >= :piso"
+    )
+    binds = {"piso": contrato.piso_do_periodo()}
+    if desde is None:
+        return sql, binds
+    alteracao = contrato.coluna_dw("dw_data_alteracao", movimento)
+    # Maior, e nao maior-ou-igual: igual e a linha que a rodada anterior ja
+    # carregou, e reprocessa-la nao mudaria nada alem de inflar `linhas_lidas`.
+    # Mesma decisao da `FonteCSV`, para as duas fontes se comportarem igual.
+    binds["desde"] = desde
+    return sql + f" AND {alteracao} > :desde", binds
+
+
+def sql_colunas(movimento):
+    """A consulta de zero linha que descreve o objeto inteiro.
+
+    `1=0` para o Oracle nao ler bloco nenhum: o que se quer daqui e o
+    `description` do cursor, nao dado."""
+    return "SELECT * FROM " + contrato.tabela(movimento) + " WHERE 1=0"
+
+
+def sql_resumo(movimento):
+    """Contagem e marcas d'agua -- da tabela INTEIRA e da janela, na mesma
+    varredura.
+
+    Os dois lados de proposito: o total responde "o que a fonte tem", a janela
+    responde "o que a gente le", e ver a diferenca e o que impede alguem de
+    concluir que o DW esta faltando dado quando na verdade o recorte e nosso.
+    Sai de graca -- e a mesma leitura."""
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    alteracao = contrato.coluna_dw("dw_data_alteracao", movimento)
+    na_janela = f"CASE WHEN {calendario} >= :piso THEN"
+    return (
+        "SELECT "
+        f"COUNT(*), MIN({calendario}), MAX({calendario}), "
+        f"COUNT({na_janela} 1 END), "
+        f"MIN({na_janela} {calendario} END), MAX({na_janela} {calendario} END), "
+        f"MIN({na_janela} {alteracao} END), MAX({na_janela} {alteracao} END) "
+        "FROM " + contrato.tabela(movimento)
+    )
+
+
+# O separador da chave concatenada. `CHR(31)` (unit separator) e nao `|` porque
+# esta consulta existe para ser acreditada: se um valor contivesse o separador,
+# duas chaves diferentes colidiriam no texto e a medicao inventaria duplicata.
+_SEPARADOR = "CHR(31)"
+
+
+def _chave_concatenada(movimento) -> str:
+    """A chave natural como uma expressao de texto, gerada do contrato.
+
+    `NVL` em toda coluna: as seis sao NOT NULL no contrato, mas se uma vier nula
+    o `||` colapsaria a chave inteira para NULL e o `COUNT(DISTINCT)` a
+    ignoraria -- a medicao erraria para baixo exatamente no caso em que o dado
+    piorou."""
+    partes = [
+        f"NVL(TO_CHAR({contrato.coluna_dw(coluna, movimento)}), ' ')"
+        for coluna in contrato.CHAVE_NATURAL
+    ]
+    return f" || {_SEPARADOR} || ".join(partes)
+
+
+# Candidatos a identidade, do MAIS GROSSO para o mais fino. A ordem e a
+# decisao: a chave certa e a primeira que fica unica.
+#
+# Por que grosso e melhor que fino, e nao o contrario: identidade fina significa
+# que qualquer correcao na coluna extra deixa de ser update e passa a ser INSERT
+# de linha nova, com a antiga sobrevivendo ao lado -- numero dobrado, sem
+# alarme. Se o que separa `num_gem` reciclado e o ANO, botar a data inteira na
+# chave compra 364 chances por ano de duplicar por correcao de dia, e nao compra
+# unicidade nenhuma a mais.
+# Entre dois candidatos de MESMA granularidade, vem primeiro o derivado da
+# coluna que o fato carrega como **data**, e nao o da copia denormalizada: a
+# sondagem de 25/ago/2026 mostrou `ano_solic` discordando do ano de `data_solic`
+# em 15 e 16 linhas, e quando duas colunas discordam uma delas e copia que ficou
+# atras. Identidade nao se pendura em copia -- salvo se a medicao provar que a
+# copia e que e o espaco de numeracao, e a data nao.
+CANDIDATOS_DE_IDENTIDADE = (
+    ("chave de hoje", None),
+    ("+ ano de data_solic", "TO_CHAR({data_solic}, 'YYYY')"),
+    ("+ ano_solic", "TO_CHAR({ano_solic})"),
+    ("+ ano de nk_calendario", "TO_CHAR({nk_calendario}, 'YYYY')"),
+    ("+ data_solic", "TO_CHAR({data_solic}, 'YYYY-MM-DD')"),
+    ("+ nk_calendario", "TO_CHAR({nk_calendario}, 'YYYY-MM-DD')"),
+)
+
+
+def _colunas_do_movimento(movimento) -> dict:
+    """Os nomes do DW usados nas expressoes dos candidatos."""
+    return {
+        nossa: contrato.coluna_dw(nossa, movimento)
+        for nossa in ("ano_solic", "data_solic", "nk_calendario")
+    }
+
+
+def sql_identidade(movimento) -> str:
+    """Mede, numa varredura, qual identidade ainda e unica.
+
+    Devolve, na ordem: o total, um distinto por candidato de
+    `CANDIDATOS_DE_IDENTIDADE`, e por ultimo quantas linhas tem `ano_solic`
+    discordando do ano de `data_solic` -- porque escolher `ano_solic` como parte
+    da identidade so faz sentido se as duas colunas concordarem, e "deve
+    concordar" nao e medicao."""
+    chave = _chave_concatenada(movimento)
+    colunas = _colunas_do_movimento(movimento)
+
+    contagens = ["COUNT(*)"]
+    for _rotulo, expressao in CANDIDATOS_DE_IDENTIDADE:
+        if expressao is None:
+            contagens.append(f"COUNT(DISTINCT {chave})")
+        else:
+            extra = expressao.format(**colunas)
+            contagens.append(f"COUNT(DISTINCT {chave} || {_SEPARADOR} || {extra})")
+
+    contagens.append(
+        f"SUM(CASE WHEN {colunas['ano_solic']} <> "
+        f"EXTRACT(YEAR FROM {colunas['data_solic']}) THEN 1 ELSE 0 END)"
+    )
+    # Dentro da JANELA: o que importa e a chave ser unica no que a carga grava.
+    # Quem quiser saber se ela aguenta um periodo maior baixa o
+    # `DW_ANO_MINIMO` e roda o sondar de novo -- que e o fluxo certo antes de
+    # ampliar a janela, e nao um numero decorativo aqui.
+    return (
+        "SELECT " + ", ".join(contagens) + " FROM " + contrato.tabela(movimento)
+        + f" WHERE {colunas['nk_calendario']} >= :piso"
+    )
+
+
+def sql_colisoes(movimento, quantas=3) -> str:
+    """As chaves que mais repetem, com o intervalo de datas de cada uma.
+
+    E o que separa as duas explicacoes possiveis, que pedem respostas opostas:
+    se a mesma chave aparece em ANOS diferentes, o `num_gem` se recicla e falta
+    data na identidade; se ela aparece duas vezes no MESMO dia, o DW passou a
+    ter linha repetida de verdade, e ai o assunto e com quem mantem o processo."""
+    grupo = ", ".join(
+        contrato.coluna_dw(coluna, movimento) for coluna in contrato.CHAVE_NATURAL
+    )
+    gem = contrato.coluna_dw("num_gem", movimento)
+    filial = contrato.coluna_dw("nk_wms_filial", movimento)
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    return (
+        f"SELECT {gem}, {filial}, COUNT(*), MIN({calendario}), MAX({calendario}) "
+        "FROM " + contrato.tabela(movimento) + " "
+        f"WHERE {calendario} >= :piso "
+        f"GROUP BY {grupo} HAVING COUNT(*) > 1 "
+        f"ORDER BY COUNT(*) DESC FETCH FIRST {int(quantas)} ROWS ONLY"
+    )
+
+
+def sql_ano_discordante(movimento, quantas=8) -> str:
+    """As linhas em que `ano_solic` nao e o ano de `data_solic`.
+
+    Existe porque "sao 15 linhas" nao decide nada, e o formato delas decide: se
+    forem viradas de ano (`ano_solic` 2025 com `data_solic` em 02/jan/2026), e
+    uma das duas colunas atrasada num caso de borda conhecido; se forem anos sem
+    relacao, a coluna nao significa o que o nome dela diz -- e ai ela esta fora
+    da identidade, nao importa se torna a chave unica."""
+    colunas = _colunas_do_movimento(movimento)
+    ano, solic, calendario = (
+        colunas["ano_solic"], colunas["data_solic"], colunas["nk_calendario"],
+    )
+    return (
+        f"SELECT {ano}, TO_CHAR(MIN({solic}), 'YYYY-MM-DD'), "
+        f"TO_CHAR(MAX({solic}), 'YYYY-MM-DD'), "
+        f"TO_CHAR(MIN({calendario}), 'YYYY-MM-DD'), COUNT(*) "
+        "FROM " + contrato.tabela(movimento) + " "
+        f"WHERE {calendario} >= :piso AND {ano} <> EXTRACT(YEAR FROM {solic}) "
+        f"GROUP BY {ano} ORDER BY {ano} FETCH FIRST {int(quantas)} ROWS ONLY"
+    )
+
+
+def nomes_do_cursor(description):
+    """Os nomes de coluna que o driver descreve, em maiusculas.
+
+    O `oracledb` devolve objetos `FetchInfo` que tambem se comportam como
+    tupla. Aceitar as duas formas mantem o modulo indiferente a versao do
+    driver -- e e o que permite o teste usar cursor falso."""
+    nomes = []
+    for info in description or ():
+        nome = getattr(info, "name", None)
+        if nome is None:
+            nome = info[0]
+        nomes.append(str(nome).upper())
+    return nomes
+
+
+# --------------------------------------------------------------- a fonte
+class FonteOracle:
+    """As duas tabelas do DW, com a interface da `FonteCSV`.
+
+    `abrir_conexao` existe para o teste poder injetar driver falso. O padrao e
+    a conexao real, e a classe nao abre nada no construtor."""
+
+    nome = NOME
+
+    def __init__(self, abrir_conexao=None):
+        self._abrir_conexao = abrir_conexao or conectar
+
+    def descrever(self, movimento) -> str:
+        """Uma linha de procedencia para o log: o objeto e onde ele mora.
+
+        Sem usuario e obviamente sem senha -- o log da carga agendada fica num
+        arquivo na VM, e metade de uma credencial ja e informacao demais para
+        um arquivo de log."""
+        return f"{contrato.tabela(movimento)} em {dsn()}"
+
+    def _conferir_contrato(self, cur, movimento) -> None:
+        """O cabecalho antes da primeira linha, como no CSV."""
+        cur.execute(sql_colunas(movimento))
+        transformacao.conferir_colunas(nomes_do_cursor(cur.description), movimento)
+
+    def extrair(self, movimento, desde=None):
+        """Gera as linhas cruas do movimento, com as chaves em MAIUSCULAS.
+
+        Igual a `FonteCSV.extrair()` de proposito, inclusive em ser gerador: a
+        forma tem que ser a mesma para o `carregar_movimento()` nao saber quem
+        esta do outro lado.
+
+        Coercao **nao** acontece aqui. O driver entrega `Decimal`, `datetime` e
+        `str`; a `transformacao.py` recebe isso e o texto do CSV pelo mesmo
+        funil. Se cada adaptador tipasse do seu jeito, a promessa de adaptador
+        estaria furada no primeiro dia."""
+        if movimento not in contrato.MOVIMENTOS:
+            raise KeyError(movimento)
+
+        nomes = colunas_dw(movimento)
+        sql, binds = sql_select(movimento, desde)
+
+        conexao = self._abrir_conexao()
+        try:
+            with conexao.cursor() as cur:
+                self._conferir_contrato(cur, movimento)
+                # Antes do execute: os dois governam o tamanho do round trip.
+                cur.arraysize = LOTE_LEITURA
+                cur.prefetchrows = LOTE_LEITURA + 1
+                cur.execute(sql, binds)
+                for linha in cur:
+                    yield dict(zip(nomes, linha))
+        finally:
+            conexao.close()
+
+    def sondar(self, movimento) -> dict:
+        """Leitura de prova, sem escrever em lugar nenhum -- nem no DW, nem no
+        Postgres.
+
+        Existe porque o aceite deste lote e uma rodada que a Maria executa: o
+        que este metodo devolve e a evidencia de que a sessao abre, o GRANT
+        vale, o contrato bate coluna por coluna, o volume e comparavel ao que a
+        sondagem de 25/ago mediu, e o numero chega tipado como o Postgres
+        precisa."""
+        piso = {"piso": contrato.piso_do_periodo()}
+        resumo = {
+            "movimento": movimento,
+            "tabela": contrato.tabela(movimento),
+            "dsn": dsn(),
+            "colunas_no_contrato": len(colunas_dw(movimento)),
+            "piso": piso["piso"],
+        }
+
+        conexao = self._abrir_conexao()
+        try:
+            with conexao.cursor() as cur:
+                self._conferir_contrato(cur, movimento)
+                cur.execute(sql_resumo(movimento), piso)
+                (linhas, cal_min, cal_max, na_janela, jan_cal_min, jan_cal_max,
+                 alt_min, alt_max) = cur.fetchone()
+                cur.execute(sql_identidade(movimento), piso)
+                medido = cur.fetchone()
+                total, *resto = medido
+                distintos = resto[:len(CANDIDATOS_DE_IDENTIDADE)]
+                identidade = {
+                    "total": total,
+                    "candidatos": [
+                        (rotulo, valor)
+                        for (rotulo, _expr), valor
+                        in zip(CANDIDATOS_DE_IDENTIDADE, distintos)
+                    ],
+                    "ano_solic_discorda_de_data_solic": resto[-1],
+                }
+                so_chave = distintos[0]
+                colisoes = []
+                if so_chave is not None and total is not None and so_chave < total:
+                    cur.execute(sql_colisoes(movimento), piso)
+                    colisoes = list(cur)
+                discordantes = []
+                if resto[-1]:
+                    cur.execute(sql_ano_discordante(movimento), piso)
+                    discordantes = list(cur)
+        finally:
+            conexao.close()
+
+        resumo["linhas"] = linhas
+        resumo["linhas_na_janela"] = na_janela
+        resumo["nk_calendario"] = (cal_min, cal_max)
+        resumo["nk_calendario_na_janela"] = (jan_cal_min, jan_cal_max)
+        resumo["dw_data_alteracao"] = (alt_min, alt_max)
+        resumo["identidade"] = identidade
+        resumo["colisoes"] = colisoes
+        resumo["ano_discordante"] = discordantes
+
+        # A amostra passa pelo funil de verdade: o valor cru mostra o que o
+        # driver entregou, e o coagido mostra o que o banco vai receber. E onde
+        # `fetch_decimals` aparece ou nao aparece.
+        resumo["amostra"] = {}
+        # `closing` e nao so `break`: abandonar um gerador confia o fechamento
+        # da conexao ao coletor de lixo, e conexao com producao nao e coisa que
+        # se deixe fechar quando der.
+        linhas = self.extrair(movimento)
+        with closing(linhas):
+            for crua in linhas:
+                tipada = transformacao.transformar(crua, movimento)
+                for coluna in AMOSTRA[movimento]:
+                    bruto = crua[contrato.coluna_dw(coluna, movimento)]
+                    resumo["amostra"][coluna] = (
+                        type(bruto).__name__, repr(bruto), repr(tipada[coluna])
+                    )
+                break
+
+        return resumo

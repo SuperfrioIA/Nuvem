@@ -48,7 +48,14 @@ from tests.conftest import consultar
 # --------------------------------------------------------------- medido
 # Numeros das extracoes de 21/ago/2026, medidos antes de escrever o codigo.
 DIRETORIO_DW = Path(__file__).resolve().parent.parent / "docs" / "Analise"
-LINHAS = {"rec": 36_300, "exp": 42_468}
+# O que a fonte ENTREGA com o piso de periodo de 2026 (contrato.piso_do_periodo).
+# Os arquivos tem 36.300 e 42.468 linhas; as 150 linhas de diferenca na
+# expedicao sao **dez/2025** (128,7 t solicitadas), que saem da janela pela
+# decisao da Maria de 25/ago/2026 -- a V3 le de 2026 para frente. O recebimento
+# nao tem linha anterior a 2026, entao ele nao muda.
+NO_ARQUIVO = {"rec": 36_300, "exp": 42_468}
+LINHAS = {"rec": 36_300, "exp": 42_318}
+FORA_DA_JANELA = {"rec": 0, "exp": 150}
 UNIDADES = 6
 NOMES_ESTOQUE = 40
 RAIZES_CLIENTE = 14
@@ -398,9 +405,10 @@ def test_linha_invalida_derruba_a_rodada_inteira(banco_migrado):
         "o registro da falha tem que sobreviver ao rollback, com a mensagem"
 
 
-def test_fora_de_escopo_e_pulado_e_fonte_vazia_e_sem_dado(banco_migrado):
+def test_fora_de_escopo_e_pulado_e_incremental_vazio_e_sem_dado(banco_migrado):
     """Duas linhas que nao entram, por motivos diferentes. Fora de escopo e
-    outro negocio (nao derruba); fonte vazia e o caso normal do incremental."""
+    outro negocio (nao derruba); incremental vazio e o caso normal do dia a
+    dia."""
     dentro = linha_crua("rec", num_gem="0000000001")
     fora = linha_crua("rec", num_gem="0000000002", nk_instancia="DISTROMAQ_PRD")
 
@@ -414,12 +422,127 @@ def test_fora_de_escopo_e_pulado_e_fonte_vazia_e_sem_dado(banco_migrado):
     # lidas - inseridas - atualizadas continue sendo exatamente as iguais
     assert _cargas()[-1][4] == 1
 
-    vazia = carregar_movimento(FonteFalsa({"rec": []}), "rec")
+    marca = destino.marca_dagua("rec")
+    vazia = carregar_movimento(FonteFalsa({"rec": []}), "rec", desde=marca)
     assert vazia.status == "sem_dado"
     assert _cargas()[-1][3] == "sem_dado"
     # rodada sem dado nao pode virar marca d'agua: o incremento seguinte
     # retomaria do lugar errado
     assert destino.marca_dagua("rec") == datetime(2026, 8, 20, 15, 26, 39)
+
+
+def test_mesmo_gem_em_anos_diferentes_convive(banco_migrado):
+    """A regressao da primeira carga real (25/ago/2026).
+
+    O DW reconstruiu a tabela com 2023-2026 e a carga morreu com `ON CONFLICT DO
+    UPDATE command cannot affect row a second time`: `num_gem` se recicla por
+    ano, e a chave natural de seis colunas nao tinha ano. Repetia em 27.834
+    linhas de 201.848 no recebimento.
+
+    Este teste e o mesmo cenario em miniatura -- a MESMA guia em quatro anos, no
+    mesmo lote, como a fonte a entrega. Sem `ano_solic` na identidade ele morre
+    exatamente como a producao morreu."""
+    quatro_anos = [
+        linha_crua(
+            "rec",
+            num_gem="0000000020",
+            ano_solic=str(ano),
+            data_solic=f"{ano}-01-03 00:00:00.000",
+            nk_calendario=f"{ano}-01-03 00:00:00.000",
+        )
+        for ano in (2023, 2024, 2025, 2026)
+    ]
+    resultado = carregar_movimento(FonteFalsa({"rec": quatro_anos}), "rec")
+
+    assert (resultado.status, resultado.inseridas) == ("ok", 4),         "as quatro sao guias distintas: mesmo numero, anos diferentes"
+    assert consultar(
+        "SELECT ano_solic FROM cat_fato_recebimento"
+        " WHERE num_gem = '0000000020' ORDER BY ano_solic"
+    ) == [(2023,), (2024,), (2025,), (2026,)]
+
+    # e a idempotencia continua valendo com a chave nova: reapresentar as
+    # mesmas quatro nao mexe em nada
+    de_novo = carregar_movimento(FonteFalsa({"rec": quatro_anos}), "rec")
+    assert (de_novo.inseridas, de_novo.atualizadas, de_novo.iguais) == (0, 0, 4)
+
+    # E a mesma chave com conteudo DIFERENTE no mesmo lote segue sendo alarme --
+    # foi assim que a producao morreu: a segunda linha tentava atualizar a que a
+    # primeira acabara de inserir. Chave nova de proposito, e o paragrafo abaixo
+    # explica por que isso importa.
+    nova = linha_crua("rec", num_gem="0000000021", ano_solic="2023",
+                      data_solic="2023-01-03 00:00:00.000",
+                      nk_calendario="2023-01-03 00:00:00.000")
+    divergente = dict(nova)
+    divergente[contrato.coluna_dw("qtde_peso2", "rec")] = "999.000"
+    with pytest.raises(Exception, match="affect row a second time"):
+        carregar_movimento(FonteFalsa({"rec": [nova, divergente]}), "rec")
+
+
+def test_o_alarme_de_chave_repetida_tem_um_furo_conhecido(banco_migrado):
+    """Limite do alarme, medido em 25/ago/2026 -- fixado aqui para ninguem
+    acreditar que ele e total.
+
+    O `ON CONFLICT DO UPDATE` so grita ("cannot affect row a second time")
+    quando duas linhas do mesmo lote realmente ESCREVEM na mesma linha. O
+    `WHERE ... IS DISTINCT FROM` (que existe para `linhas_atualizadas` significar
+    o que diz) faz uma linha identica a do banco nao afetar nada -- e nesse caso
+    a companheira divergente escreve sozinha, sem alarme, e vence.
+
+    Para o furo aparecer e preciso a conjuncao: a fonte publicar a mesma chave
+    duas vezes com conteudo diferente, E uma das duas ser byte a byte igual ao
+    que ja esta gravado -- inclusive `pk_dw` e `dw_data_alteracao`, que mudam
+    sempre que o DW reconstroi ou toca a linha. Ou seja: so acontece com linha
+    que o DW nao tocou desde a nossa ultima carga.
+
+    Nao foi fechado, e a razao e custo: fechar exige guardar a chave de cada
+    linha da rodada em memoria (uma pagina nao basta, porque a repeticao pode
+    cair entre paginas) -- ~80 MB para 232 mil linhas -- ou trocar por hash e
+    aceitar alarme falso. O estado que sobra e defensavel (a linha divergente
+    vence, e nenhuma medida se perde), e um furo escrito e melhor que um alarme
+    em que se confia sem saber onde ele nao alcanca."""
+    linha = linha_crua("rec", num_gem="0000000777", ano_solic="2024",
+                       data_solic="2024-03-01 00:00:00.000",
+                       nk_calendario="2024-03-01 00:00:00.000")
+    primeira = carregar_movimento(FonteFalsa({"rec": [linha]}), "rec")
+    assert primeira.inseridas == 1
+
+    divergente = dict(linha)
+    divergente[contrato.coluna_dw("qtde_peso2", "rec")] = "999.000"
+    # a identica nao afeta nada; a divergente escreve sozinha -> sem alarme
+    passou = carregar_movimento(FonteFalsa({"rec": [linha, divergente]}), "rec")
+    assert (passou.status, passou.atualizadas) == ("ok", 1)
+    assert consultar(
+        "SELECT qtde_peso2 FROM cat_fato_recebimento WHERE num_gem = '0000000777'"
+    ) == [(Decimal("999.000"),)], "a divergente venceu, e em silencio"
+
+
+def test_carga_completa_vazia_e_erro_e_nao_sem_dado(banco_migrado):
+    """V3.5, A-7: a carga nunca pode reportar desfecho normal com zero linha.
+
+    `sem_dado` e certo no incremental (nada mudou no DW) e errado numa carga
+    COMPLETA -- ali ele significa a fonte inteira vindo vazia, com a tela
+    seguindo em frente com o dado velho e ninguem avisado. Tabela ausente ja
+    derruba sozinha com `ORA-00942`; esta guarda cobre o caso pior, a tabela
+    que existe e vem vazia porque o DW reconstroi objeto.
+
+    Os dois motivos possiveis produzem mensagens diferentes de proposito: "a
+    fonte nao devolveu linha" e um problema no DW ou no acesso; "todas fora do
+    escopo" e a instancia ter mudado, que e problema de negocio."""
+    from catering.carga import CargaVazia
+
+    with pytest.raises(CargaVazia, match="nao devolveu linha nenhuma"):
+        carregar_movimento(FonteFalsa({"rec": []}), "rec")
+
+    ultima = _cargas()[-1]
+    assert ultima[3] == "erro", "a rodada vazia tem que ficar no historico"
+    assert "nenhuma linha" in ultima[8]
+    assert destino.marca_dagua("rec") is None,         "rodada que falhou nao pode virar marca d'agua"
+
+    # o outro motivo: a fonte trouxe linha, mas nenhuma e do catering
+    fora = linha_crua("rec", nk_instancia="DISTROMAQ_PRD")
+    with pytest.raises(CargaVazia, match="fora do escopo"):
+        carregar_movimento(FonteFalsa({"rec": [fora]}), "rec")
+    assert _contar("cat_fato_recebimento") == 0
 
 
 def test_dimensoes_guardam_as_nossas_decisoes(banco_migrado):
@@ -476,6 +599,39 @@ def test_dimensoes_guardam_as_nossas_decisoes(banco_migrado):
     assert _contar("cat_unidades") == 2
     assert _contar("cat_tipos_estoque") == 3
     assert _contar("cat_clientes") == 2
+
+
+@tem_extracao
+def test_piso_de_periodo_corta_2025_e_e_configuravel(monkeypatch):
+    """O recorte da Maria (25/ago/2026): a V3 le de 2026 para frente.
+
+    Fixado contra o arquivo de verdade porque o numero importa: sao **150**
+    linhas de dez/2025 na expedicao, e o recebimento nao tem nenhuma. Se um dia
+    o piso mudar sem querer, e aqui que aparece.
+
+    O piso vive em configuracao porque a Maria nomeou o caso de uso -- comparar
+    2025 com 2026 -- e a segunda metade do teste e essa promessa: baixar o piso
+    devolve as linhas, sem tocar em codigo."""
+    fonte = FonteCSV(DIRETORIO_DW)
+    for movimento in ("rec", "exp"):
+        entregues = sum(1 for _ in fonte.extrair(movimento))
+        assert entregues == LINHAS[movimento], f"{movimento}: janela de 2026"
+        assert NO_ARQUIVO[movimento] - entregues == FORA_DA_JANELA[movimento],             f"{movimento}: o arquivo tem mais linha do que a janela devolve"
+
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2025")
+    assert sum(1 for _ in fonte.extrair("exp")) == NO_ARQUIVO["exp"],         "baixar o piso tem que devolver dez/2025 sem mexer em codigo"
+
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2027")
+    assert sum(1 for _ in fonte.extrair("exp")) == 0
+
+
+def test_piso_invalido_falha_antes_de_ler_qualquer_linha(monkeypatch):
+    """Ano digitado errado nao pode virar "carrega tudo" nem "carrega nada"."""
+    fonte = FonteCSV(DIRETORIO_DW)
+    for ruim in ("26", "20226", "dois mil e vinte e seis"):
+        monkeypatch.setenv(contrato.ENV_ANO_MINIMO, ruim)
+        with pytest.raises(contrato.AnoMinimoInvalido, match=contrato.ENV_ANO_MINIMO):
+            next(fonte.extrair("rec"))
 
 
 @tem_extracao

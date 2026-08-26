@@ -40,6 +40,78 @@ aí vira decisão (trocar a porta no compose + realinhar o pedido da Valcann).
 
 ---
 
+## Passo 1.1 — Escopo dos comandos de container (medido em 25/ago/2026)
+
+**A VM roda quatro projetos, de times diferentes, no mesmo Docker.** Levantado com
+`docker ps` em 25/ago/2026:
+
+| projeto | containers |
+|---|---|
+| Nuvem IA (este) | `nuvemia-nuvem-app-1`, `nuvemia-nuvem-db-1` |
+| Conciliador | `conciliador_frontend`, `conciliador_backend`, `conciliador_db` |
+| Hub | `superfrio-hub`, `superfrio-db` |
+
+**O nome do projeto Compose na VM é `nuvemia`**, não `nuvem-ia` — ele vem do nome do
+diretório (`/home/ubuntu/nuvemIA`), e é diferente do nome local. Todo filtro por nome
+tem que usar o da VM.
+
+### Comandos que derrubam sistema de outro time
+
+Não é hipótese: um único comando amplo alcança os sete containers. Os cinco abaixo são
+os que aparecem em receita de internet e em memória muscular:
+
+| comando | o que ele realmente faz aqui |
+|---|---|
+| `docker stop $(docker ps -q)` | para **os sete** — Conciliador e Hub caem junto |
+| `docker system prune -a` | apaga imagem de todo container **parado**; o projeto do outro time não volta sem rebuild/pull |
+| `docker system prune --volumes` | apaga **volume** — é o banco do Conciliador e do Hub, sem backup no caminho |
+| `docker compose down` no diretório errado | Compose age sobre o projeto do **diretório atual**. Em `~/conciliador`, derruba o Conciliador |
+| `docker stop $(docker ps -q --filter name=db)` | casa com `nuvemia-nuvem-db-1`, `conciliador_db` **e** `superfrio-db` — três bancos, três projetos |
+
+E um que não atinge outro time, mas destrói dado nosso: **`docker compose down -v`**
+apaga o volume `nuvem_db_data`, que é o Postgres de produção da Nuvem IA.
+
+### A forma segura
+
+```bash
+pwd                                    # SEMPRE antes de qualquer comando compose
+docker ps --filter label=com.docker.compose.project=nuvemia   # só o nosso
+docker compose ps                      # do diretório certo, só este projeto
+```
+
+- Nunca `prune`, em nenhuma variante. Se faltar disco, resolver por nome, item a item.
+- Nunca parar/remover container por padrão genérico de nome.
+- `down -v` só com autorização explícita da Duda e backup confirmado.
+- **No V3.6**, ao acrescentar o serviço da V3 ao compose, subir **nomeando o serviço**
+  (`docker compose up -d <servico-novo>`) em vez de um `up -d` seco: o `up` recria
+  serviço cuja configuração mudou, e pode recriar o app da V2 sem necessidade.
+
+## Passo 1.2 — A VM alcança o DW Oracle (verificado em 25/ago/2026)
+
+Pré-requisito do V3.5/V3.6, verificado pela Maria **antes** de existir código que dependa
+dele — descobrir isso no dia do deploy travaria a subida:
+
+```bash
+getent hosts oracleprd-aws.superfrio.com.br
+timeout 5 bash -c "cat < /dev/null > /dev/tcp/oracleprd-aws.superfrio.com.br/1521"   && echo "PORTA 1521 ABRE" || echo "FALHOU"
+docker exec nuvemia-nuvem-app-1 python -c "import socket; s=socket.create_connection(('oracleprd-aws.superfrio.com.br',1521),5); print('ABRE DE DENTRO DO CONTAINER'); s.close()"
+```
+
+Resultado: **abre nos dois** — host e container. O nome resolve para **`172.31.80.11`**
+(host real `l001porcdb.superfrio.com.br`), e a VM é `172.31.49.141`: **mesma faixa
+`172.31.x.x`**, ou seja, tráfego interno da VPC, sem NAT nem gateway externo no caminho.
+
+Os dois testes existem porque são perguntas diferentes: o host pode alcançar e o
+container não (DNS do Docker é servidor embutido, e rede de container pode ter rota
+própria). Quem vai conectar é o processo da aplicação, então o teste que decide é o de
+dentro do container.
+
+Isto **não** prova que o listener do Oracle aceita sessão — prova que a rede chega. O
+handshake em modo thin já foi provado da máquina da Maria (Oracle 12.2, `service_name`,
+sem Instant Client).
+
+---
+
 ## Passo 2 — Deploy key do repo Nuvem
 
 A VM usa **uma deploy key por repo, com apelido de host** no `~/.ssh/config`
@@ -441,6 +513,91 @@ docker run --rm --network nuvem-teste \
 
 O banco de teste é **zerado** a cada teste — nunca aponte `TEST_DATABASE_URL` pro
 banco de verdade.
+
+## Carga agendada da V3 — construída no V3.5, **ligada no V3.6**
+
+`scripts/carga_catering.sh` já existe e funciona. **Não instale o crontab
+agora**: faltam duas coisas que só o V3.6 resolve, e ligar antes disso produz
+uma carga que falha todo dia às 07h05 ou, pior, uma que roda no horário errado
+sem ninguém notar.
+
+### Pendência 1 — o serviço da V3 no compose
+
+A imagem de hoje **não contém `catering/`**: o `Dockerfile` faz `COPY` de
+`backend/` e `frontend/`, e nada mais. Então `docker compose run --rm <serviço>
+python -m catering.carga` não tem o que rodar até o V3.6 acrescentar o serviço.
+
+O script falha alto nesse caso, listando os serviços que existem — de propósito:
+numa VM com quatro projetos, a mensagem crua do Compose manda quem estiver de
+plantão para o lugar errado. O nome vem de `SERVICO_CATERING` (padrão
+`nuvem-cat`).
+
+O serviço da V3 precisará das variáveis do DW, que o Compose lê do `.env` da VM:
+
+```yaml
+    environment:
+      DW_USER: ${DW_USER}
+      DW_SENHA: ${DW_SENHA}
+```
+
+A credencial chega no container **por variável de ambiente do Compose**, nunca
+como argumento de linha de comando — argumento aparece em `ps`, em log de shell
+e no histórico.
+
+### Pendência 2 — o fuso da VM (conferir antes de ligar)
+
+O contrato diz **07h05 e 15h05**, 30 minutos depois das rodadas do processo do
+DW (que roda a cada 2h, de 6h35 a 23h35). Se a VM estiver em UTC, `5 7 * * *`
+dispara às **04h05 locais** — antes da primeira rodada do DW do dia — e a carga
+leria sempre a véspera, entregando número velho com cara de número novo.
+
+```bash
+timedatectl                 # esperado: Time zone: America/Sao_Paulo
+date -Iseconds
+```
+
+Se estiver em UTC, são duas saídas: ajustar o fuso da VM (afeta os outros três
+projetos, então é decisão a combinar) ou escrever o cron em UTC — `5 10` e
+`5 18` para 07h05/15h05 de Brasília. Escolher a segunda **exige** deixar
+escrito aqui que os horários estão em UTC, senão a próxima pessoa "corrige" de
+volta.
+
+### As duas linhas, quando as duas pendências estiverem fechadas
+
+```bash
+crontab -e
+# adicionar (horários LOCAIS — ver a pendência 2 antes de colar):
+5 7  * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+5 15 * * * cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh >> logs/carga_catering.log 2>&1
+```
+
+Antes: `mkdir -p /home/ubuntu/nuvemIA/logs`.
+
+Como conferir depois de ligar, sem abrir a tela:
+
+```bash
+tail -20 logs/carga_catering.log
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c \
+  "SELECT id, tabela_origem, fonte, status, linhas_lidas, linhas_inseridas, linhas_atualizadas, terminada_em, erro FROM cat_cargas ORDER BY id DESC LIMIT 6"
+```
+
+O que cada status significa: `ok` carregou; `sem_dado` é o desfecho **normal**
+do incremental (nada mudou no DW desde a marca d'água); `erro` tem o motivo na
+coluna `erro`, e o script saiu com código diferente de zero. Rodada `rodando`
+que não terminou é rodada morta no meio — o processo caiu sem passar pelo
+tratamento.
+
+Rodada manual, fora do horário (por exemplo depois de arrumar uma falha):
+
+```bash
+cd /home/ubuntu/nuvemIA && ./scripts/carga_catering.sh                  # incremental
+cd /home/ubuntu/nuvemIA && MODO=completa ./scripts/carga_catering.sh    # recarga cheia
+```
+
+Duas rodadas nunca correm juntas: o script usa `flock` e a segunda desiste
+registrando `PULADA` no log. Isso é proteção contra rodada que atrasou além da
+próxima, não contra rodada travada — `PULADA` aparecendo duas vezes seguidas é
+sinal de rodada presa, e aí é olhar `docker ps` e o log.
 
 ## Comandos úteis / rollback
 
