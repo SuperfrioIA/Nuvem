@@ -67,9 +67,18 @@ async def lifespan(app: FastAPI):
     """Bootstrap do primeiro admin, se a tabela estiver vazia e o ambiente
     trouxer as variaveis. Idempotente -- ver `catering/seguranca/__init__.py`.
 
-    Nao roda migration: o schema e o mesmo da V2, migrado pelo startup dela no
-    compose. Duplicar isso aqui daria dois processos correndo `alembic upgrade`
-    ao mesmo tempo na subida do stack."""
+    **Nao roda migration, e o motivo mudou no V3.6.** Antes, o schema vinha do
+    startup da V2 -- que subia no mesmo compose e chamava `migracao.migrar()`.
+    A V2 saiu do ar em 26/ago/2026, e as migrations passaram a ser aplicadas
+    por comando explicito no deploy:
+
+        docker compose run --rm nuvem-cat alembic upgrade head
+
+    Ficou melhor do que era. Migrar como efeito de subir significa que a
+    migration roda quando o orquestrador decide reiniciar o container -- de
+    madrugada, depois de um OOM, num `restart: unless-stopped` -- e sem ninguem
+    olhando o resultado. Explicito, ela roda quando alguem escolheu, com o
+    backup recem-feito e a saida na tela. Ver `docs/DEPLOY.md`, secao V3.6."""
     seguranca.garantir_primeiro_admin()
     yield
 

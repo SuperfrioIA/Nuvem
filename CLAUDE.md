@@ -35,8 +35,10 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `docs/EXECUCAO_LOCAL.md` — fonte oficial do método real de subir, testar e
   encerrar o projeto nesta máquina.
 - Fase atual: **construção da V3 — volumetria de catering lendo o DW Oracle**
-  (aberta em 24/ago/2026; **V3.0 a V3.3 feitos em 24/ago, e V3.4 (login e papéis)
-  e V3.5 (fonte Oracle) em 25/ago**; V3.6 em diante não autorizado — status em
+  (aberta em 24/ago/2026; **V3.0 a V3.3 em 24/ago, V3.4 (login) e V3.5 (fonte
+  Oracle) em 25/ago, V3.5.1 (fuso de exibição) e V3.6 (deploy) em 26/ago**. O
+  V3.6 tem **código pronto e execução na VM pendente** — o procedimento de 14
+  passos está em `docs/DEPLOY.md`. V3.7 em diante não autorizado; status em
   `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.
@@ -44,10 +46,12 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   contra driver falso, e a prova de leitura real é um comando que a Maria roda
   (`python -m catering.carga --fonte oracle --sondar`). A credencial (`DW_USER`,
   `DW_SENHA`) vive no `.env` — nunca no chat, em log, em teste ou em commit.
-- O agendamento da carga (07h05 e 15h05) **está escrito e desligado**
-  (`scripts/carga_catering.sh`): ele é ligado no V3.6, junto com o deploy, e há
-  duas pendências nomeadas no `docs/DEPLOY.md` (o serviço da V3 no compose e o
-  fuso da VM).
+- O agendamento da carga (07h05 e 15h05) **está escrito e ainda desligado**
+  (`scripts/carga_catering.sh`): ele é o passo 14 do deploy. As duas pendências
+  do `docs/DEPLOY.md` estão fechadas — o serviço `nuvem-cat` existe no compose
+  (V3.6) e o **cron é escrito em UTC** (`5 10` e `5 18` para 07h05/15h05 de
+  Brasília), decidido para não mexer no fuso da VM, que é compartilhada com
+  outros três projetos. Não "corrigir" para `5 7`: o motivo está no `DEPLOY.md`.
 - O app da V3 **exige login** desde o V3.4: `catering/seguranca/` (papel separado
   de identidade, para o AD entrar depois), e local ele precisa de `CAT_SECRET_KEY`
   no ambiente — ver `docs/EXECUCAO_LOCAL.md`, caminho C. Credencial vai para o
@@ -56,6 +60,10 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   continua sendo o que está em produção na VM, então `backend/`, `frontend/` e
   as migrations até a 0018 ficam **intactos** — a V3 não altera nem importa
   código de lá. Regra reaproveitada entra por **cópia com teste próprio**.
+  **No V3.6 ela sai do ar** (decisão da Maria, 26/ago/2026: nenhuma das telas
+  era usada) — e sai **sem edição de código**, removendo o serviço do compose.
+  O bloco fica comentado no `docker-compose.yml`, e o código, o volume e as
+  tabelas da V1/V2 continuam intactos: reativar o laboratório é descomentar.
   Duas falhas conhecidas da suíte (`test_volumetria.py` e
   `test_volumetria_router.py`, siglas antigas depois do `e5805b3`) são V2 e
   ficam como estão. O antigo só sai da VM depois da tela nova de pé.

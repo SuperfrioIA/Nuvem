@@ -251,7 +251,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.3** | Planilha aberta + download em streaming e auditoria — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso — **feito em 25/ago/2026**, ver seção abaixo | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento construído e desligado — **feito em 25/ago/2026**, ver seção abaixo | **sim** |
-| **V3.6** | Deploy na VM; desmonte do admin e do linhagem em produção | não |
+| **V3.6** | Deploy na VM; a V2 sai do ar inteira — **código pronto em 26/ago/2026, execução na VM pendente** (procedimento em `docs/DEPLOY.md`) | **sim** |
 | **V3.7** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.8** | Laboratório novo, sobre o dado do DW | não autorizado |
 
@@ -1825,6 +1825,97 @@ carga — a mudança é de exibição e de mensagem. O terceiro item dos achados
 Nove testes novos. Os cinco do fuso foram verificados contra o defeito: com a
 correção revertida, **quatro falham** (o quinto é o do contrato, que não deveria
 falhar) — teste que passa antes e depois não prova nada.
+
+---
+
+## Lote V3.6 — Deploy: a V3 sobe, a V2 sai (código pronto, execução pendente)
+
+Autorizado em 26/ago/2026. **O código está pronto e a execução na VM é da
+Maria** — o procedimento numerado está em `docs/DEPLOY.md`, seção "V3.6".
+
+### A decisão que mudou o lote: a V2 sai inteira
+
+O plano previa "desmonte do admin e do linhagem", e ao levantar o V3.6 apareceu
+um conflito: `/admin` e `/linhagem` **não são um serviço**, são duas rotas dentro
+do `backend/main.py` — o mesmo processo que serve `/nuvem`, `/cockpit` e
+`/laboratorio`. Tirar só as duas exigiria editar a V2, que está **congelada** por
+regra do `CLAUDE.md`. Havia três saídas, e a pergunta que decidia era de negócio:
+aquelas telas ainda servem para alguém?
+
+Resposta da Maria: **nenhuma delas serve.** *"Futuramente talvez a gente volte a
+usar o laboratório, mas aí a gente reativa e mexe nele."*
+
+Com isso o desmonte volta a ser o que o V3.2 tinha prometido — **remover um
+serviço, não editar código** — e `backend/` fica intacto de verdade.
+
+### O ganho que a decisão destravou: as migrations saem do startup
+
+Este é o melhor efeito colateral do lote, e ele resolve um risco que estava no
+projeto desde o V3.0 sem estar escrito em lugar nenhum.
+
+As migrations da V3 (0019–0023) entrariam em produção **de carona no startup da
+V2**: o `Dockerfile` copia `alembic/` e `backend/main.py` chama
+`migracao.migrar()` ao subir. Consequência que ninguém havia decidido: **uma
+migration da V3 com defeito derrubaria a V2**, porque `migrar()` roda antes de a
+aplicação servir.
+
+Como a V2 não sobe mais, elas passam a ser aplicadas explicitamente
+(`docker compose run --rm nuvem-cat alembic upgrade head`). Em produção o
+`migrar()` cairia no caminho *gerenciado* — a `alembic_version` existe, então é
+literalmente `upgrade head` — logo o comando explícito faz o mesmo, no momento
+escolhido, sem acoplar a V3 ao ciclo de vida de um app que está saindo.
+
+Verificado em 26/ago/2026 na produção, antes de decidir: `pg_tables LIKE 'cat_%'`
+devolveu só `catalogo_campos`, `catalogo_colunas` e `catalogo_fontes` — que são
+da V1/V2. **O schema da V3 não estava em produção**, o que confirma que a V2 não
+foi reconstruída desde 24/ago e que o V3.6 cria, não confere.
+
+### O que muda no repositório
+
+| arquivo | mudança |
+|---|---|
+| `Dockerfile` | `COPY catering/` e `COPY scripts/carga_catering.sh` — sem eles, o script da carga falha alto de propósito |
+| `docker-compose.yml` | serviço `nuvem-cat` na porta 8003; o bloco `nuvem-app` fica **comentado, não deletado** |
+| `.env.example` | `CAT_SECRET_KEY` documentada (faltava — ver abaixo) e `CAT_COOKIE_SECURE` |
+| `docs/DEPLOY.md` | procedimento de 14 passos, com os dois não-retornos marcados; pendências 1 e 2 fechadas |
+
+**Uma imagem só para as duas aplicações**, e não duas: as dependências são as
+mesmas e a cadeia de migrations é a mesma. Duas imagens dobrariam o build para
+separar o que já está separado no processo.
+
+### `--no-access-log` na V3, por motivo diferente da V2
+
+A V2 desliga o access log porque tem middleware próprio que loga método e path
+**sem** query string (Bloco G, onde cliente e filial vazavam em claro). A V3
+**não tem middleware nenhum** — então a escolha aqui é entre não ter log de
+requisição e ter um que vaza o recorte (`clientes=`, `unidades=` viajam em query
+string).
+
+Fica sem, e o substituto é melhor que access log: a V3 audita **em banco**
+(`cat_auditoria`, V3.3/V3.4) usuário, evento, recorte, formato, linhas e IP. Log
+de requisição morre com o container; auditoria em banco entra no backup.
+
+### Um achado do lote: `CAT_SECRET_KEY` não estava no `.env.example`
+
+O `.env` local da Maria tem a variável desde o V3.4, então o `docker compose
+config` validou sem reclamar — e o `.env.example`, que é de onde se monta o
+`.env` da VM, não a mencionava.
+
+O modo de falhar é o pior possível: **o app sobe, o `/health` responde 200 e o
+login estoura.** Quem olha só o healthcheck conclui que está no ar. Documentada
+agora, com o efeito escrito ao lado do nome.
+
+### O que este lote NÃO faz
+
+Não executa o deploy — isso é da Maria, pelo procedimento do `DEPLOY.md`. Não
+apaga dado: o volume `nuvem_db_data` e as tabelas da V1/V2 ficam. Não remove
+`backend/` nem `frontend/`. Não instala o crontab (passo 14, na VM). Não mexe no
+Conciliador nem no Hub.
+
+### Suíte
+
+A **completa**, e não só a do lote — a regra é essa antes de um deploy, porque a
+fronteira deixa de ser só o schema.
 
 ## Regras de trabalho
 
