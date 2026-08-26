@@ -1334,6 +1334,32 @@ se confia sem saber onde ele não alcança é pior que alarme com limite escrito
   aqui, e a Matriz não é afetada porque ela agrega por `nk_calendario` (A-5).
   **Decisão aberta:** se a planilha e o download devem declarar essas linhas.
 
+### A 0023 validada nas duas direções (26/ago/2026)
+
+A regra de trabalho manda validar migration no upgrade **e** no downgrade, e a
+0023 é incomum porque o downgrade dela foi escrito para **falhar de propósito**
+quando existe mais de um ano de histórico. Isso não tinha teste nem validação
+manual; foi exercitado no fechamento do lote, no `nuvem_teste`:
+
+| passo | resultado |
+|---|---|
+| banco vazio, `downgrade 0022` | cria `uq_cat_fato_rec_identidade_antiga` com **6 colunas**, sem `ano_solic` |
+| `upgrade head` | volta para `uq_cat_fato_rec_identidade` com as **7 colunas** |
+| duas linhas, mesmo `num_gem`, `ano_solic` 2025 e 2026, `downgrade 0022` | **`UniqueViolation`** — `could not create unique index` |
+
+O terceiro passo é o que importava, e o desfecho é melhor do que o docstring
+prometia: além de recusar, **a transação inteira voltou atrás**. A revisão ficou
+em `0023`, a restrição de sete colunas continuou no lugar e as duas linhas
+continuaram lá. A tabela não passou por nenhum instante sem identidade — o
+`DROP` da antiga e o `CREATE` da nova estão na mesma transação, então o
+`_trocar()` é atômico. Falhar aqui é o comportamento certo: a alternativa seria
+apagar linha do usuário para a chave antiga caber.
+
+O **upgrade** já era coberto indiretamente, e continua: o
+`tests/test_catering_schema.py` afirma que o UNIQUE de cada tabela de fato é
+exatamente `contrato.CHAVE_NATURAL`, então mudar a chave no contrato sem
+migration (ou o contrário) deixa a suíte vermelha.
+
 ### O escopo continua sendo filtrado em Python
 
 Não existe `WHERE NK_INSTANCIA LIKE 'SLIN_%'` no SQL, de propósito. O V3.1 conta
@@ -1435,6 +1461,44 @@ Duas coisas que só o V3.6 fecha, e estão escritas no `DEPLOY.md`: o **nome do
 serviço** e o **fuso da VM** — se ela estiver em UTC, `5 7 * * *` é 04h05 local,
 antes da rodada de 06h35 do DW, e a carga leria sempre a véspera.
 
+### Três coisas achadas no fechamento, e adiadas de propósito
+
+Decisão da Maria, 26/ago/2026: fechar o V3.5 com a troca de fonte provada e não
+abrir código novo antes do deploy. As três vão para o escopo do V3.6.
+
+**1. O fuso não fica só no cron — ele vaza para a tela.** Medido no fechamento: a
+carga terminou às **09h45** no relógio da máquina e o rodapé "De quando é o dado"
+mostra **12h45**, quase três horas no futuro. A causa não é o dado: `terminada_em`
+é `timestamptz` e grava UTC corretamente; ninguém converte na hora de exibir, e a
+sessão do Postgres está em `Etc/UTC`. São dois pontos:
+
+| onde | linha | o que mostra errado |
+|---|---|---|
+| rodapé de procedência da Matriz | `catering/app.py:262` | a hora da última carga |
+| coluna "quando" da auditoria, em `/administracao` | `catering/app.py:476` | a hora de cada acesso e download |
+
+O segundo é o que incomoda de verdade: **auditoria com hora errada é problema de
+rastreabilidade**, não de estética — é o registro que se consulta quando alguém
+pergunta quem baixou o quê e quando. `max_dw_data_alteracao` **não** entra nessa
+lista: ela é `timestamp without time zone` de propósito, porque é o relógio do DW.
+
+O conserto é `AT TIME ZONE` nos dois `to_char`, com teste. A alternativa mais
+correta a longo prazo é mandar ISO-8601 para o front e formatar no fuso do
+navegador — melhor se um dia houver operação fora do Brasil, e mais mudança do
+que o momento pede. **Fica junto do fuso do cron porque é a mesma decisão de
+fundo** (qual é o fuso de referência do sistema), e resolver separado é convidar
+a segunda correção a desfazer a primeira.
+
+**2. `DATABASE_URL` ausente falha com uma mensagem que não ajuda.** Ela sai como
+`carga falhou: 'DATABASE_URL'` — um `KeyError` cru vazando pelo tratamento
+genérico do `__main__`. A ausência da credencial do DW é tratada bem
+(`CredencialAusente`, nomeando as duas variáveis); a do Postgres não. Custou dois
+tropeços reais no fechamento deste lote, no mesmo lugar.
+
+**3. Ajuste visual da tela.** Nada específico foi levantado na validação de
+26/ago. Fica depois do deploy por decisão de risco: mexer na tela agora adiciona
+risco ao único caminho já provado ponta a ponta.
+
 ### Como rodar
 
 ```
@@ -1498,10 +1562,28 @@ de 2026:
 O número da sondagem e o da carga coincidem (42.726 na janela, 42.726 gravadas),
 então nada se perdeu entre contar e gravar.
 
-**Falta uma coisa para o aceite fechar:** a **segunda carga completa**, que prova
-o `WHERE ... IS DISTINCT FROM` contra o Oracle (esperado: `0 inserida, 0
-atualizada`). A suíte já prova isso com CSV e com fonte falsa; contra o Oracle
-ainda não rodou.
+**A segunda carga completa fechou o aceite**, em 26/ago/2026 (09h44 e 09h45):
+
+| movimento | resultado |
+|---|---|
+| rec | 36.678 lidas, **0 inserida, 0 atualizada, 36.678 iguais**, 0 fora de escopo |
+| exp | 42.726 lidas, **0 inserida, 0 atualizada, 42.726 iguais**, 0 fora de escopo |
+
+O contador de **iguais** é a prova, e não o de inseridas: ele leu as 79.404
+linhas, comparou coluna por coluna e **não escreveu nada** — é o
+`WHERE ... IS DISTINCT FROM` do upsert exercitado contra o driver real, que a
+suíte só provava com CSV e com fonte falsa.
+
+Uma rodada intermediária falhou antes disso, e o registro dela também é aceite:
+às 09h05 a carga morreu com `[Errno 11001] getaddrinfo failed` — DNS, resolvido
+sozinho na tentativa seguinte. A rodada 5 ficou em `cat_cargas` com
+`status='erro'` e a mensagem, **as 79.404 linhas continuaram intactas** e a
+expedição nem começou (o carregador aborta no primeiro movimento que falha).
+Falha de rede virou linha de log, não dado torto.
+
+**A tela foi validada no navegador pela Maria** em 26/ago/2026, com o dado do
+Oracle no banco (caminho C, porta 8003) — a regra de que lote que mexe em tela
+não fecha por leitura. Aprovada.
 
 ### A verificação que a carga real permitiu: Oracle x CSV, célula por célula
 
