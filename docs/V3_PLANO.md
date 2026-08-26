@@ -1565,6 +1565,40 @@ O container de teste foi derrubado pelo Docker Desktop no meio de uma rodada, de
 novo — o keep-alive de `memory/suite-testes-local.md` resolveu, como nas vezes
 anteriores.
 
+### O respaldo da arquitetura, medido em 26/ago/2026
+
+A pergunta "por que não ler o DW ao vivo?" vai aparecer, e agora tem resposta com
+número: `docs/ARQUITETURA_FONTE_DE_DADOS.md`. O documento é transversal de
+propósito (sem "V3" no nome) — ele vale para qualquer tela nova que leia do DW.
+
+O que foi medido no banco local com a carga real de 2026 dentro:
+
+| medida | valor | como |
+|---|---|---|
+| disco por linha, com índices | **582 B** (rec) e **589 B** (exp) | `pg_total_relation_size` |
+| todo o histórico do DW (433.734 linhas) | **cerca de 242 MB** | extrapolação dos bytes por linha |
+| crescimento | **cerca de 120 mil linhas/ano, 70 MB/ano** | duas contas independentes que fecham |
+| memória da carga | **3,9 MB, constante** | `tracemalloc` com 5 mil, 20 mil e 42 mil linhas |
+| agregação de 6 medidas sobre 36.678 linhas | **21,6 ms**, `shared hit=1721`, zero leitura de disco | `EXPLAIN (ANALYZE, BUFFERS)` |
+| Matriz completa | **36,5 ms** (rec) e **62,0 ms** (exp) | a função real da tela, mediana de 5 |
+
+Três consequências que valem para as decisões seguintes:
+
+1. **Volume não é critério aqui.** Trazer 2023 em diante custa 242 MB e uma
+   variável de ambiente (`DW_ANO_MINIMO`). O que decide o piso do período é
+   produto — quatro anos de coluna na Matriz e as linhas de `data_solic` podre
+   voltando para dentro da janela — e não disco;
+2. **a memória da carga não cresce com a tabela**, porque o carregador streama em
+   lotes de `destino.PAGINA`. Recarga completa do histórico inteiro é tempo
+   (cerca de 2,5 min), nunca pressão de memória;
+3. **a tela varre a tabela inteira e responde em 22 ms** porque a cópia é local e
+   pequena. Com o histórico completo o heap (cerca de 168 MB) passa do
+   `shared_buffers` de 128 MB — o dia em que isso incomodar, a saída é índice por
+   `nk_calendario` ou partição por ano, no nosso banco, com migration nossa.
+
+O documento também registra o que **não** foi medido: o custo de uma agregação
+dentro do DW, que exigiria conectar em produção.
+
 ### Arquivos
 
 - `catering/carga/fonte_oracle.py` (novo)
@@ -1581,6 +1615,8 @@ anteriores.
 - `scripts/carga_catering.sh` (novo, **não instalado**)
 - `requirements.txt` (`oracledb==4.0.2`), `.env.example` (as variáveis `DW_*`)
 - `tests/test_catering_oracle.py` (novo, 29), `tests/test_catering_carga.py`
+- `docs/ARQUITETURA_FONTE_DE_DADOS.md` (novo — o respaldo da decisão de
+  arquitetura, com as medições de volume, memória e tempo de consulta)
 
 ### O que este lote NÃO fez
 
