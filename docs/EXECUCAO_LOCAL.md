@@ -135,6 +135,14 @@ Sobre as variáveis (detalhe e motivo em `docs/V3_PLANO.md`, lote V3.4):
   `cat_usuarios` está vazia. Depois disso são inertes — não recriam nem trocam
   senha de quem existe. **Senha não vai para o chat nem para commit.**
 - `CAT_COOKIE_SECURE` fica desligada local (não há HTTPS).
+- **`CAT_FUSO_EXIBICAO`** (padrão `America/Sao_Paulo`) é o fuso em que data e
+  hora **aparecem** na tela — o rodapé "De quando é o dado" e a coluna "quando"
+  da auditoria. O dado é gravado em UTC (`timestamptz`), que é o certo; esta
+  variável só governa a leitura. Sem ela o `to_char` renderizava no fuso da
+  sessão do Postgres (`Etc/UTC` no container) e uma carga das 09h45 aparecia
+  como **12h45** — medido em 26/ago/2026. Fuso desconhecido
+  (`America/SaoPaulo`, sem o `_`) falha nomeando a variável. **Não é o mesmo
+  fuso do crontab**, que é UTC de propósito (`docs/DEPLOY.md`).
 
 Usuário depois do primeiro: `python -m catering.seguranca criar --login ...`
 (a senha é pedida por `getpass`, nunca por argumento de linha de comando).
@@ -238,6 +246,11 @@ Variáveis, e o que cada uma exige:
 | `--fonte csv` | `DATABASE_URL` |
 | `--fonte oracle --sondar` | `DW_USER` e `DW_SENHA` — **e mais nada**. Não toca no Postgres |
 | `--fonte oracle` (carga) | `DATABASE_URL` + `DW_USER` + `DW_SENHA` |
+
+Faltando qualquer uma delas, o comando **recusa na entrada** com a orientação de
+como exportar — e não com `KeyError: 'DATABASE_URL'` no meio da rodada, que foi
+o que aconteceu duas vezes em 26/ago/2026. `--sondar` não paga o pedágio do
+`DATABASE_URL`, porque não toca no Postgres.
 
 `DW_HOST`, `DW_PORTA` e `DW_BANCO` têm padrão no código
 (`oracleprd-aws.superfrio.com.br:1521/pdwgener`, Oracle 12.2 em modo thin, sem

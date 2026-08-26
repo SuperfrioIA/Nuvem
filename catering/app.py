@@ -256,14 +256,21 @@ def opcoes(usuario=Depends(sessao.exigir_login)):
             )
             periodo = cur.fetchone()
 
-            # procedencia: de quando e o dado que a tela esta mostrando
+            # procedencia: de quando e o dado que a tela esta mostrando.
+            # `AT TIME ZONE` porque `terminada_em` e `timestamptz` e o `to_char`
+            # renderiza no fuso da sessao -- sem isto uma carga das 09h45
+            # aparece como 12h45 (ver `contrato.fuso_exibicao`). O fuso entra
+            # por BIND: ele vem de variavel de ambiente, e variavel de ambiente
+            # concatenada em SQL e injecao esperando a vez, mesmo validada.
             cur.execute(
                 """
-                SELECT tabela_origem, fonte, to_char(terminada_em, 'DD/MM/YYYY HH24:MI'),
+                SELECT tabela_origem, fonte,
+                       to_char(terminada_em AT TIME ZONE %s, 'DD/MM/YYYY HH24:MI'),
                        linhas_lidas
                 FROM cat_cargas WHERE status = 'ok'
                 ORDER BY id DESC LIMIT 2
-                """
+                """,
+                (contrato.fuso_exibicao(),),
             )
             cargas = [
                 {"tabela": t, "fonte": f, "quando": q, "linhas": n}
@@ -473,13 +480,18 @@ def api_auditoria(
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, to_char(criado_em, 'DD/MM/YYYY HH24:MI:SS'), evento,
+                SELECT id,
+                       to_char(criado_em AT TIME ZONE %s, 'DD/MM/YYYY HH24:MI:SS'),
+                       evento,
                        usuario, formato, linhas, ip, status, erro, recorte
                 FROM cat_auditoria
                 WHERE (%s IS NULL OR evento = %s)
                 ORDER BY id DESC LIMIT %s
                 """,
-                (evento, evento, limite),
+                # O fuso vem PRIMEIRO: ele aparece antes na string, e a ordem
+                # dos binds e posicional. Auditoria com hora errada e problema
+                # de rastreabilidade, nao de estetica.
+                (contrato.fuso_exibicao(), evento, evento, limite),
             )
             colunas = ("id", "quando", "evento", "usuario", "formato", "linhas",
                        "ip", "status", "erro", "recorte")

@@ -32,7 +32,7 @@ import argparse
 import logging
 import sys
 
-from catering import contrato
+from catering import ambiente, contrato
 
 
 def _sondagem(fonte, movimentos) -> int:
@@ -116,6 +116,15 @@ def main(argv=None) -> int:
             parser.error("--sondar existe so para --fonte oracle")
     elif args.de:
         parser.error("--de nao se aplica a --fonte oracle (a fonte e o banco)")
+
+    # Depois do parse e ANTES de qualquer trabalho: o que falta de ambiente e
+    # conhecido agora, e recusar aqui evita rodada registrada como `erro` por um
+    # motivo que a pessoa poderia ter sabido antes de comecar. `--sondar` nao
+    # toca no Postgres, entao ele nao paga o pedagio do `DATABASE_URL`.
+    if not args.sondar:
+        ambiente.exigir_banco()
+    if args.fonte == "oracle":
+        ambiente.exigir_credencial_do_dw()
 
     logging.basicConfig(
         level=logging.INFO,
