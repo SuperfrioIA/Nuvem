@@ -824,6 +824,132 @@ registrando `PULADA` no log. Isso é proteção contra rodada que atrasou além 
 próxima, não contra rodada travada — `PULADA` aparecendo duas vezes seguidas é
 sinal de rodada presa, e aí é olhar `docker ps` e o log.
 
+## V3.7 + V3.8 — Subir o recorte por dia e trazer o histórico completo (procedimento)
+
+**Código pronto; a execução é da Maria.** Dois lotes numa janela só, e a **ordem
+não pode inverter**: o V3.7 é o que faz a tela abrir em janeiro do ano corrente.
+Sem ele na VM, o histórico do V3.8 faria a Matriz abrir em **01/2023, com 44
+colunas**. Como os dois vão na mesma imagem, um deploy resolve — o piso só age
+no momento da carga.
+
+### O que muda, em uma frase
+
+A tela passa a recortar por **dia** (com filtro de dia do mês) e o banco passa a
+guardar **2023–2026** em vez de só 2026 — de ~79 mil para **~434 mil linhas**.
+
+### Pré-requisitos
+
+- PR do V3.7 e do V3.8 mergeados na `main`, e a VM com o código novo.
+- `.env` da VM **sem** `DW_ANO_MINIMO` (o padrão do compose é 2023). Se a
+  variável estiver lá com 2026, o histórico não entra e nada avisa.
+- Janela sem carga agendada em curso (07h05 e 15h05 locais = 10h05 e 18h05 UTC).
+  O `flock` do `carga_catering.sh` impede duas rodadas simultâneas, mas a rodada
+  nova **desiste** em vez de enfileirar.
+
+### O procedimento
+
+**1. Backup — e a hora de fechar a pendência do cron.** O banco vai receber 5,5x
+mais linha e **não tem backup automático** (a linha do `scripts/backup.sh` nunca
+foi instalada; ver "Backup e restauração"):
+
+```
+cd /home/ubuntu/nuvemIA
+./scripts/backup.sh
+ls -lh backups/ | tail -3
+```
+
+Se for instalar o cron de backup nesta janela (recomendado), a linha está na
+seção de backup — 03h UTC, antes do backup do Conciliador e longe das cargas.
+
+**2. Espaço e tamanho de hoje.** Para saber no que se está entrando:
+
+```
+df -h /
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT relname,
+         pg_size_pretty(pg_total_relation_size(relid)) AS tamanho,
+         n_live_tup AS linhas
+  FROM pg_stat_user_tables
+  WHERE relname LIKE 'cat_fato%' ORDER BY 1"
+```
+
+**3. Deploy** (imagem nova com V3.7 + V3.8):
+
+```
+git pull
+docker compose build nuvem-cat
+docker compose up -d nuvem-cat
+docker compose run --rm nuvem-cat alembic upgrade head   # nenhuma migration nova; confirma que a cadeia está em head
+curl -s localhost:8003/health
+```
+
+**4. A TRAVA — sondagem antes da carga.** Isto não é conferência, é **porta**:
+
+```
+docker compose run --rm nuvem-cat python -m catering.carga --fonte oracle --sondar
+```
+
+`--sondar` **não escreve em lugar nenhum** — nem no DW, nem no Postgres. É por
+isso que ele pode vir antes da carga sem risco.
+
+Ler a seção `identidade` de **cada** tabela. O esperado:
+
+```
+identidade -- a chave certa e a PRIMEIRA que fica unica:
+  chave de hoje            201848 de 201848  -> UNICA
+```
+
+**Se `chave de hoje` disser `repete em N linha(s)`, PARE.** Carga com chave
+colidindo funde medidas em silêncio — e aí o assunto passa a ser identidade, não
+período. A chave de sete colunas (migration 0023, com `ano_solic`) foi medida
+única sobre 201.848 e 231.886 linhas em 25/ago/2026; esta sondagem é o que
+confirma que continua.
+
+Confira também `janela` (tem que dizer `de 2023-01-01 em diante`) e `linhas`
+(`na tabela` e `na janela` praticamente iguais).
+
+**5. A carga cheia.** ~434 mil linhas, só `SELECT` no DW, uma vez. 79 mil
+levaram ~30s, então espere ~3 min:
+
+```
+MODO=completa ./scripts/carga_catering.sh
+tail -30 logs/carga_catering.log
+```
+
+**6. Conferência.** Por ano, que é o que este lote muda:
+
+```
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT extract(year from nk_calendario) AS ano, count(*)
+  FROM cat_fato_recebimento GROUP BY 1 ORDER BY 1"
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT id, tabela_origem, fonte, status, linhas_lidas, linhas_inseridas,
+         linhas_atualizadas, terminada_em, erro
+  FROM cat_cargas ORDER BY id DESC LIMIT 4"
+```
+
+Esperado: quatro anos no recebimento (2023, 2024, 2025, 2026), `status = 'ok'`
+nas duas cargas, `linhas_inseridas` alto e `erro` nulo.
+
+**7. Na tela** (é o que prova que a ordem foi respeitada): abrir em
+**01/01/2026 até hoje** — e não em 2023 —, a dica "Dado disponível" mostrando
+`02/01/2023 a <hoje>`, filtrar para trás até 2023 e ver as colunas antigas
+aparecerem, e pedir CSV do período inteiro para a confirmação de 150 mil linhas
+disparar de verdade.
+
+**8. Amanhã, 07h05:** conferir que o incremental voltou a ser pequeno
+(`linhas_lidas` na casa dos milhares, não 434 mil). Se vier 434 mil, o DW
+reconstruiu a tabela — é seguro, mas não é incremental (ver o V3_PLANO).
+
+### Se der errado
+
+| sintoma | o que fazer |
+|---|---|
+| `chave de hoje` repete na sondagem | **não carregue.** Guardar a saída e tratar como assunto de identidade |
+| carga falha no meio | nada foi perdido: o upsert não apaga e a rodada anterior continua no banco. `cat_cargas.erro` diz a camada |
+| disco apertado | estreitar com `DW_ANO_MINIMO=2024` no `.env` e recarregar; o que já entrou fica |
+| a tela abre em 2023 | o V3.7 não está na imagem — `docker compose build` de novo |
+
 ## Comandos úteis / rollback
 
 ```bash

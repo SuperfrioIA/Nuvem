@@ -38,15 +38,22 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   (aberta em 24/ago/2026; **V3.0 a V3.3 em 24/ago, V3.4 (login) e V3.5 (fonte
   Oracle) em 25/ago, V3.5.1 (fuso de exibição), V3.6 (deploy) e V3.7 (recorte
   por dia) em 26/ago**. O V3.6 foi **executado em 26/ago/2026: a V3 está em
-  produção na VM, porta 8003**, e a V2 saiu do ar. O V3.7 é código e **ainda não
-  foi para a VM**. O **V3.7.1** (filtros com caixas de seleção) está **mapeado e
-  não autorizado**, e o V3.8 em diante também não; status e aceite em
-  `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
+  produção na VM, porta 8003**, e a V2 saiu do ar. **V3.7 e V3.8 (27/ago) são
+  código e ainda NÃO foram para a VM** — os dois sobem na mesma janela, nesta
+  ordem, e a carga cheia do histórico só depois da sondagem provar a chave
+  natural (`docs/DEPLOY.md`, "V3.7 + V3.8"). O **V3.7.1** (filtros com caixas de
+  seleção) está **mapeado e não autorizado**, e o V3.9 em diante também não;
+  status e aceite em `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.
 - **A IA não conecta no DW.** Ele é produção. O V3.5 construiu a leitura inteira
   contra driver falso, e a prova de leitura real é um comando que a Maria roda
-  (`python -m catering.carga --fonte oracle --sondar`). A credencial (`DW_USER`,
+  (`python -m catering.carga --fonte oracle --sondar`).
+- **`DW_ANO_MINIMO` é o piso da CARGA (padrão 2023 desde o V3.8) e
+  `CAT_ABERTURA_DE` é onde a TELA abre (padrão janeiro do ano corrente).** Não
+  confundir. O piso está no `WHERE` de **toda** rodada, não só da primeira: subi-lo
+  faria as atualizações do DW em linha antiga pararem de chegar, e a nossa cópia
+  do histórico congelaria divergindo da fonte em silêncio. A credencial (`DW_USER`,
   `DW_SENHA`) vive no `.env` — nunca no chat, em log, em teste ou em commit.
 - O agendamento da carga **está LIGADO** desde 26/ago/2026
   (`scripts/carga_catering.sh`, no crontab da VM). As duas pendências

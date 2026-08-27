@@ -124,26 +124,38 @@ def tabela(movimento: str) -> str:
 PREFIXO_INSTANCIA = "SLIN_"
 
 # --------------------------------------------------------- piso de periodo
-# Escopo de PERIODO (Maria, 25/ago/2026): a V3 le **de 2026 para frente**.
+# Escopo de PERIODO: a V3 le **de 2023 para frente**, que e o historico inteiro
+# que o DW publica.
 #
-# Por que isto existe: em 25/ago o DW reconstruiu as duas tabelas com historico
-# desde 02/jan/2023, e elas passaram de 79 mil para 434 mil linhas. Ler 2023-2025
-# nao serve a tela de hoje -- e a Maria decidiu o recorte olhando o que a Matriz
-# mostra, nao o que a fonte tem.
+# Historia curta, porque ela explica o valor: em 25/ago/2026 o DW reconstruiu as
+# duas tabelas com historico desde 02/jan/2023 e elas passaram de 79 mil para
+# 434 mil linhas. Naquele dia a Maria recortou em **2026**, porque 2023-2025 nao
+# servia a tela que existia. Em 27/ago/2026 ela pediu o oposto -- *"agora quero
+# trazer os dados full da tabela do dw"* -- e o padrao virou **2023** (V3.8).
 #
-# Fica em **configuracao** e nao como constante enterrada porque a propria Maria
-# nomeou o caso de uso: comparar 2025 com 2026 um dia. Trocar para 2025 e uma
-# variavel de ambiente, sem commit e sem migration.
+# O que mudou entre as duas decisoes nao foi opiniao, foi a TELA: o V3.7 fez ela
+# abrir em janeiro do ano corrente (`abertura_de`) em vez do periodo inteiro do
+# banco. Sem isso, guardar 2023 significaria abrir a Matriz com 44 colunas.
+# Guardar historico e escolher onde comecar a olhar sao decisoes separadas, e e
+# por isso que sao duas variaveis (ver `ENV_ABERTURA_DE`).
 #
-# Duas coisas que valem saber antes de mexer nele:
+# A variavel **continua existindo, e agora serve para ESTREITAR**: local,
+# `DW_ANO_MINIMO=2026` carrega so o ano corrente e sobe rapido.
+#
+# Tres coisas que valem saber antes de mexer nele:
 #
 #   1. o piso corta por **`nk_calendario`**, a data do movimento -- a mesma que a
-#      Matriz agrega (A-5). Guia pedida em dez/2025 e movimentada em jan/2026
-#      ENTRA, porque ela conta em 2026;
+#      Matriz agrega (A-5). Guia pedida em dez/2022 e movimentada em jan/2023
+#      ENTRA, porque ela conta em 2023;
 #   2. **baixar o piso carrega o passado; subir o piso nao apaga nada.** A carga
 #      so insere e atualiza (decisao do V3.1), entao linha que ja entrou fica.
-#      Voltar atras de um piso mais baixo exige DELETE a mao, deliberado.
-ANO_MINIMO_PADRAO = 2026
+#      Voltar atras de um piso mais baixo exige DELETE a mao, deliberado;
+#   3. o piso esta no `WHERE` de **toda** rodada, completa ou incremental -- ele
+#      nao e configuracao "da carga inicial". Por isso ele fica em 2023 em
+#      producao: se voltasse para 2026, as atualizacoes que o DW fizer em linha
+#      de 2023-2025 parariam de chegar, e a nossa copia do historico congelaria
+#      divergindo da fonte em silencio.
+ANO_MINIMO_PADRAO = 2023
 ENV_ANO_MINIMO = "DW_ANO_MINIMO"
 
 # Faixa sa. O que isto pega e o dedo errado -- `20226`, `26`, `2o26` -- que sem

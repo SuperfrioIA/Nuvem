@@ -80,7 +80,10 @@ services:
       # comando -- argumento aparece em `ps` e no historico do shell.
       DW_USER: ${DW_USER}
       DW_SENHA: ${DW_SENHA}
-      DW_ANO_MINIMO: ${DW_ANO_MINIMO:-2026}
+      # Primeiro ano que a CARGA le, por nk_calendario. 2023 = o historico
+      # inteiro que o DW publica (V3.8). Nao confundir com CAT_ABERTURA_DE,
+      # que e onde a tela abre.
+      DW_ANO_MINIMO: ${DW_ANO_MINIMO:-2023}
     depends_on:
       nuvem-db:
         condition: service_healthy

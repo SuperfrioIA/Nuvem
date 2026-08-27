@@ -761,41 +761,45 @@ def test_guarda_de_runtime_todo_comando_emitido_e_select():
 
 
 def test_piso_de_periodo_vale_em_toda_rodada():
-    """O recorte da Maria (25/ago/2026): a V3 le de 2026 para frente.
+    """O piso vale na carga completa **e** na incremental.
 
-    Vale na carga completa e na incremental -- sao perguntas diferentes: o piso e
-    ESCOPO (que periodo interessa), o `desde` e FRESCOR (o que mudou desde a
-    ultima rodada). Confundir os dois faria a carga completa trazer 2023."""
+    Sao perguntas diferentes: o piso e ESCOPO (que periodo interessa), o `desde`
+    e FRESCOR (o que mudou desde a ultima rodada). E e exatamente por valer em
+    toda rodada que o piso nao e configuracao "da carga inicial": com ele em
+    2026, a atualizacao que o DW fizesse numa linha de 2024 nunca chegaria, e a
+    nossa copia do historico congelaria divergindo da fonte em silencio."""
     for movimento in contrato.MOVIMENTOS:
         for desde in (None, datetime(2026, 8, 25, 13, 48)):
             sql, binds = fonte_oracle.sql_select(movimento, desde)
             assert "NK_CALENDARIO >= :piso" in sql, f"{movimento}/{desde}"
             assert binds["piso"] == contrato.piso_do_periodo()
-            assert "2026-01-01" not in sql, "o piso vai por bind, nao concatenado"
+            assert "2023-01-01" not in sql, "o piso vai por bind, nao concatenado"
 
 
 def test_piso_configuravel_muda_o_bind_e_nao_o_sql(monkeypatch):
-    """A Maria nomeou o caso de uso ao decidir: comparar 2025 com 2026 um dia.
-    Trocar o piso e uma variavel de ambiente -- e o SQL nem muda, porque o valor
-    viaja como parametro. Consulta que muda de texto por configuracao perde o
-    plano em cache e some do log agrupado."""
+    """O padrao le o historico inteiro (2023); estreitar e uma variavel de
+    ambiente -- e o SQL nem muda, porque o valor viaja como parametro. Consulta
+    que muda de texto por configuracao perde o plano em cache e some do log
+    agrupado."""
     sql_padrao, binds_padrao = fonte_oracle.sql_select("rec")
-    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2025")
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2026")
     sql_outro, binds_outro = fonte_oracle.sql_select("rec")
 
     assert sql_outro == sql_padrao
-    assert binds_padrao["piso"] == date(2026, 1, 1)
-    assert binds_outro["piso"] == date(2025, 1, 1)
+    assert binds_padrao["piso"] == date(2023, 1, 1)
+    assert binds_outro["piso"] == date(2026, 1, 1)
 
 
 def test_piso_vale_tambem_para_medir_identidade():
     """A medicao tem que descrever o que a carga GRAVA.
 
-    Sem o piso, a identidade seria medida na tabela inteira e acusaria as 27.834
-    colisoes de 2023-2025 num recorte que nao le 2023 -- alarme sobre dado que
-    nao entra. Quem quiser saber se a chave aguenta um periodo maior baixa o
-    `DW_ANO_MINIMO` e roda o sondar de novo, que e o fluxo certo ANTES de
-    ampliar a janela."""
+    Isto foi escrito quando o piso era 2026, para o `--sondar` nao acusar as
+    27.834 colisoes de 2023-2025 num recorte que nao lia 2023 -- alarme sobre
+    dado que nao entrava. **O V3.8 usou exatamente esse mecanismo para se
+    autorizar:** baixar o piso e rodar o sondar de novo era o fluxo certo antes
+    de ampliar a janela, e a chave de sete colunas (0023, com `ano_solic`) tinha
+    que sair UNICA sobre as ~434 mil linhas. O acoplamento continua valendo na
+    direcao oposta: quem estreitar o piso volta a medir so a janela."""
     for gerador in (fonte_oracle.sql_identidade, fonte_oracle.sql_colisoes,
                     fonte_oracle.sql_ano_discordante):
         assert "NK_CALENDARIO >= :piso" in gerador("rec"), gerador.__name__

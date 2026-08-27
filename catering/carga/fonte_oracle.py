@@ -214,8 +214,11 @@ def sql_select(movimento, desde=None):
     Duas restricoes, e elas respondem perguntas diferentes:
 
       - o **piso de periodo** (`nk_calendario >= :piso`) e escopo: a V3 le de
-        2026 para frente (ver `contrato.piso_do_periodo()`). Ele vale em toda
-        rodada, completa ou incremental;
+        2023 para frente, o historico inteiro que o DW publica (ver
+        `contrato.piso_do_periodo()`). Ele vale em toda rodada, completa ou
+        incremental -- e e por isso que ele nao e configuracao "da carga
+        inicial": subir o piso para 2026 faria a atualizacao de linha antiga
+        parar de chegar;
       - o **`desde`** (`dw_data_alteracao > :desde`) e frescor: e a marca d'agua
         da rodada anterior, e so aparece no incremental.
 
