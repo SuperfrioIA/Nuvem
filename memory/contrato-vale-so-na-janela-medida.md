@@ -22,6 +22,11 @@ nao diz quantas nem se ha outras -- descobrir por tentativa e erro custa uma
 janela de deploy por coluna. E generalizar de uma amostra de um ano para a serie
 inteira foi, nas duas vezes, falha de raciocinio e nao de codigo.
 
+A evidencia do `nk_wms_cliente` **ja estava no repositorio**:
+`docs/CONCILIACAO_POWERBI_V2.md` (10/ago/2026) mediu essa coluna vazia para 7/10
+clientes (21,1% do peso) na `FATO_VOLUMETRIA` -- outra tabela do MESMO DW. A do
+catering por acaso tinha ela preenchida em 2026.
+
 **How to apply:** antes de mexer no piso, rodar
 `python -m catering.carga --fonte oracle --sondar` (a Maria roda -- a IA nao
 conecta no DW) e exigir que as **duas** secoes saiam certas: `identidade` com
@@ -32,4 +37,5 @@ coluna deve ser obrigatoria: obrigatoria e a que identifica a linha (as sete da
 chave natural), a que a tela agrega (`nk_calendario`) e a marca d'agua
 (`dw_data_alteracao`); fora dessas, vazio na fonte e fato, e derrubar a rodada
 por uma celula que nenhuma tela le troca um dado ausente pela indisponibilidade
-de tudo. Ver [[recorte-por-dia-e-coluna-parcial]] e [[v3-em-producao]].
+de tudo. E antes de declarar uma coluna obrigatoria, procurar no repositorio o
+que ja se mediu DELA -- inclusive em outra tabela da mesma fonte. Ver [[recorte-por-dia-e-coluna-parcial]] e [[v3-em-producao]].

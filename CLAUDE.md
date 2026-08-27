@@ -38,14 +38,14 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   (aberta em 24/ago/2026; **V3.0 a V3.3 em 24/ago, V3.4 (login) e V3.5 (fonte
   Oracle) em 25/ago, V3.5.1 (fuso de exibição), V3.6 (deploy) e V3.7 (recorte
   por dia) em 26/ago**. O V3.6 foi **executado em 26/ago/2026: a V3 está em
-  produção na VM, porta 8003**, e a V2 saiu do ar. **V3.7 e V3.8 subiram na VM em
-  27/ago**, e a carga do histórico entrou **pela metade**: o recebimento
-  carregou 2023–2026 (202.087 linhas) e a expedição travou numa linha de 2025 sem
-  `sk_cliente`, fez rollback e continua só com 2026. O **V3.8.1** (mesmo dia)
-  conserta — solta as duas colunas de cliente que não identificam a linha
-  (migration 0024) e faz o `--sondar` medir **preenchimento**, não só identidade
-  — e é **código que ainda NÃO foi para a VM**: procedimento em `docs/DEPLOY.md`,
-  seção "V3.8.1". O **V3.7.1** (filtros com caixas de
+  produção na VM, porta 8003**, e a V2 saiu do ar. **V3.7, V3.8 e V3.8.1 subiram na
+  VM em 27/ago**, e o **histórico completo (2023–2026) está em produção nas duas
+  tabelas** — 202.087 linhas no recebimento e 232.089 na expedição, com as duas
+  cargas `ok` e as dimensões recalculadas sobre 3,6 anos (aceite no
+  `docs/V3_PLANO.md`). O V3.8.1 saiu de a carga do histórico ter falhado numa
+  linha só: soltou as duas colunas de cliente que não identificam a linha
+  (migration 0024) e fez o `--sondar` medir **preenchimento**, não só identidade.
+  O **V3.7.1** (filtros com caixas de
   seleção) está **mapeado e não autorizado**, e o V3.9 em diante também não;
   status e aceite em `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a

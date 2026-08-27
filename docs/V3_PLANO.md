@@ -2522,7 +2522,9 @@ Três consequências, e nenhuma é perda de dado:
 3. **a tela abriu em 2026**, como o V3.7 prometeu — então a assimetria (recebimento
    com histórico, expedição sem) só aparece para quem filtrar para trás.
 
-## Lote V3.8.1 — A linha sem cliente, e a trava que não media contrato (27/ago/2026)
+A metade que faltava entrou no mesmo dia, depois do V3.8.1 — ver o aceite dele.
+
+## Lote V3.8.1 — A linha sem cliente, e a trava que não media contrato (executado em 27/ago/2026)
 
 Autorizado em 27/ago/2026, depois da medição: *"só as duas"*.
 
@@ -2583,6 +2585,26 @@ limitação que a tela declara (guia cancelada sem confirmação, acerto de esto
 sem cliente) e sai na mesma leitura. Sondagem que só mostra o que bloqueia
 esconde metade do que se sabe da fonte.
 
+### A evidência já estava no repositório
+
+`docs/CONCILIACAO_POWERBI_V2.md` (10/ago/2026, seção 3.4) mediu e escreveu:
+
+> `NK_WMS_CLIENTE` vem **vazio** no fato para 7/10 clientes (1.497 linhas,
+> 40.474 t = 21,1% do peso) — e vazio **também na dim** para os mesmos 7.
+
+Aquilo é a `FATO_VOLUMETRIA`, a tabela que a V2 concilia — **outra** tabela do
+mesmo DW. A do catering por acaso tinha a coluna preenchida em 2026, e o
+contrato a declarou obrigatória sobre essa amostra.
+
+Isso muda o peso da decisão para melhor: `nk_wms_cliente` nulável não é exceção
+para uma linha, é o comportamento **normal** dessa coluna no DW. Se o catering um
+dia vier com 20% dela vazia, não derruba mais nada.
+
+E deixa a lição mais afiada do que "não generalizar de um ano": antes de declarar
+uma coluna obrigatória, vale procurar no repositório o que já se mediu **dela**,
+inclusive em outra tabela da mesma fonte. A evidência estava em casa há duas
+semanas.
+
 ### O que mudou no código
 
 | arquivo | mudança |
@@ -2610,12 +2632,55 @@ contrato do outro.
 4. **`downgrade` da 0024 falha** se a linha já tiver entrado. É o comportamento
    certo: descer exigiria apagar linha de fato.
 
-### Execução (pendente, é da Maria)
+### Aceite do V3.8.1 — executado em 27/ago/2026, 11h20
 
-`docs/DEPLOY.md`, seção "V3.8.1". Deploy → `alembic upgrade head` → sondagem (a
-seção `preenchimento` tem que dizer que nenhuma obrigatória vem vazia) →
-`MODO=completa`, que reconsome o recebimento (relê 202 mil e reporta tudo igual,
-prova de idempotência de graça) e é a passada que faz as dimensões rodarem.
+A Maria rodou o procedimento do `docs/DEPLOY.md`. **O histórico completo está em
+produção nas duas tabelas.**
+
+Contagem por ano, e ela bate exato com o que a sondagem mediu no DW **antes** da
+carga — nenhuma linha de sobra nem de falta:
+
+| | 2023 | 2024 | 2025 | 2026 | soma | medido no DW |
+|---|---|---|---|---|---|---|
+| recebimento | 48.763 | 56.391 | 60.016 | 36.917 | **202.087** | 202.087 |
+| expedição | 53.678 | 64.660 | 70.822 | 42.929 | **232.089** | 232.089 |
+
+As duas rodadas em `cat_cargas`, e cada número diz uma coisa:
+
+| id | tabela | status | lidas | inseridas | atualizadas |
+|---|---|---|---|---|---|
+| 11 | recebimento | `ok` | 202.087 | **0** | 0 |
+| 12 | expedição | `ok` | 232.089 | 189.160 | 0 |
+
+- **o recebimento releu 202 mil e não mexeu em nada.** É a prova de idempotência
+  saindo de graça: qualquer inserção aqui seria sinal de identidade instável;
+- **as 189.160 da expedição são exatamente 2023+2024+2025** (53.678+64.660+70.822),
+  e as 42.929 restantes são 2026 voltando idênticas.
+
+A aritmética também fecha o mistério da rodada que falhou de manhã: no
+recebimento, 2023+2024+2025 = **165.170**, que é exatamente o `linhas_inseridas`
+da carga 9, e 2026 = **36.917**, que é exatamente as "iguais" dela. Aquela carga
+tinha inserido o histórico inteiro e reapresentado 2026 sem tocar nele.
+
+Mais duas provas:
+
+- **`SELECT count(*) FROM cat_fato_expedicao WHERE sk_cliente IS NULL` = 1.** A
+  linha do acerto de estoque entrou, com as duas células nulas e a identidade
+  inteira. Era ela que custava 3,6 anos de histórico;
+- **`visto_em` das três dimensões em `2026-08-27 14:20:56.623951+00`** — mesmo
+  microssegundo nas três, o que prova de passagem a decisão do V3.1 de recalcular
+  as três numa transação só (dimensão pela metade deixaria a tela com unidade
+  nova e cliente velho). Elas ficaram de fora da rodada da manhã, que parou antes.
+
+**O que não foi validado:** a tela filtrada para trás até 2023, mostrando as duas
+medidas com número nas colunas antigas — é julgamento humano e continua com a
+Maria. E o incremental seguinte (15h05) não foi conferido nesta sessão: o esperado
+é `linhas_lidas` na casa dos milhares; 434 mil significaria que o DW reconstruiu
+as tabelas (seguro, o upsert não apaga, mas não é incremental).
+
+**A pendência do backup continua aberta** — o passo 1 do procedimento é um backup
+manual, e a linha do `scripts/backup.sh` no crontab segue não instalada. Agora com
+434 mil linhas atrás dela.
 
 ### Suíte
 
