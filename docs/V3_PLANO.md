@@ -4,10 +4,16 @@
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
 **Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026), **V3.4
-e V3.5** (25/ago/2026), **V3.5.1, V3.6 e V3.7** (26/ago/2026) **e V3.8**
-(27/ago/2026 — código pronto, execução na VM pendente). Do V3.9 em diante a
-divisão em lotes na seção final é proposta, não plano em execução — autorização é
-por lote, como na V1 e na V2.
+e V3.5** (25/ago/2026), **V3.5.1, V3.6 e V3.7** (26/ago/2026) **e V3.8 e V3.8.1**
+(27/ago/2026 — os dois **executados na VM**: o histórico completo, 2023–2026, está
+em produção nas duas tabelas, 202.087 linhas no recebimento e 232.089 na
+expedição; ver "Aceite do V3.8.1"). Do V3.9 em diante a divisão em lotes na seção
+final é proposta, não plano em execução — autorização é por lote, como na V1 e na
+V2.
+
+**Mapeados e NÃO autorizados: V3.7.1** (filtros com caixas de seleção) **e
+V3.7.2** (os dois movimentos na mesma matriz). A ordem foi decidida pela Maria em
+27/ago/2026: **V3.7.1 primeiro**.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -256,7 +262,9 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
 | **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
-| **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **código feito em 27/ago/2026, execução na VM pendente** | não |
+| **V3.7.2** | Os dois movimentos na mesma matriz, com o pai somando "movimentação" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
+| **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **executado em 27/ago/2026**, e entrou metade: o conserto é o V3.8.1 | não |
+| **V3.8.1** | A linha sem cliente (migration 0024) e o `--sondar` medindo preenchimento — **executado em 27/ago/2026**, histórico completo em produção | não |
 | **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.10** | Laboratório novo, sobre o dado do DW | não autorizado |
 
@@ -2341,13 +2349,15 @@ CLIENTE
    fechasse, marcar três itens exigiria abrir três vezes, que é o problema do
    Ctrl+clique com outra roupa.
 
-### A decisão que falta, e é da Maria
+### A decisão que faltava — FECHADA em 27/ago/2026: a barra encurta
 
-**A barra de filtros encurta.** Hoje são cinco caixas de 64px de altura ocupando
-duas linhas; viram cinco botões de uma linha. É ganho de espaço real e é mudança
-visual — aprovação estética é humana
-(`memory/validar-tela-no-navegador.md`). Se a preferência for manter a barra como
-está, a altura se preserva sem prejuízo funcional.
+**A barra de filtros encurta para uma linha** (Maria, 27/ago/2026). Hoje são cinco
+caixas de 64px de altura ocupando duas linhas; viram cinco botões de uma linha que
+abrem o painel de caixas. É ganho de espaço real e era mudança visual, então
+precisava de aprovação humana (`memory/validar-tela-no-navegador.md`) — está dada.
+A alternativa que ficou para trás, e não precisa ser re-perguntada: manter a
+altura de hoje, com as caixas dentro do espaço que os selects já ocupam, era
+funcionalmente idêntico e só não ganhava espaço.
 
 ### O que prova este lote
 
@@ -2364,6 +2374,113 @@ Um detalhe de execução que já se sabe: validar na tela exige subir o caminho 
 Não toca no recorte (período, dia do mês, `WHERE`, auditoria), não mexe em
 backend, não tem migration e não substitui o botão Limpar. Não inclui busca no
 painel (gatilho acima) nem "Selecionar tudo" com estado intermediário por grupo.
+
+## Lote V3.7.2 — Os dois movimentos na mesma matriz (mapeado em 27/ago/2026, NÃO autorizado)
+
+**Nada deste lote está construído.** Ele entra aqui porque foi pedido e decidido
+para depois, e o que sobrevive à sessão tem que viver neste documento
+(`memory/uma-sessao-por-lote.md`).
+
+### De onde veio, e por que ele reabre uma decisão fechada
+
+Pedido da Maria em 27/ago/2026: *"queria incluir também a visualização das 2
+movimentações juntas, entrada e saída"*.
+
+Isso **contraria uma decisão escrita** no V3.2, e o texto ainda está no
+`catering/consulta/matriz.py`: *"não existe visão conjunta, porque a hierarquia
+das duas é diferente (a saída tem o nível `faixa`) e as medidas não são
+comparáveis linha a linha. Unir viraria uma tabela que não responde nenhuma das
+duas perguntas."*
+
+Essa decisão não estava errada — estava **incompleta**. Ela mediu o custo de unir
+as duas árvores *preservando os dois desenhos inteiros*, e nessa forma a conclusão
+continua valendo. O que faltava era a saída que o artefato de 21/ago já tinha
+achado: **na visão conjunta a árvore fica MAIS CURTA, e não mais longa.** A
+operação sai, a faixa deixa de ser nível, e o que sobra é
+`unidade → cliente → movimento` — os mesmos três níveis das outras duas visões.
+
+O que desbloqueou foi evidência, não opinião: a Maria mandou o print do artefato
+(27/ago/2026), que é a **única** forma de conferir o formato — o artefato foi
+apagado em 24/ago e não existe mais em disco.
+
+### As cinco decisões que o artefato já tomou
+
+Copiadas do print, não re-discutidas.
+
+1. **Hierarquia `unidade → cliente → movimento`.** Dentro do cliente, duas
+   linhas: Expedição e Recebimento.
+2. **O pai é a soma dos dois, e o nome dele é "movimentação"** — *"que é como o
+   BI lê a matriz"*. Confere no print: SAPORE em jan/26 = 3.907,7 (Expedição) +
+   3.934,4 (Recebimento) = 7.842,0; e os 26.892,9 da RMSPII comportam os
+   13.153,8 t de entrada que o V3.7 mediu no mesmo mês.
+3. **A operação NÃO abre nesta visão, e a tela declara isso** — *"Tipo de
+   operação não abre aqui: veja num movimento só"*. É esta decisão que dissolve
+   o obstáculo do V3.2: o nível desigual **some**, em vez de duas árvores de
+   tamanhos diferentes serem reconciliadas.
+4. **A faixa deixa de ser nível da árvore e vira botão**, com outro rótulo e
+   outra pergunta: *"A expedição entra como: Solicitado / Atendido / Separado"*
+   — isto é, **qual das três colunas da expedição entra na soma**. Hoje o rótulo
+   é "Faixa da expedição" (`catering/web/matriz.html`) e `faixa` é um nível da
+   árvore da saída. O rótulo do artefato é mais preciso e vale adotar.
+5. **Terceiro estado no botão de movimento**: `Entrada | Saída | Entrada + saída`.
+   Acrescenta, não substitui — as duas visões de hoje ficam como estão.
+
+### O arredondamento, que o print entrega de graça
+
+3.907,7 + 3.934,4 dá 7.842,**1**, e o artefato mostra 7.842,**0**. Ele somou o
+**kg cru** e arredondou **uma vez**, no fim. Somar filhos já arredondados faria o
+total da tela divergir do download do V3.3 em um dígito — e divergência de um
+dígito é justamente a que ninguém investiga. Bate com a regra da V3 ("valor cru
+na API, formatação na tela") e entra como teste do lote.
+
+### Três pontos abertos, que são decisão da Maria
+
+1. **Pallets.** `LENTES["pal"]["exp"] = None` — a expedição não tem pallet. Em
+   "Entrada + saída" a soma daria **exatamente a entrada**, rotulada
+   "movimentação": número certo com nome errado, que é pior que erro visível.
+   **Recomendação:** desabilitar "Entrada + saída" quando a medida é Pallets,
+   pelo mesmo mecanismo que já desabilita Pallets na Saída.
+2. **O filtro de Operação.** Ele é *por movimento* hoje
+   (`OPCOES.operacoes[movimento]`), e as duas listas são diferentes. Numa visão
+   conjunta, filtrar por uma operação que só existe na entrada **zeraria a linha
+   de Expedição em silêncio**. Ou ele se desabilita junto com o nível, ou vira
+   dois filtros.
+3. **A soma acumula os dois vieses, em direções opostas.** A entrada não tem guia
+   cancelada nenhuma na fonte (faltam 11.204,8 t medidas em jan–jun/26); a
+   expedição tem cancelada com peso no solicitado (4.530,9 t, ~3%). As duas
+   limitações já estão declaradas separadas na tela — o total "movimentação"
+   precisa dizer que carrega as duas.
+
+### Custo, e o que ele não é
+
+Nenhuma migration, nenhuma tabela nova, nenhuma coluna nova. No backend, um
+terceiro valor aceito em `movimento` e uma entrada a mais em `HIERARQUIA`; a soma
+é feita em **Python**, sobre as duas consultas que já existem, e **não em SQL** —
+unir as duas tabelas num `UNION` traria de volta exatamente o problema que a
+decisão 3 remove. Na tela, a linha do contador ganha um terceiro termo
+(`2 movimentos`), como no print.
+
+O download e a planilha do V3.3 seguem o **mesmo recorte da Matriz por
+construção** (`recorte.de_para_where()`), e isso não é opcional aqui: se a tela
+mostrar os dois movimentos e o arquivo mostrar um, as duas passam a mentir uma
+sobre a outra. O lote inclui os três, ou não fecha.
+
+### O que prova este lote
+
+Ao contrário do V3.7.1, **o aceite é aritmético e cabe na suíte**: para cada
+(unidade, cliente, mês), a linha do pai tem que ser **exatamente** a soma das duas
+filhas, e cada filha tem que ser **idêntica** ao que a visão de um movimento só
+devolve no mesmo recorte. Se qualquer uma das duas igualdades falhar, uma das três
+telas está mentindo. Mais o navegador, pelas razões de sempre.
+
+### O que este lote NÃO faz
+
+Não mexe no recorte (período, dia do mês, `WHERE`, auditoria), não tem migration,
+não abre operação nem tipo de estoque na visão conjunta, e **não inclui saldo
+(`Entrada − Saída`) nem estoque**. Saldo ficou fora **por decisão**: o resultado
+não é estoque — falta o saldo inicial, e a subtração herda os dois vieses do
+ponto 3 em direções opostas, então ela parece um saldo e não é. Estoque é a
+`FATO_VOL_EST_CAT_V01`, que pelo A-8 é lote próprio.
 
 ## Lote V3.8 — Histórico completo do DW (executado em 27/ago/2026 — metade entrou)
 
