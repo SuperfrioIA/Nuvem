@@ -2396,7 +2396,7 @@ adiar:
 ### O aceite — e o que ele NÃO cobre
 
 **A máquina de estados foi provada fora do navegador**, contra o código real
-extraído do `matriz.html` e rodado com um DOM mínimo em node: 21 asserções nos
+extraído do `matriz.html` e rodado com um DOM mínimo em node: 22 asserções nos
 nove casos que decidem o que vai na URL — "Todos" inicial, "todos menos este",
 remarcar tudo voltando para **URL vazia** (a decisão 1 do desenho), rótulo com
 nome único e com contagem, desmarcar o último, "Selecionar tudo", o Limpar
@@ -2595,7 +2595,7 @@ defeito que isso evita é dos piores: nível novo que escape dos dois desalinha 
 troca rótulo de lugar.
 
 **A tela foi provada fora do navegador**, com o mesmo harness descartável em node
-do V3.7.1: 30 asserções nos limites da visão conjunta — a operação sendo
+do V3.7.1: 28 asserções nos limites da visão conjunta — a operação sendo
 **limpa** (e não só desabilitada, senão o primeiro pedido sairia com um filtro
 que o servidor recusa), a saída forçada da Planilha, os dois botões de download
 desabilitados com a nota trocada, o Pallets desabilitado, o rótulo da faixa
