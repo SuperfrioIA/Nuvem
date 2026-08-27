@@ -2602,12 +2602,49 @@ desabilitados com a nota trocada, o Pallets desabilitado, o rótulo da faixa
 mudando de "Faixa da expedição" para "A expedição entra como", e tudo voltando ao
 normal ao escolher Entrada de novo.
 
-**O que NÃO foi validado: o navegador.** Vale aqui a mesma ressalva do V3.7.1, e
-com um item a mais que é próprio deste lote: nenhum dos números da conjunta foi
-conferido contra dado real de operação. O aceite aritmético roda sobre semeadura
-sintética, e o print do artefato (SAPORE jan/26 = 3.907,7 + 3.934,4 = 7.842,0) é
-a **referência que falta bater** — ela exige os CSVs recarregados no banco local,
-ou a tela em produção.
+### O aceite contra dado real, e a lição que ele repetiu
+
+Rodado em 27/ago/2026 contra os CSVs de 21/ago carregados no banco local (36.300
+linhas de recebimento e 42.468 de expedição), no recorte jan/26.
+
+**As duas igualdades do aceite fecharam em TODAS as 20 células**
+(unidade × cliente) — o pai igual à soma exata das duas filhas, e cada filha
+idêntica à visão de um movimento só. E `total_linhas` da conjunta = 10.644 =
+4.773 da entrada + 5.871 da saída.
+
+**Os valores absolutos NÃO batem com o print, e eu escrevi antes que eles
+deveriam.** Estava errado, e o erro é exatamente o que este documento já avisava
+para o V3.2: *"o aceite nunca foi o artefato"*. O artefato agrega por
+**`data_solic`** e a aplicação agrega por **`nk_calendario`** (decisão A-5, da
+Maria em 24/ago: *"conta como expedida em fevereiro. Calendário."*).
+
+Medido, e é a primeira vez que esse par é medido nesta célula:
+
+| SAPORE S.A, jan/26 | por `nk_calendario` (V3) | por `data_solic` (artefato) | o print mostra |
+|---|---|---|---|
+| Expedição (solicitado) | 3.995,0 t | **3.907,7 t** | 3.907,7 |
+| Recebimento | 3.936,1 t | **3.934,4 t** | 3.934,4 |
+| movimentação | 7.931,1 t | **7.842,0 t** | 7.842,0 |
+| RMSPII, movimentação | 26.821,2 t | — | 26.892,9 |
+
+Ou seja: **o print bate à casa decimal quando a agregação é a dele.** Isso é mais
+forte do que "os números diferem" — prova que é o mesmo dado por baixo e que a
+única diferença é a data de agregação, que é decisão fechada e não defeito.
+
+**E o arredondamento se confirmou no dado real.** Os kg crus por `data_solic` são
+3.907.660,404 (expedição) e 3.934.384,147 (recebimento):
+
+- arredondando cada filho e somando: **7.842,1** — não é o que o print mostra;
+- somando o cru e arredondando uma vez: **7.842,0** — é exatamente o print.
+
+A decisão de somar em kg e deixar a tela arredondar uma vez não era estética:
+era a diferença entre reproduzir o artefato e divergir dele num dígito.
+
+**O que continua NÃO validado: o navegador.** Vale a mesma ressalva do V3.7.1 —
+marcar, desmarcar, o painel abrindo no lugar certo, a barra encurtada, o console
+limpo e a aprovação estética, que é humana por regra
+(`memory/validar-tela-no-navegador.md`). O que os dois harnesses em node provam é
+a lógica, não a tela.
 
 ### O que este lote NÃO faz
 
