@@ -1925,6 +1925,97 @@ Conciliador nem no Hub.
 A **completa**, e não só a do lote — a regra é essa antes de um deploy, porque a
 fronteira deixa de ser só o schema.
 
+### Aceite do V3.6 — executado em 26/ago/2026
+
+**A V3 está em produção**, na porta 8003 da VM, servindo dado do DW. Executado
+pela Maria, comando por comando, com a saída de cada bloco conferida antes de
+liberar o seguinte.
+
+| passo | resultado |
+|---|---|
+| fuso da VM | **`Etc/UTC`** — confirma a decisão do cron em UTC |
+| porta 8003 | livre; e já estava liberada na rede (Security Group) |
+| linha de base | 7 containers: 2 da Nuvem, 3 do Conciliador, 2 do Hub |
+| backup pré-deploy | `nuvem_20260826_163046.sql.gz`, 456K |
+| migrations | `0017` → **`0023`**, seis migrations, numa transação só |
+| tabelas criadas | as **8** `cat_*` esperadas |
+| carga completa | rec **36.893**, exp **42.900**, `status ok`, 0 fora de escopo |
+| dimensões | 6 unidades, 14 clientes, 40 nomes de estoque |
+| período | 02/jan a **26/ago/2026** — o piso de 2026 respeitado |
+| login e papel | entrou como `ADMIN`; console do navegador **sem erro** |
+| download | xlsx completo, registrado em `cat_auditoria` |
+| **fuso na tela** | carga das **16h45 UTC** exibida como **13h45** — o V3.5.1 provado em produção |
+| V2 desligada | container removido por nome; a 8002 saiu do `ss` |
+| vizinhos | Conciliador e Hub **intactos** — uptimes de 6 dias a 7 semanas, nenhum reiniciado |
+| agendamento | as duas linhas em UTC (`5 10`, `5 18`) instaladas |
+| carga incremental | `sem_dado` nos dois, marca d'água em `2026-08-26 12:43:36` |
+
+**A evidência mais forte de que o desligamento da V2 não afetou ninguém não é o
+comando que usamos, e sim os uptimes dos vizinhos depois dele**: 7 semanas nos
+bancos do Conciliador e do Hub, 6 e 9 dias nos serviços. Container tocado tem
+contador zerado.
+
+### O que a execução ensinou, e que o código não previa
+
+**1. Produção estava em `0017`, não `0018`.** O `upgrade head` aplicou **seis**
+migrations, e a primeira delas é **da V2** — a `0018`, que corrige o de-para de
+`RMSPII/015` e `RMSPII/016`. Ou seja: a V2 em produção rodou desde 18/ago com o
+banco atrás do próprio código, exibindo `RMSPIII`/`RMSPIV` onde o código já
+esperava `RMSPII`. Ninguém notou, o que é coerente com as telas não serem usadas.
+
+Antes de liberar, o SQL foi inspecionado em modo offline
+(`alembic upgrade 0017_layout_lido:head --sql`) e a 0018 se mostrou segura:
+`UPDATE ... FROM` sem constraint nova, que afeta zero linhas se o conector não
+existir. **Ler o SQL antes de aplicar transformou o não-retorno em decisão
+informada** — vale repetir em qualquer deploy que aplique migration alheia.
+
+**2. O `env.py` roda tudo numa transação só.** Sem `transaction_per_migration`, e
+com DDL transacional do Postgres, as seis migrations são tudo-ou-nada: falha na
+quarta reverte as três anteriores e o banco fica em `0017`. Isso torna o passo
+menos perigoso do que a documentação sugeria — o risco do passo 5 é o sucesso
+dele, não a falha.
+
+**3. `CAT_SECRET_KEY`, `DW_USER` e `DW_SENHA` não estavam no `.env` da VM.** O
+teste novo (`test_catering_deploy.py`) tinha acabado de fechar essa lacuna no
+repositório, e ela se materializou na execução — o Bloco 1 pegou antes de
+qualquer build.
+
+**4. O rodapé "De quando é o dado" está dentro de um `<details>` recolhido**, com
+o rótulo "Fontes & método". Não é defeito, é o desenho do V3.2 — mas o campo que
+sustenta a confiança no número exige um clique e um rótulo que não o anuncia.
+Fica na lista de ajustes visuais.
+
+**5. `docker rm` por nome em vez de `--remove-orphans`.** A pergunta da Maria
+(*"não vai remover nada das outras aplicações, né?"*) melhorou o procedimento: o
+`DEPLOY.md` passou a documentar o comando cirúrgico. Operação em VM compartilhada
+não deve exigir que quem executa confie num filtro invisível.
+
+### Pendências abertas depois do deploy
+
+**1. O backup automático do banco NÃO está instalado** — e esta é a única
+pendência com risco real. O `crontab -l` da VM tem o backup do **Conciliador**
+(04h UTC, outro projeto) e as duas cargas da V3, mas **não** a linha do
+`scripts/backup.sh` da Nuvem IA, documentada desde o Bloco G1. O único dump
+existente é o avulso de 26/ago 16h30.
+
+```
+0 3 * * * cd /home/ubuntu/nuvemIA && mkdir -p backups && ./scripts/backup.sh >> backups/backup.log 2>&1
+```
+
+**2. Dez nomes de estoque em `NAO_CLASSIFICADO`**, vistos no log da carga:
+`AJUSTE DE TARIFA`, `CONSOLIDADOR`, `CONSOLIDADOR - 14025`, `CROSS DOCKING`,
+`EPI`, `MAQUINARIO`, `PAP`, `QUÍM/ DESC/ LIMP`, `REAJUSTE`, `RETAIL`. Vários não
+descrevem tipo de estoque — parecem cobrança (`AJUSTE DE TARIFA`, `REAJUSTE`),
+material (`EPI`, `MAQUINARIO`) e operação (`CROSS DOCKING`). O tripwire está
+funcionando como projetado: aparecem na tela como `NAO_CLASSIFICADO`, visíveis.
+Decisão de negócio em aberto.
+
+**3. HTTP sem TLS.** O navegador marca "Não seguro" e avisa no download. É a
+fraqueza declarada no V3.4 (cookie de sessão sem `secure`, porque sem HTTPS
+ligar a flag impediria qualquer login). `CAT_COOKIE_SECURE=1` quando houver TLS.
+
+**4. A revisão independente** não foi feita em nenhum dos lotes V3.5, V3.5.1 e
+V3.6 — a regra de trabalho a exige, e ela ficou de fora nos três.
 ## Lote V3.7 — Recorte por dia, filtro de dia do mês e abertura da tela (feito, 26/ago/2026)
 
 Autorizado em 26/ago/2026, dentro da conversa que pediu o histórico completo do
