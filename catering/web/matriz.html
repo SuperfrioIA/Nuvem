@@ -86,6 +86,11 @@ select.escondido{display:none}
 /* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
 .abre-filtro.curta{min-width:86px}
 .abre-filtro[aria-expanded=true]{border-color:var(--brand-azul-principal)}
+/* V3.7.3: "nenhum marcado" e um estado de EDICAO que nao pode ser aplicado, e
+   por isso ele tem que se parecer com pendencia -- nao com uma escolha
+   valida. Mesmo amarelo dos avisos da tela. */
+.abre-filtro.vazio{border-color:var(--brand-amarelo);background:#FFF8E1;
+  font-weight:600}
 .abre-filtro:disabled{opacity:.45;cursor:not-allowed}
 .painel{position:absolute;top:calc(100% + 3px);left:0;z-index:30;
   background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
@@ -362,7 +367,7 @@ function limitesDoMovimento(){
 
   const operacao = CAIXAS.get('#operacao');
   if (operacao){
-    if (conjunta) Array.from($('#operacao').options).forEach(o => { o.selected = false; });
+    if (conjunta) zeraCaixa('#operacao');
     operacao.botao.disabled = conjunta;
     operacao.titulo = conjunta
       ? 'Não vale em Entrada + saída: as duas tabelas têm listas de operação '
@@ -431,6 +436,12 @@ function preencheOperacoes(){
   // A lista de operacao e POR MOVIMENTO: trocar Entrada/Saida troca as opcoes,
   // e o painel de caixas tem que ser remontado sobre elas. Inerte na primeira
   // chamada, que acontece antes de `criaCaixas()`.
+  //
+  // `zeraCaixa` e nao so `atualizaCaixa`: "nenhum marcado" sobre uma lista de
+  // opcoes que deixou de existir nao significa nada, e travaria o Aplicar sem
+  // a pessoa ter como desfazer -- o filtro que ela precisaria mexer nem mostra
+  // mais os mesmos itens.
+  zeraCaixa('#operacao');
   atualizaCaixa('#operacao');
 }
 
@@ -469,9 +480,53 @@ const selecionados = alvo => Array.from($(alvo).selectedOptions).map(o => o.valu
 const CAIXAS = new Map();
 const COM_CAIXAS = ['#unidade', '#cliente', '#tipo', '#operacao', '#dia'];
 
-// Sem filtro = nenhuma opcao selecionada. E o que o select vazio ja significava
-// antes deste lote -- nada mudou no significado, so em como se chega nele.
+/* TRES estados, e nao dois (V3.7.3)
+
+   O V3.7.1 tinha dois: "Todos" (selecao vazia) e "N selecionados". Faltava o
+   terceiro, e a falta era um defeito de verdade: para ver **um** cliente entre
+   14 era preciso desmarcar 13, um por um. Pedido da Maria em 27/ago/2026 --
+   "poderiamos clicar no selecionar tudo pra des-selecionar tudo?".
+
+   O que impedia isso no V3.7.1: no backend "nenhum selecionado" e "todos" sao
+   o MESMO estado -- lista de filtro vazia = nenhuma clausula no `WHERE`. Entao
+   desmarcar tudo mostraria zero caixas e uma Matriz com tudo dentro: a tela
+   mentindo sobre o proprio recorte. Por isso o "Selecionar tudo" nascia
+   desabilitado quando marcado.
+
+   O que destrava: **o painel nao aplica nada na hora.** Marcar caixa so mexe no
+   `<select>` escondido, e quem recarrega e o Aplicar. Entao "nenhum marcado"
+   pode existir como estado de EDICAO, que nunca chega ao servidor -- e aí nao
+   existe numero errado para a tela mostrar.
+
+   Os tres, e como a selecao do select distingue:
+
+     selecao vazia + `vazio=false`  -> "Todos"              (sem filtro na URL)
+     selecao vazia + `vazio=true`   -> "Nenhum selecionado" (NAO pode aplicar)
+     selecao com itens              -> "N selecionados"     (`vazio` sempre false)
+
+   `vazio` mora no widget e nao no select de proposito: o select nao tem onde
+   guardar isso, e inventar uma opcao sentinela dentro dele contaminaria
+   `parametros()`, a auditoria e o download -- que e exatamente o que o desenho
+   do V3.7.1 protegia. */
+
+// Sem filtro = nenhuma opcao selecionada.
 const semFiltro = el => !Array.from(el.options).some(o => o.selected);
+
+// Estado 3: marcado nenhum, DE PROPOSITO. So o widget sabe.
+const estaVazio = sel => {
+  const w = CAIXAS.get(sel);
+  return !!(w && w.vazio && semFiltro($(sel)));
+};
+
+// Volta o filtro para "Todos" -- selecao limpa E fora do estado vazio. Usado
+// pelo Limpar, pela troca de movimento e quando a lista de opcoes e refeita:
+// "nenhum marcado" sobre uma lista que deixou de existir nao significa nada.
+function zeraCaixa(sel){
+  const el = $(sel);
+  if (el) Array.from(el.options).forEach(o => { o.selected = false; });
+  const w = CAIXAS.get(sel);
+  if (w) w.vazio = false;
+}
 
 function normaliza(el){
   const todas = Array.from(el.options);
@@ -479,30 +534,34 @@ function normaliza(el){
     todas.forEach(o => { o.selected = false; });
 }
 
-function rotuloFechado(el){
+function rotuloFechado(sel){
+  const el = $(sel);
+  if (estaVazio(sel)) return 'Nenhum selecionado';
   if (semFiltro(el)) return 'Todos';
   const marcadas = Array.from(el.selectedOptions);
   return marcadas.length === 1 ? marcadas[0].textContent
                                : `${marcadas.length} selecionados`;
 }
 
+// Os filtros no estado 3, pelo nome que a tela mostra. Vazio = da para aplicar.
+const caixasVazias = () =>
+  COM_CAIXAS.filter(estaVazio).map(sel => CAIXAS.get(sel).nome);
+
 function montaPainel(sel){
   const w = CAIXAS.get(sel), el = $(sel);
   w.painel.innerHTML = '';
-  const nenhum = semFiltro(el);
+  const vazio = estaVazio(sel);
+  const todos = !vazio && semFiltro(el);
 
   const tudo = document.createElement('label');
   tudo.className = 'caixa tudo';
   const marca = document.createElement('input');
   marca.type = 'checkbox';
-  marca.checked = nenhum;
-  // Marcado JA significa "sem filtro": nao existe acao para desmarcar, porque
-  // "nenhum item" nao e um estado. Desabilitar diz isso; deixar habilitado e
-  // nao fazer nada pareceria defeito.
-  marca.disabled = nenhum;
-  if (nenhum) tudo.title = 'Ja esta sem filtro: todos entram.';
+  marca.checked = todos;
+  // Agora ele ALTERNA: marcado -> desmarca todas; desmarcado -> volta a Todos.
   marca.onchange = () => {
-    Array.from(el.options).forEach(o => { o.selected = false; });
+    if (todos) { w.vazio = true; }          // tudo marcado -> tudo desmarcado
+    else { zeraCaixa(sel); }                // qualquer outro estado -> Todos
     atualizaCaixa(sel);
   };
   tudo.append(marca, document.createTextNode('Selecionar tudo'));
@@ -514,13 +573,23 @@ function montaPainel(sel){
     linha.title = opcao.textContent;
     const caixa = document.createElement('input');
     caixa.type = 'checkbox';
-    caixa.checked = nenhum || opcao.selected;
+    caixa.checked = todos || opcao.selected;
     caixa.onchange = () => {
-      if (semFiltro(el)){
+      if (vazio){
+        // saindo do estado 3: o primeiro marcado e o filtro inteiro. E este o
+        // ganho do lote -- "so a SAPORE" passa de 13 cliques para 2.
+        w.vazio = false;
+        Array.from(el.options).forEach(o => { o.selected = o === opcao; });
+      } else if (semFiltro(el)){
         // estava em "Todos": desmarcar um e pedir "todos menos este"
         Array.from(el.options).forEach(o => { o.selected = o !== opcao; });
       } else {
         opcao.selected = !opcao.selected;
+        // Desmarcar o ULTIMO agora para em "Nenhum", e nao volta para "Todos"
+        // como no V3.7.1. Saltar para "todos marcados" depois de a pessoa
+        // desmarcar era o painel fazendo o contrario do clique; e agora existe
+        // um estado que descreve o que ela fez.
+        if (semFiltro(el)) w.vazio = true;
       }
       normaliza(el);
       atualizaCaixa(sel);
@@ -533,9 +602,12 @@ function montaPainel(sel){
 function atualizaCaixa(sel){
   const w = CAIXAS.get(sel);
   if (!w) return;                       // chamado antes de `criaCaixas()`
-  const el = $(sel);
-  w.botao.textContent = rotuloFechado(el);
-  w.botao.title = w.titulo;
+  w.botao.textContent = rotuloFechado(sel);
+  w.botao.classList.toggle('vazio', estaVazio(sel));
+  w.botao.title = estaVazio(sel)
+    ? `${w.nome}: nenhum selecionado. Escolha ao menos um, ou marque `
+      + `"Selecionar tudo" para voltar a Todos.`
+    : w.titulo;
   if (w.painel.hidden) return;
   // Remontar o painel perde o foco, e sem isto as setas param de andar depois
   // do primeiro clique. O indice e estavel: "Selecionar tudo" e sempre o 0.
@@ -587,7 +659,15 @@ function criaCaixas(){
     el.parentNode.insertBefore(caixa, el.nextSibling);
     // O select some SO DEPOIS de o substituto existir -- ver o comentario do CSS.
     el.classList.add('escondido');
-    CAIXAS.set(sel, {botao, painel, titulo: el.title || ''});
+    // `nome` e o rotulo que a pessoa ve, e existe para a recusa do Aplicar
+    // poder dizer QUAL filtro esta pendente. `vazio` e o estado 3.
+    const etiqueta = el.parentNode.querySelector('label');
+    CAIXAS.set(sel, {
+      botao, painel,
+      titulo: el.title || '',
+      nome: (etiqueta ? etiqueta.textContent : sel.replace('#', '')).trim(),
+      vazio: false,
+    });
 
     botao.onclick = () => { painel.hidden ? abreCaixa(sel) : fechaCaixas(); };
     painel.onkeydown = evento => {
@@ -816,7 +896,32 @@ async function carregaEu(){
   $('#link-admin').hidden = eu.papel !== 'admin';
 }
 
+/* A trava do estado 3, e ela mora aqui de proposito (V3.7.3).
+
+   "Nenhum marcado" nao pode virar consulta: no `WHERE` ele seria indistinguivel
+   de "sem filtro", e a Matriz voltaria com TUDO enquanto o painel mostra zero
+   caixas -- a tela mentindo, que e exatamente o que o V3.7.1 evitou desabilitando
+   o botao.
+
+   Guardar em `carrega()` e nao no Aplicar cobre todos os caminhos de uma vez: o
+   Aplicar, a paginacao, e a troca de movimento/medida/faixa/visao, que tambem
+   recarregam. Um `if` no Aplicar deixaria os outros passarem. */
+function travadoPorFiltroVazio(){
+  const pendentes = caixasVazias();
+  if (!pendentes.length) return false;
+  const quais = pendentes.join(', ');
+  const um = pendentes.length === 1;
+  $('.rolagem').innerHTML =
+    `<div class="erro"><strong>${um ? 'Filtro sem seleção' : 'Filtros sem seleção'}: `
+    + `${quais}.</strong><br>Escolha ao menos um item, ou marque `
+    + `"Selecionar tudo" para voltar a Todos. Enquanto isso a Matriz não é `
+    + `recalculada — o recorte pedido não descreve nenhuma linha.</div>`;
+  $('#paginacao').innerHTML = '';
+  return true;
+}
+
 async function carrega(){
+  if (travadoPorFiltroVazio()) return;
   if (ESTADO.visao === 'planilha') return carregaPlanilha();
   // `.rolagem` e o container ESTAVEL: o `#corpo` inicial e substituido
   // pela tabela no primeiro desenho e deixa de existir.
@@ -989,6 +1094,16 @@ async function inicia(){
   // de JSON cru. Os dois numeros vem do Python, para nao existir uma segunda
   // copia deles aqui; o teto que vale de verdade continua sendo o do servidor.
   const baixa = async (formato) => {
+    // O download NAVEGA (nao e fetch), entao a recusa aqui e `alert` e nao a
+    // area de erro da tela -- e ela e propria: `carrega()` nao roda neste
+    // caminho, e sem esta guarda o arquivo sairia com o recorte inteiro
+    // enquanto o painel mostra zero caixas marcadas.
+    const pendentes = caixasVazias();
+    if (pendentes.length){
+      alert(`Sem seleção em: ${pendentes.join(', ')}.\n\nEscolha ao menos um `
+        + `item, ou marque "Selecionar tudo" para voltar a Todos.`);
+      return;
+    }
     await busca('/api/eu');
     const linhas = await totalDoRecorte();
     if (linhas !== null){
@@ -1011,9 +1126,10 @@ async function inicia(){
   $('#limpar').onclick = () => {
     // A lista dos cinco vive em `COM_CAIXAS`, e nao repetida aqui: com duas
     // copias, o sexto filtro entraria numa e nao na outra, e o Limpar deixaria
-    // um filtro em pe sem dizer.
-    COM_CAIXAS.forEach(s =>
-      Array.from($(s).options).forEach(o => o.selected = false));
+    // um filtro em pe sem dizer. `zeraCaixa` tambem tira do estado "nenhum
+    // marcado" -- Limpar tem que devolver a tela que a pessoa recebeu, e ela
+    // nao recebeu um filtro pendente.
+    COM_CAIXAS.forEach(zeraCaixa);
     atualizaCaixas();
     abreNoPadrao();
     ESTADO.pagina = 1; ESTADO.abertos = new Set(); carrega();
