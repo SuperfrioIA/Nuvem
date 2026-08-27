@@ -45,10 +45,11 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `docs/V3_PLANO.md`). O V3.8.1 saiu de a carga do histórico ter falhado numa
   linha só: soltou as duas colunas de cliente que não identificam a linha
   (migration 0024) e fez o `--sondar` medir **preenchimento**, não só identidade.
-  **V3.7.1** (filtros com caixas de seleção) e **V3.7.2** (os dois movimentos na
-  mesma matriz) foram **feitos em 27/ago/2026 e validados no navegador**, e ainda
-  **não subiram na VM** — procedimento em `docs/DEPLOY.md`, seção "V3.7.1 +
-  V3.7.2". Do **V3.9** em diante nada está autorizado; status e aceite em
+  **V3.7.1** (filtros com caixas de seleção), **V3.7.2** (os dois movimentos na
+  mesma matriz) e **V3.7.3** (desmarcar tudo) foram **feitos em 27/ago/2026**; os
+  dois primeiros foram **validados no navegador e subiram na VM**, e o **V3.7.3
+  ainda não foi validado nem subiu** — procedimento em `docs/DEPLOY.md`, seção
+  "V3.7.1 + V3.7.2", que serve para os três (nenhum tem migration). Do **V3.9** em diante nada está autorizado; status e aceite em
   `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.

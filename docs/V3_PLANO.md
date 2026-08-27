@@ -11,10 +11,12 @@ expedição; ver "Aceite do V3.8.1"). Do V3.9 em diante a divisão em lotes na s
 final é proposta, não plano em execução — autorização é por lote, como na V1 e na
 V2.
 
-**V3.7.1** (filtros com caixas de seleção) **e V3.7.2** (os dois movimentos na
-mesma matriz, com o pai somando "movimentação") **foram feitos em 27/ago/2026**,
-na ordem que a Maria decidiu, e **validados no navegador pela Maria no mesmo
-dia** — as duas telas, sem defeito reportado.
+**V3.7.1** (filtros com caixas de seleção), **V3.7.2** (os dois movimentos na
+mesma matriz, com o pai somando "movimentação") **e V3.7.3** (desmarcar tudo)
+**foram feitos em 27/ago/2026**. O V3.7.1 e o V3.7.2 foram **validados no
+navegador pela Maria no mesmo dia** — e foi essa validação que gerou o V3.7.3, que
+conserta um defeito de interação que o V3.7.1 tinha introduzido. **O V3.7.3 ainda
+não foi validado no navegador.**
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -264,6 +266,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
 | **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **feito em 27/ago/2026**, ver seção abaixo | não |
 | **V3.7.2** | Os dois movimentos na mesma matriz, com o pai somando "movimentação" — **feito em 27/ago/2026**, ver seção abaixo | não |
+| **V3.7.3** | Desmarcar tudo: "Selecionar tudo" alterna, e "nenhum marcado" é estado que não pode ser aplicado — **feito em 27/ago/2026**, ver seção abaixo | não |
 | **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **executado em 27/ago/2026**, e entrou metade: o conserto é o V3.8.1 | não |
 | **V3.8.1** | A linha sem cliente (migration 0024) e o `--sondar` medindo preenchimento — **executado em 27/ago/2026**, histórico completo em produção | não |
 | **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
@@ -2663,6 +2666,154 @@ planilha nem para o download (ver a correção acima), e **não inclui saldo
 não é estoque — falta o saldo inicial, e a subtração herda os dois vieses em
 direções opostas, então ela parece um saldo e não é. Estoque é a
 `FATO_VOL_EST_CAT_V01`, que pelo A-8 é lote próprio.
+
+## Lote V3.7.3 — Desmarcar tudo (feito em 27/ago/2026)
+
+Autorizado em 27/ago/2026: *"vamos implementar o filtro de selecionar tudo e ficar
+tudo desmarcado ou tudo marcado"*.
+
+### De onde veio, e o que eu tinha errado
+
+Olhando a tela do V3.7.1 recém-implantada, a pergunta da Maria foi: *"poderíamos
+clicar no selecionar tudo, pra des-selecionar tudo?"*
+
+**Isso não era conveniência faltando, era defeito.** No V3.7.1, para ver **um**
+cliente entre 14 era preciso desmarcar 13, um por um — porque desmarcar em "Todos"
+significa "todos menos este", e não havia como partir do zero. Com o desmarcar
+tudo, o mesmo recorte são **2 cliques**. Eu otimizei a coisa errada.
+
+O que me levou a desabilitar o botão no V3.7.1 estava certo pela metade: no
+backend, **"nenhum selecionado" e "todos" são o mesmo estado** — lista de filtro
+vazia = nenhuma cláusula no `WHERE`. Então desmarcar tudo mostraria zero caixas e
+uma Matriz com tudo dentro: a tela mentindo sobre o próprio recorte. A decisão 2
+do V3.7.1 protegia isso.
+
+**O que eu não tinha visto:** o painel não aplica nada na hora. Marcar caixa só
+mexe no `<select>` escondido, e quem recarrega é o **Aplicar**
+(`matriz.html`, `$('#aplicar').onclick`). Então "nenhum marcado" pode existir como
+estado de **edição**, que nunca chega ao servidor — e aí não existe número errado
+para a tela mostrar. A proteção continua valendo; ela só não precisava custar o
+botão.
+
+### Os três estados
+
+| selects | flag `vazio` | rótulo do botão | vai na URL | dá para aplicar |
+|---|---|---|---|---|
+| seleção vazia | `false` | **Todos** | nada | sim |
+| seleção vazia | `true` | **Nenhum selecionado** | nada | **não** |
+| com itens | sempre `false` | *nome* ou *N selecionados* | os itens | sim |
+
+O `vazio` mora no **widget**, e não no select. Guardar isso dentro do select
+exigiria uma opção sentinela, que contaminaria `parametros()`, a auditoria e a URL
+do download — exatamente o que o desenho do V3.7.1 protegia. O widget é a camada
+de interface, e é onde um estado de interface pertence.
+
+### Uma mudança de comportamento em relação ao V3.7.1, e ela é deliberada
+
+**Desmarcar o último item selecionado agora para em "Nenhum selecionado"**, em vez
+de saltar para "Todos". No V3.7.1 esse salto era a única saída possível (o estado
+não existia), mas ele fazia o painel fazer o **contrário** do clique: a pessoa
+desmarca uma caixa e todas as 14 se marcam. Agora existe um estado que descreve o
+que ela fez.
+
+### A trava, e por que ela mora no `carrega()`
+
+"Nenhum marcado" não pode virar consulta. A trava está no `carrega()`, e não no
+`onclick` do Aplicar, porque **quatro caminhos diferentes recarregam a tela**: o
+Aplicar, a paginação, e a troca de movimento / medida / faixa / visão. Um `if` no
+Aplicar deixaria os outros três passarem, e o furo apareceria só quando alguém
+paginasse com um filtro pendente.
+
+O **download tem guarda própria**, porque ele *navega* em vez de usar `fetch` —
+`carrega()` não roda nesse caminho. Sem ela, o arquivo sairia com o recorte
+inteiro enquanto o painel mostra zero caixas marcadas.
+
+A recusa **nomeia o filtro** (`Cliente`, `Dia do mês`…), e o nome vem do próprio
+`<label>` do campo, lido na montagem do widget. Recusa que não diz qual filtro
+está pendente manda a pessoa abrir os cinco.
+
+### `zeraCaixa()`, e os três lugares que precisam dele
+
+Voltar para "Todos" é limpar a seleção **e** sair do estado vazio — duas coisas,
+então virou função. Os três chamadores:
+
+1. **Limpar** — tem que devolver a tela que a pessoa recebeu, e ela não recebeu um
+   filtro pendente;
+2. **troca para Entrada + saída** — o filtro de operação é limpo e desabilitado
+   ali (V3.7.2), e deixar o estado vazio pendurado nele travaria o Aplicar num
+   filtro que a pessoa não pode nem abrir;
+3. **`preencheOperacoes()`** — quando a lista de operação é refeita ao trocar de
+   movimento. Este é o mais sutil: "nenhum marcado" sobre uma lista de opções que
+   deixou de existir não significa nada, e travaria o Aplicar sem a pessoa ter
+   como desfazer, porque o filtro que ela precisaria mexer nem mostra mais os
+   mesmos itens.
+
+### O que prova este lote
+
+**38 asserções** no harness em node, contra o código real do `matriz.html` — os
+três estados, as duas transições do "Selecionar tudo", o ganho de 13 cliques para
+2, a trava do `carrega()` escrevendo a mensagem com o nome do filtro, a mudança de
+comportamento do último item, o Limpar e os três `zeraCaixa`.
+
+**As 28 asserções do V3.7.2 continuam verdes** com o código novo — a visão
+conjunta não regrediu.
+
+**Suíte da V3: 285 testes, verdes** — o mesmo número de antes, que é o ponto:
+nenhum arquivo de backend foi tocado.
+
+Duas falhas do primeiro run foram **do harness, não do código**: `option.selected`
+nascia `undefined` no DOM falso (no navegador é sempre booleano) e o
+`classList.toggle` do shim tinha regex errada. Registrado porque é a armadilha
+óbvia desse tipo de prova — um shim frouxo mede o shim.
+
+**O que NÃO foi validado: o navegador.** Vale a ressalva de sempre — o harness
+prova a lógica, não que o painel abre no lugar certo nem que o amarelo de
+pendência ficou legível. Aprovação estética é humana
+(`memory/validar-tela-no-navegador.md`).
+
+### A alternativa que ficou fora, e por quê
+
+Tratar "nenhum marcado" como filtro que não casa com nada, deixando a Matriz
+vazia — que é o que o Power BI faz. Isso exigiria um conceito de **conjunto
+vazio** no backend (`WHERE` que não casa), na auditoria e na URL do download. E
+"Matriz vazia" não é uma tela que alguém quer ver: o valor de desmarcar tudo está
+em ser **passo intermediário**, não resultado. Se algum dia a operação pedir o
+comportamento do BI de verdade, aí é lote próprio, com o sentinela declarado.
+
+### O que este lote NÃO faz
+
+Não toca em backend, não tem migration, não mexe no recorte nem na visão conjunta,
+e não junta raízes de CNPJ (a pergunta do CUCINARE/FLV 7 do mesmo dia ficou
+**fora por decisão da Maria** — *"vamos ignorar esse dos 2 clientes por
+enquanto"*; a medição está no fim desta seção).
+
+### A medição do CUCINARE / FLV 7, guardada para quando o assunto voltar
+
+Perguntado em 27/ago/2026: os dois aparecem como clientes separados na Matriz e
+deveriam ser um? **Medido nos CSVs de 21/ago — são duas raízes de CNPJ
+diferentes**, cada uma com uma grafia só:
+
+| razão social | raiz | CNPJ completo | peso jan–ago/26 |
+|---|---|---|---|
+| CUCINARE PRO ALIMENTAÇÃO LTDA | `04596502` | `04596502003365` | 8.643,5 t |
+| FLV 7 RESTAURANTES LTDA. | `40720488` | `40720488000227` | 804,3 t |
+
+Não é falha da canonização: ela une **grafias da mesma raiz**, e aqui não há o que
+unir. A tela mostra dois porque a decisão de 21/ago diz *"nenhuma raiz é unida a
+outra. O Power BI mantém as raízes separadas, e inventar união aqui afastaria os
+dois lados"* (`catering/dominio/clientes.py`).
+
+Duas notas para quem retomar isso:
+
+1. **O número conjunto já está na tela** — a linha da unidade e o "Total do
+   recorte" somam os clientes do recorte. Falta o rótulo, não a soma.
+2. **A `memory/nivel-unidade-vs-filial-e-cliente-cnpj.md` registra FLV↔CUCINARE
+   como troca de nome conhecida**, com 1.003 linhas em que o nome discordava do
+   CNPJ — mas isso foi medido no **DataHub**. No **DW** está limpo: cada nome cai
+   numa raiz só. A confusão da fonte antiga não é a causa do que se vê hoje.
+3. Se o rótulo for pedido, o desenho **não** é fundir as raízes: é um nível novo
+   (`unidade › grupo › cliente › movimento`), para o grupo somar e a raiz
+   continuar batendo com o BI. Fundir destruiria o segundo.
 
 ## Lote V3.8 — Histórico completo do DW (executado em 27/ago/2026 — metade entrou)
 
