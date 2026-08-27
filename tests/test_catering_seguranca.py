@@ -511,7 +511,7 @@ def test_download_registra_quem_baixou(cliente):
     usuarios.criar("joao", "Joao", "visualizador", SENHA)
     entra(cliente, "joao")
 
-    resposta = cliente.get("/api/download", params={"de": "2026-01", "ate": "2026-01"})
+    resposta = cliente.get("/api/download", params={"de": "2026-01-01", "ate": "2026-01-31"})
     assert resposta.status_code == 200
 
     linhas = consultar(
@@ -597,7 +597,7 @@ def test_admin_cria_usuario_sem_senha_local_pela_api(cliente):
 def test_auditoria_pela_api_filtra_por_evento(cliente):
     usuarios.criar("chefe", "Chefe", "admin", SENHA)
     entra(cliente, "chefe")
-    cliente.get("/api/download", params={"de": "2026-01", "ate": "2026-01"})
+    cliente.get("/api/download", params={"de": "2026-01-01", "ate": "2026-01-31"})
 
     tudo = cliente.get("/api/auditoria").json()
     assert {linha["evento"] for linha in tudo} == {"login", "download"}

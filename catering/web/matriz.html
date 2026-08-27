@@ -49,10 +49,12 @@ header img{height:34px}
 .campo{display:flex;flex-direction:column;gap:4px}
 .campo label{font-size:10px;font-weight:600;text-transform:uppercase;
              letter-spacing:.6px;color:var(--brand-azul-corporativo)}
-input[type=month],select{font-family:var(--font-primary);font-size:12px;padding:6px 8px;
+input[type=date],select{font-family:var(--font-primary);font-size:12px;padding:6px 8px;
   border:1px solid var(--brand-cinza-claro);border-radius:var(--radius-sm);
   background:var(--brand-branco);color:var(--brand-azul-institucional)}
 select[multiple]{min-width:150px;height:64px}
+/* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
+#dia{min-width:76px}
 .grupo{display:flex;gap:0;border:1px solid var(--brand-cinza-claro);
        border-radius:var(--radius-sm);overflow:hidden}
 .grupo button{font-family:var(--font-primary);font-size:12px;font-weight:500;
@@ -171,11 +173,19 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
 <div class="filtros">
   <div class="campo">
     <label for="de">De</label>
-    <input type="month" id="de">
+    <input type="date" id="de">
   </div>
   <div class="campo">
     <label for="ate">Até</label>
-    <input type="month" id="ate">
+    <input type="date" id="ate">
+  </div>
+  <div class="campo">
+    <label for="dia">Dia do mês</label>
+    <select id="dia" multiple title="Recorta dentro de todos os meses do período. Vazio = todos os dias."></select>
+  </div>
+  <div class="campo">
+    <label>Dado disponível</label>
+    <span class="nota" id="dica-periodo"></span>
   </div>
   <div class="campo">
     <label>Movimento</label>
@@ -248,6 +258,17 @@ let OPCOES = null, ESTADO = {
   pagina:1, abertos:new Set()
 };
 
+// AAAA-MM-DD -> DD/MM/AAAA. A API fala ISO; a tela fala como quem le.
+const dataBR = iso => iso.split('-').reverse().join('/');
+
+// Limpar volta para o MESMO padrao com que a tela abriu, e nao para o periodo
+// inteiro do banco: "limpar filtro" tem que devolver a tela que a pessoa
+// recebeu, senao o botao vira uma terceira coisa que ninguem pediu.
+function abreNoPadrao(){
+  $('#de').value = OPCOES.abertura.de;
+  $('#ate').value = OPCOES.abertura.ate;
+}
+
 const fmt = (valor, unidade) => {
   if (valor === null || valor === undefined) return '<span class="vazio">—</span>';
   let n = Number(valor);
@@ -317,7 +338,31 @@ function parametros(){
   selecionados('#cliente').forEach(v => p.append('cliente', v));
   selecionados('#tipo').forEach(v => p.append('tipo_estoque', v));
   selecionados('#operacao').forEach(v => p.append('operacao', v));
+  selecionados('#dia').forEach(v => p.append('dia', v));
   return p;
+}
+
+// A assinatura do recorte SEM a pagina -- e o que o download leva. Serve para
+// saber se o total de linhas que a tela tem em maos ainda descreve o que a
+// pessoa esta pedindo (ver `totalDoRecorte`).
+function assinatura(){
+  const p = parametros();
+  p.delete('pagina');
+  return p.toString();
+}
+
+// O total de linhas do recorte carregado, com a assinatura dele. Perguntar
+// "sao 434 mil linhas, continuar?" com o numero de OUTRO recorte e pior que
+// nao perguntar: quem mexeu nos filtros sem apertar Aplicar levaria o susto
+// errado, ou nenhum.
+let TOTAL = {assinatura: null, linhas: null};
+
+async function totalDoRecorte(){
+  if (TOTAL.assinatura === assinatura()) return TOTAL.linhas;
+  // filtro mexido e nao aplicado: busca o numero do recorte que vai sair
+  const r = await busca('/api/planilha?' + parametros().toString());
+  if (!r.ok) return null;   // deixa o servidor recusar e explicar, como sempre
+  return (await r.json()).paginacao.total_linhas;
 }
 
 // Separador de caminho: unit separator, que nao aparece em sigla, CNPJ
@@ -368,8 +413,12 @@ function redesenha(){
   th0.className = 'rotulo';
   th0.textContent = trilha(d.niveis);
   trh.appendChild(th0);
+  // `2026-08 (03-31)` quando a ponta do periodo corta o mes: um total rotulado
+  // como o mes que nao e o mes inteiro e o numero que alguem copia para um
+  // relatorio. O rotulo vem do backend, do lado da definicao do recorte.
   d.meses.forEach(m => { const th = document.createElement('th');
-    th.textContent = m; trh.appendChild(th); });
+    th.textContent = (d.rotulos_meses && d.rotulos_meses[m]) || m;
+    trh.appendChild(th); });
   thead.appendChild(trh); tabela.appendChild(thead);
 
   const tbody = document.createElement('tbody');
@@ -426,7 +475,8 @@ function metodo(d){
       <strong>Como o número é somado</strong>
       <ul>
         <li>Agrega pela <strong>data do movimento</strong> (<code>nk_calendario</code>), não pela data da solicitação. Guia pedida em 31/jan e expedida em 02/fev conta em fevereiro.</li>
-        <li>Hierarquia: ${trilha(d.niveis)}. Coluna é o mês.</li>
+        <li>Hierarquia: ${trilha(d.niveis)}. Coluna é o mês — e quando o período começa ou termina no meio de um mês, o cabeçalho declara os dias que entraram.</li>
+        <li>O filtro <strong>Dia do mês</strong> recorta dentro de <em>todos</em> os meses do período: escolher 01 a 05 com janeiro a agosto traz os cinco primeiros dias de cada um dos oito meses.</li>
         <li>Escopo: catering — instâncias <code>SLIN</code>. Volume de outras instâncias do DW é outro negócio e está fora.</li>
       </ul>
     </div>
@@ -491,6 +541,7 @@ async function carrega(){
   }
   const d = await resposta.json();
   ULTIMO = d;
+  TOTAL = {assinatura: assinatura(), linhas: d.total_linhas};
   const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
   $('#titulo').textContent = `Matriz — ${mov}, ${d.lente.nome}`;
   $('#desc').textContent =
@@ -589,6 +640,7 @@ async function carregaPlanilha(){
     return;
   }
   const d = await resposta.json();
+  TOTAL = {assinatura: assinatura(), linhas: d.paginacao.total_linhas};
   const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
   $('#titulo').textContent = `Planilha — ${mov}, ${d.lente.nome}`;
   $('#desc').textContent =
@@ -606,11 +658,22 @@ async function inicia(){
     window.location.replace('/login');
   };
   OPCOES = await (await busca('/api/opcoes')).json();
-  $('#de').value = OPCOES.periodo.de || '2026-01';
-  $('#ate').value = OPCOES.periodo.ate || '2026-08';
+  // A tela abre em janeiro do ano corrente ate hoje (`CAT_ABERTURA_DE`), e nao
+  // no periodo inteiro que existe no banco: com 3,6 anos de historico dentro dele,
+  // abrir em min..max daria 44 colunas sem ninguem pedir. O alcance real fica
+  // na dica ao lado -- quem nao sabe que 2023 esta ali nao filtra para tras.
+  abreNoPadrao();
+  $('#dica-periodo').textContent = OPCOES.periodo.de
+    ? `${dataBR(OPCOES.periodo.de)} a ${dataBR(OPCOES.periodo.ate)}`
+    : 'nenhuma carga ainda';
   opcoesSelect('#unidade', OPCOES.unidades);
   opcoesSelect('#cliente', OPCOES.clientes);
   opcoesSelect('#tipo', OPCOES.tipos_estoque);
+  // Dia do MES, 01..31: e calendario, nao dimensao lida do dado. Mes sem dia
+  // 31 simplesmente nao casa com a selecao -- e o certo, e nao um erro.
+  opcoesSelect('#dia', Array.from({length: 31},
+    (_, i) => ({chave: String(i + 1).padStart(2, '0'),
+                rotulo: String(i + 1).padStart(2, '0')})));
   preencheOperacoes();
   desenhaBotoes();
   $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
@@ -624,16 +687,38 @@ async function inicia(){
     + 'identificador, baixe em Excel (xlsx), que preserva.';
   // O download navega (nao e fetch), entao um 401 apareceria como JSON cru na
   // tela. Confere a sessao antes de navegar -- `busca` redireciona se caiu.
+  //
+  // O mesmo raciocinio vale para o tamanho do recorte, e por isso ele e
+  // conferido aqui e nao depois: com o historico completo no banco, o recorte
+  // inteiro passa de 400 mil linhas. No CSV isso e um pedido legitimo e sai em
+  // streaming -- so precisa de confirmacao. No xlsx o servidor RECUSA (ele nao
+  // streama), e como o download navega essa recusa apareceria como uma pagina
+  // de JSON cru. Os dois numeros vem do Python, para nao existir uma segunda
+  // copia deles aqui; o teto que vale de verdade continua sendo o do servidor.
   const baixa = async (formato) => {
     await busca('/api/eu');
+    const linhas = await totalDoRecorte();
+    if (linhas !== null){
+      const br = Number(linhas).toLocaleString('pt-BR');
+      if (formato === 'xlsx' && linhas > OPCOES.teto_xlsx){
+        alert(`O recorte tem ${br} linhas e o Excel (xlsx) não passa de `
+          + `${Number(OPCOES.teto_xlsx).toLocaleString('pt-BR')} — ele é montado `
+          + `inteiro na memória antes de sair.\n\nBaixe em CSV, que sai em `
+          + `streaming e não tem teto, ou estreite o período.`);
+        return;
+      }
+      if (linhas > OPCOES.teto_confirmacao && !confirm(
+            `O recorte tem ${br} linhas. O arquivo vai ser grande e o download `
+            + `pode demorar.\n\nContinuar?`)) return;
+    }
     window.location = urlDownload(formato);
   };
   $('#baixar-csv').onclick = () => baixa('csv');
   $('#baixar-xlsx').onclick = () => baixa('xlsx');
   $('#limpar').onclick = () => {
-    ['#unidade','#cliente','#tipo','#operacao'].forEach(s =>
+    ['#unidade','#cliente','#tipo','#operacao','#dia'].forEach(s =>
       Array.from($(s).options).forEach(o => o.selected = false));
-    $('#de').value = OPCOES.periodo.de; $('#ate').value = OPCOES.periodo.ate;
+    abreNoPadrao();
     ESTADO.pagina = 1; ESTADO.abertos = new Set(); carrega();
   };
   carrega();

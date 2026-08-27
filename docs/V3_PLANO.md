@@ -3,9 +3,10 @@
 **Este documento é a fonte única do status da V3.** Criado em 24/ago/2026, na
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
-**Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026) **e
-V3.4 e V3.5** (25/ago/2026). Do V3.6 em diante a divisão em lotes na seção final
-é proposta, não plano em execução — autorização é por lote, como na V1 e na V2.
+**Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026), **V3.4
+e V3.5** (25/ago/2026) **e V3.5.1, V3.6 e V3.7** (26/ago/2026). Do V3.8 em diante
+a divisão em lotes na seção final é proposta, não plano em execução — autorização
+é por lote, como na V1 e na V2.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -251,9 +252,15 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.3** | Planilha aberta + download em streaming e auditoria — **feito em 24/ago/2026**, ver seção abaixo | não |
 | **V3.4** | Login e papéis (admin/visualizador) + auditoria de acesso — **feito em 25/ago/2026**, ver seção abaixo | não |
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento construído e desligado — **feito em 25/ago/2026**, ver seção abaixo | **sim** |
-| **V3.6** | Deploy na VM; a V2 sai do ar inteira — **código pronto em 26/ago/2026, execução na VM pendente** (procedimento em `docs/DEPLOY.md`) | **sim** |
-| **V3.7** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
-| **V3.8** | Laboratório novo, sobre o dado do DW | não autorizado |
+| **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
+| **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
+| **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia | não autorizado |
+| **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
+| **V3.10** | Laboratório novo, sobre o dado do DW | não autorizado |
+
+**Renumeração (26/ago/2026):** conciliação e laboratório andaram dois números
+para frente, para o recorte por dia e o histórico completo entrarem na ordem em
+que foram pedidos. O que era "V3.7 conciliação" agora é **V3.9**.
 
 **Ressalva sobre o V3.2 — o aceite nunca foi o artefato.** O artefato agregava
 por `data_solic`; a aplicação agrega por `nk_calendario` (A-5). Comparar os dois
@@ -1709,8 +1716,8 @@ dentro do DW, que exigiria conectar em produção.
 
 ### O que este lote NÃO fez
 
-Deploy e serviço no compose (V3.6), crontab instalado, conciliação (V3.7),
-laboratório (V3.8). Nada em `backend/`, `frontend/` ou nas migrations antigas. E
+Deploy e serviço no compose (V3.6), crontab instalado, conciliação (V3.9),
+laboratório (V3.10). Nada em `backend/`, `frontend/` ou nas migrations antigas. E
 nenhuma conexão da IA com o DW.
 
 ---
@@ -1916,6 +1923,257 @@ Conciliador nem no Hub.
 
 A **completa**, e não só a do lote — a regra é essa antes de um deploy, porque a
 fronteira deixa de ser só o schema.
+
+## Lote V3.7 — Recorte por dia, filtro de dia do mês e abertura da tela (feito, 26/ago/2026)
+
+Autorizado em 26/ago/2026, dentro da conversa que pediu o histórico completo do
+DW. **Foi separado do histórico de propósito**, e a ordem importa: este lote é
+código e sobe validado contra os dados de 2026 que já estão no banco; o histórico
+(V3.8) é operação, e mexe em produção. Se as guardas de recorte largo estiverem
+erradas, a hora de descobrir é antes de existirem 434 mil linhas — não depois.
+
+### O que o lote entrega
+
+| | antes | depois |
+|---|---|---|
+| **Período** | mês fechado, `AAAA-MM`, meio-aberto no fim | **dia**, `AAAA-MM-DD`, **fechado nas duas pontas** |
+| **Dia do mês** | não existia | multi-seleção 01..31, recorta dentro de **todo** mês do período |
+| **Abertura da tela** | `min..max` do dado | **janeiro do ano corrente até hoje** (`CAT_ABERTURA_DE`) |
+| **Coluna parcial** | não declarada | cabeçalho traz a faixa de dias (`2026-08 (03-31)`) |
+| **Download grande** | começava calado | a tela pergunta acima de 150 mil linhas |
+| **xlsx acima do teto** | 400 do servidor, como página de JSON cru | aviso antes de navegar |
+
+### As duas coisas com a palavra "dia", que não se substituem
+
+O pedido veio com um anexo do Power BI, e ele resolveu a ambiguidade: a tela dele
+tem **Ano / Mês / Dia** como filtros separados, com o Dia em caixas de seleção.
+Traduzido para o nosso recorte:
+
+- **período** (`de`/`ate`) é um intervalo de datas — `03/08/2026 a 05/09/2026`;
+- **dia do mês** (`dias`) é a multi-seleção 01..31, que corta **dentro de cada
+  mês do período** — jan a ago tirando os dias 1, 2 e 3 exclui esses dias nos
+  oito meses.
+
+É dia **do mês**, não dia da semana. No SQL é uma cláusula só
+(`EXTRACT(DAY FROM f.nk_calendario) = ANY(%(dias)s)`), no mesmo padrão dos outros
+filtros, e o valor chega ao banco como **lista de inteiros** — o texto da URL não
+alcança o SQL.
+
+**O que NÃO entrou do anexo, e é decisão registrada:** os dropdowns separados de
+Ano e Mês (o intervalo de datas cobre) e o botão que troca o grão das colunas
+entre Ano, Mês e Dia. A coluna continua **mensal** — pedido da Maria: *"pra
+mostrar na matriz faz o que você falou mesmo"*.
+
+### O total que passou a poder mentir, e como a tela declara
+
+Com recorte por dia, a coluna `2026-08` pode não ser agosto. São duas
+parcialidades diferentes, e cada uma é declarada onde ela é lida:
+
+1. **ponta do período** — cabe no cabeçalho, porque afeta uma coluna só de cada
+   lado: `2026-08 (03-31)`. Mês inteiro sai **sem** parênteses, porque anotar o
+   óbvio treina a pessoa a ignorar a anotação;
+2. **filtro de dia do mês** — **não** cabe no cabeçalho: ele corta em todas as
+   colunas, inclusive as do meio. Entra como aviso, com os dias resumidos em
+   faixas (`04 a 06, 09, 20, 21`) — aviso que lista 28 números é uma parede que
+   ninguém lê.
+
+Um total rotulado como o mês que não é o mês é exatamente o número que alguém
+copia para um relatório. É a disciplina do
+`memory/pagina-mostra-numero-nao-texto.md` aplicada ao recorte — e o
+`memory/nao-ler-mes-parcial.md` já tinha medido o custo de não declarar:
+comparando a RMSPII com julho pela metade contra julho fechado, **3 de 18**
+leituras por cliente **trocaram de sinal** (CONVIDA aparecia +78,8% e fechou
+−22,3%). A conclusão de lá era literalmente "o número de dias tem que viajar
+junto com o número, sempre" — o cabeçalho deste lote é isso.
+
+É também o motivo de o marcador **ficar** na coluna do mês corrente na abertura
+padrão (`2026-08 (01-26)`): ali ele não é ruído, é o aviso de que agosto ainda
+não terminou e não se compara com julho inteiro.
+
+### A abertura da tela: janeiro do ano corrente, e por que fica em configuração
+
+A tela abria em `min(nk_calendario)..max(nk_calendario)`. Isso era certo enquanto
+o banco tinha um ano; com o histórico do V3.8 dentro dele, a tela passaria a
+abrir em **01/2023, com 44 colunas**, para responder uma pergunta que ninguém
+fez.
+
+O pedido da Maria trouxe duas formulações — *"janeiro do ano corrente até o mês
+atual"* (rolante) e *"de acordo com a sua recomendação de fixo em
+configuração"*. Elas apontam para comportamentos diferentes, e a saída foi a
+variável aceitar as duas:
+
+| `CAT_ABERTURA_DE` | efeito |
+|---|---|
+| `ano-corrente` (**padrão**) | 1º de janeiro do ano de hoje |
+| `AAAA-MM-DD` | data fixa, para pinar |
+
+O `ate` é sempre **hoje**. O que o rolante custa está escrito antes de doer: em
+01/jan/2027 a tela abre com uma coluna só, e a saída é pinar a data — variável de
+ambiente, sem commit.
+
+**`hoje` vem do Postgres, no fuso de exibição, e não do relógio do processo.** O
+container roda em UTC, e as 21h de Brasília já são o dia seguinte lá — a tela
+abriria com um dia que ainda não começou. É o mesmo defeito que o V3.5.1
+corrigiu no rodapé, só que aqui ele mexeria no **recorte**. O Postgres também é
+onde a base de fuso é confiável, sem depender de `tzdata` na imagem.
+
+**O alcance real do dado não desapareceu:** virou a dica "Dado disponível
+02/01/2026 a 21/08/2026" ao lado dos campos. Quem não sabe que 2023 está no
+banco não filtra para trás — e o campo de data não tem mínimo, então filtrar para
+trás sempre funcionou.
+
+### A trava que foi construída, medida no navegador e desfeita
+
+A primeira versão abria em `max(abertura, primeiro dia com dado)`, para não abrir
+com a ponta esquerda vazia. **O navegador mostrou o preço:** o dado local começa
+em 02/jan, então a tela abria em 02/jan e o cabeçalho declarava
+`2026-01 (02-31)` — marcando como parcial um **janeiro que está inteiro**.
+
+A marca de mês parcial só vale se ela for rara. Nascer ligada no padrão é o
+caminho mais curto para ninguém mais olhar para ela. Coluna vazia à esquerda não
+custa nada (ela existe, é completa e vale zero); marcador que mente, custa. A
+trava saiu, e ficou apenas a da inversão (`CAT_ABERTURA_DE` pinado no futuro não
+pode abrir a tela com "período invertido" na cara de quem entrou).
+
+Isto está fixado em teste, com o motivo escrito — é o tipo de "melhoria" que
+volta sozinha na próxima leitura do código.
+
+### Aviso em vez de trava, e por que a Matriz não precisava de guarda
+
+A pergunta da Maria foi direta: *"será que devemos colocar uma trava para
+ninguém querer pegar de 2023 a 2026, para não travar o sistema?"* Antes de
+responder, foi medido o que de fato pesa num recorte de 3,6 anos (~434 mil
+linhas):
+
+| camada | o que acontece |
+|---|---|
+| Matriz — SQL | um `GROUP BY` sobre o recorte, alguns milhares de linhas agregadas. Postgres resolve em bem menos de 1s |
+| Matriz — navegador | **desenha só o nível aberto**: abre com 6-12 linhas × 44 colunas. Não trava |
+| Planilha | 100 linhas por página + um `count(*)`. Não muda |
+| xlsx | **já tinha teto** de 150 mil linhas, com mensagem mandando para o CSV |
+| CSV | streaming, sem teto. ~170 MB e uma espera longa — **o único ponto com peso real** |
+
+Então **trava dura de período não entrou**: ela não protegeria estabilidade
+nenhuma e mataria o comparativo 2023×2026, que foi o caso de uso que motivou o
+piso configurável no V3.5. O que entrou:
+
+- **confirmação no download acima de 150 mil linhas** (número escolhido pela
+  Maria, igual ao teto do xlsx). Constante própria (`TETO_CONFIRMACAO`) e não
+  apelido de `TETO_XLSX`: hoje valem o mesmo por decisão, não por dependência —
+  uma responde "este formato aguenta?", a outra "você quer mesmo?";
+- **aviso antes de navegar quando o xlsx não cabe.** O servidor já recusava com
+  400 e uma boa mensagem, mas o download **navega**, então a recusa aparecia como
+  uma página de JSON cru. Os dois tetos vêm do Python (`/api/opcoes`), para não
+  existir uma segunda cópia deles no JavaScript;
+- **o aviso de recorte largo na Matriz foi descartado.** Estava no plano, e a
+  medição não o sustentou. Aviso sem medição que o justifique é código a mais e
+  ruído na tela.
+
+**A contagem sai de graça.** A Matriz passou a devolver `total_linhas`, somando
+`count(*)` dos grupos da consulta que ela já roda — sem consulta extra. Isso deu
+um invariante novo, que está em teste: **o `total_linhas` da Matriz tem que ser
+igual ao da planilha**, que conta o mesmo recorte por outro caminho. Se
+divergirem, a tela avisa sobre um arquivo e baixa outro.
+
+A tela também confere se o número em mãos ainda descreve o recorte pedido
+(assinatura dos filtros): quem mexeu nos filtros **sem** apertar Aplicar recebe o
+número do recorte que vai realmente sair, buscado na hora. Perguntar "são 434 mil
+linhas, continuar?" com o número de outro recorte é pior que não perguntar.
+
+### O aceite: recorte por dia contra o CSV, célula por célula
+
+O mesmo método do aceite do V3.2 — duas implementações independentes, mesmo
+número — com o recorte que este lote criou. O caminho em Python puro passou a
+cortar **por dia** (antes comparava mês com mês, o que não provava nada sobre
+corte no meio do mês) e a aceitar o filtro de dia do mês. Três recortes:
+
+| recorte | o que ele prova |
+|---|---|
+| `2026-03-03` a `2026-05-05` | pontas parciais nos dois lados |
+| `2026-02-01` a `2026-04-30`, dias 1-3 | filtro de dia sobre meses inteiros |
+| `2026-06-10` a `2026-07-20`, dias 10-15 | os dois ao mesmo tempo |
+
+Cada um confere o conjunto de células, o valor de cada célula, o cabeçalho
+parcial e a presença do aviso. **Por que este é o teste que importa neste lote:**
+um recorte que corta errado não estoura — ele devolve um número menor, plausível,
+e ninguém vê.
+
+### Duas duplicações que o lote fechou porque iam cobrar
+
+1. **`matriz._eco()` era uma cópia campo a campo de `Filtros.como_dict()`.**
+   Acrescentar `dias` em um dos dois e não no outro faria a tela ecoar um recorte
+   e a auditoria gravar outro. Agora `_eco` delega.
+2. **O `GROUP BY` era contado por subtração** (`len(selecoes) - len(medidas)`),
+   o que amarrava o agrupamento a quantos agregados existem — a `count(*)` nova
+   teria virado um off-by-one **silencioso**, que num `GROUP BY` não estoura, só
+   soma errado. Agora o agrupamento é fechado antes de os agregados entrarem.
+
+### O que muda no repositório
+
+| arquivo | mudança |
+|---|---|
+| `catering/contrato.py` | `abertura_de(hoje)`, `ABERTURA_ANO_CORRENTE`, `AberturaInvalida` |
+| `catering/consulta/recorte.py` | `de`/`ate` em data, `dias`, `data_do_recorte()`, `dias_do_filtro()`, `rotulos_dos_meses()`, `rotulo_dos_dias()`, `aviso_dos_dias()`, `ultimo_dia_do_mes()` |
+| `catering/consulta/matriz.py` | `rotulos_meses` e `total_linhas` na resposta, aviso do dia, `_eco` delegado |
+| `catering/consulta/planilha.py` | o mesmo aviso do dia |
+| `catering/consulta/download.py` | `TETO_CONFIRMACAO`, sufixo `_dias` no nome do arquivo |
+| `catering/app.py` | `dia` nos três endpoints, `abertura`/`teto_confirmacao`/`teto_xlsx` em `/api/opcoes`, `hoje` do Postgres |
+| `catering/web/matriz.html` | dois `type="date"`, select de dia do mês, dica do alcance, cabeçalho parcial, confirmação do download |
+| `docker-compose.yml`, `.env.example` | `CAT_ABERTURA_DE` |
+| `tests/` | 5 arquivos: recorte por dia, aceite novo, invariante da contagem, abertura e suas travas, compose |
+
+**Sem migration.** O schema não muda: o recorte é `WHERE`, não coluna.
+
+### Suíte
+
+```
+python -m pytest tests/test_catering_*.py tests/test_migracao.py
+```
+
+**270 testes, ~6min20, verde** (26/ago/2026). Eram 188 no V3.4.
+
+Duas coisas que a suíte cobrou e valem estar escritas:
+
+- **`_mes` já existia** no `test_catering_matriz.py` (corta
+  `2026-01-05 00:00:00.000` em `2026-01`), e o helper novo com o mesmo nome o
+  sobrescreveu. O aceite do V3.2 foi quem gritou. O novo virou
+  `_pontas_do_mes`;
+- **`rotulos` já existia** dentro do laço de linhas da `matriz()` (os rótulos de
+  **nível**), e a variável nova com o mesmo nome era sobrescrita a cada linha —
+  a resposta saía com uma lista onde a tela esperava um dicionário. Quem achou
+  foi o teste do cabeçalho parcial, no primeiro `assert` que olhou o rótulo.
+
+Colisão de nome em módulo de 300 linhas com vocabulário repetido (`mes`,
+`rotulos`, `dias`) é a classe de erro deste lote, e as duas apareceram em teste
+antes de aparecerem na tela.
+
+### Validação no navegador (26/ago/2026)
+
+Caminho C do `docs/EXECUCAO_LOCAL.md`, porta 8003 local, com os CSVs de
+`docs/Analise/` carregados (36.300 + 42.318 linhas). Conferido:
+
+- abre em **01/01/2026 a 26/08/2026**, janeiro limpo e `2026-08 (01-26)` na
+  última coluna — agosto não terminou, e a coluna diz isso;
+- `03/03` a `05/05` → três colunas, `2026-03 (03-31)`, `2026-04`,
+  `2026-05 (01-05)`, com os números caindo de acordo;
+- filtro de dia 03-05 → aviso na tela e totais recalculados; na planilha, só
+  linhas dos dias 02 e 03 (recorte 02-03) e o mesmo aviso;
+- confirmação do download exercitada com os tetos baixados na página: CSV
+  pergunta e cancelar **não navega**; xlsx avisa em vez de deixar o servidor
+  devolver JSON cru; filtro mexido sem Aplicar rebusca a contagem (1.247 → 36.300);
+- **console sem erro nem aviso**, e `node --check` no script da página.
+
+O que **não** foi validado: aparência e experiência são aprovação humana
+(`memory/validar-tela-no-navegador.md`), e o volume real de 434 mil linhas só
+existe depois do V3.8 — a confirmação do download foi exercitada com o teto
+baixado, não com o recorte grande de verdade.
+
+### O que este lote NÃO fez
+
+Não baixou o piso da carga (continua 2026), não rodou recarga, não encostou na
+VM. Coluna por dia na Matriz, dropdowns de Ano/Mês e trava dura de período
+ficaram **fora por decisão**, não por falta de tempo. Nada em `backend/`,
+`frontend/` ou nas migrations.
 
 ## Regras de trabalho
 

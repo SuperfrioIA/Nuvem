@@ -73,6 +73,9 @@ services:
       # Fuso em que data e hora APARECEM na tela (V3.5.1). Nao confundir com o
       # fuso do crontab, que e UTC de proposito (docs/DEPLOY.md).
       CAT_FUSO_EXIBICAO: ${CAT_FUSO_EXIBICAO:-America/Sao_Paulo}
+      # Primeiro dia do recorte com que a TELA abre. `ano-corrente` = 1o de
+      # janeiro do ano de hoje. Nao e o piso da carga (DW_ANO_MINIMO).
+      CAT_ABERTURA_DE: ${CAT_ABERTURA_DE:-ano-corrente}
       # Credencial do DW, por VARIAVEL e nunca por argumento de linha de
       # comando -- argumento aparece em `ps` e no historico do shell.
       DW_USER: ${DW_USER}

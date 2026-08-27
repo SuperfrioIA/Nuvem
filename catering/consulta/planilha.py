@@ -130,8 +130,15 @@ def planilha(cur, filtros) -> dict:
         },
         # `pagina` acima do fim nao e erro: e o usuario navegando depois de
         # apertar o filtro. Devolve vazio e diz onde ele esta.
-        "avisos": (
-            [] if filtros.pagina <= paginas else
-            [f"A página {filtros.pagina} está além do fim: são {paginas} página(s)."]
-        ),
+        #
+        # O aviso do filtro de dia entra aqui tambem, e nao so na Matriz: o
+        # `total_linhas` desta resposta e o numero que a tela mostra e que o
+        # download vai trazer, e ele obedece o filtro de dia.
+        "avisos": [
+            aviso for aviso in (
+                None if filtros.pagina <= paginas else
+                f"A página {filtros.pagina} está além do fim: são {paginas} página(s).",
+                recorte.aviso_dos_dias(filtros.dias),
+            ) if aviso
+        ],
     }

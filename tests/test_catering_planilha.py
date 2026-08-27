@@ -99,7 +99,7 @@ def test_planilha_pagina_com_ordem_total(cursor):
     vistas, paginas = [], []
     for pagina in (1, 2, 3):
         resultado = planilha.planilha(cursor, recorte.Filtros(
-            de="2026-01", ate="2026-01", pagina=pagina))
+            de="2026-01-01", ate="2026-01-31", pagina=pagina))
         paginas.append(resultado)
         vistas += [l["guia"] for l in resultado["linhas"]]
 
@@ -108,7 +108,7 @@ def test_planilha_pagina_com_ordem_total(cursor):
 
     # a ordenacao tem que ser estavel entre execucoes
     de_novo = planilha.planilha(cursor, recorte.Filtros(
-        de="2026-01", ate="2026-01", pagina=1))
+        de="2026-01-01", ate="2026-01-31", pagina=1))
     assert [l["guia"] for l in de_novo["linhas"]] == \
         [l["guia"] for l in paginas[0]["linhas"]]
 
@@ -118,14 +118,14 @@ def test_planilha_e_estreita_na_tela(cursor):
     o 'indo pro lado' que a Matriz evitou, e a planilha e mais larga que ela."""
     _semear_entrada(cursor)
     entrada = planilha.planilha(cursor, recorte.Filtros(
-        de="2026-01", ate="2026-01", movimento="rec", lente="liq"))
+        de="2026-01-01", ate="2026-01-31", movimento="rec", lente="liq"))
     assert [c["chave"] for c in entrada["colunas"]] == [
         "dia", "unidade", "cliente", "guia", "operacao", "tipo_estoque", "valor"
     ]
 
     _semear_saida(cursor)
     saida = planilha.planilha(cursor, recorte.Filtros(
-        de="2026-01", ate="2026-01", movimento="exp", lente="liq"))
+        de="2026-01-01", ate="2026-01-31", movimento="exp", lente="liq"))
     # uma coluna por faixa: a mesma medida em tres estados
     assert [c["chave"] for c in saida["colunas"]][-3:] == list(contrato.FAIXAS)
     linha = saida["linhas"][0]
@@ -136,7 +136,7 @@ def test_planilha_e_estreita_na_tela(cursor):
 
     # pallet na saida: contexto sem coluna de numero, e nao erro
     pallet = planilha.planilha(cursor, recorte.Filtros(
-        de="2026-01", ate="2026-01", movimento="exp", lente="pal"))
+        de="2026-01-01", ate="2026-01-31", movimento="exp", lente="pal"))
     assert [c["chave"] for c in pallet["colunas"]] == [
         "dia", "unidade", "cliente", "guia", "operacao", "tipo_estoque"
     ]
@@ -145,7 +145,7 @@ def test_planilha_e_estreita_na_tela(cursor):
 def test_pagina_alem_do_fim_avisa_em_vez_de_quebrar(cursor):
     _semear_entrada(cursor)
     resultado = planilha.planilha(cursor, recorte.Filtros(
-        de="2026-01", ate="2026-01", pagina=99))
+        de="2026-01-01", ate="2026-01-31", pagina=99))
     assert resultado["linhas"] == []
     assert any("além do fim" in a for a in resultado["avisos"])
 
@@ -160,7 +160,7 @@ def test_planilha_somada_bate_com_a_matriz(banco_migrado):
     conn = _conn()
     try:
         with conn.cursor() as cur:
-            base = dict(de="2026-03", ate="2026-03", movimento="rec",
+            base = dict(de="2026-03-01", ate="2026-03-31", movimento="rec",
                         lente="liq", unidades=("CWBIII",))
 
             resultado = matriz.matriz(cur, recorte.Filtros(**base))
@@ -201,7 +201,7 @@ def test_csv_sai_no_formato_do_excel(cursor):
     _semear_entrada(cursor, peso="1234.567", calendario="2026-01-05")
     cursor.connection.commit()
 
-    linhas = _ler_csv(download.gerar_csv(recorte.Filtros(de="2026-01", ate="2026-01")))
+    linhas = _ler_csv(download.gerar_csv(recorte.Filtros(de="2026-01-01", ate="2026-01-31")))
     cabecalho, dados = linhas[0], linhas[1]
     assert cabecalho[:4] == ["Dia", "Unidade", "Cliente", "Tipo de estoque"]
     assert dados[0] == "05/01/2026", "data fora do formato brasileiro"
@@ -224,7 +224,7 @@ def test_csv_leva_a_linha_inteira_com_procedencia(cursor):
     cursor.connection.commit()
     dimensoes.atualizar()
 
-    linhas = _ler_csv(download.gerar_csv(recorte.Filtros(de="2026-01", ate="2026-01")))
+    linhas = _ler_csv(download.gerar_csv(recorte.Filtros(de="2026-01-01", ate="2026-01-31")))
     cabecalho, dados = linhas[0], linhas[1]
     coluna = {nome: i for i, nome in enumerate(cabecalho)}
 
@@ -239,7 +239,7 @@ def test_download_e_auditado_com_o_recorte_e_a_contagem(cursor):
     _semear_entrada(cursor, gem="0000000002")
     cursor.connection.commit()
 
-    filtros = recorte.Filtros(de="2026-01", ate="2026-01", unidades=("RMSPII",))
+    filtros = recorte.Filtros(de="2026-01-01", ate="2026-01-31", unidades=("RMSPII",))
     registro = auditoria.abrir("download", recorte=filtros.como_dict(),
                                formato="csv", ip="127.0.0.1")
     linhas = _ler_csv(download.gerar_csv(filtros, registro))
@@ -267,7 +267,7 @@ def test_download_que_falha_deixa_rastro_de_falha(cursor, monkeypatch):
         return "SELECT coluna_que_nao_existe FROM cat_fato_recebimento", {}
 
     monkeypatch.setattr(download, "_sql", sql_quebrado)
-    filtros = recorte.Filtros(de="2026-01", ate="2026-01")
+    filtros = recorte.Filtros(de="2026-01-01", ate="2026-01-31")
     registro = auditoria.abrir("download", recorte=filtros.como_dict(), formato="csv")
 
     with pytest.raises(psycopg2.Error):
@@ -288,7 +288,7 @@ def test_xlsx_protege_o_zero_a_esquerda(cursor):
     _semear_entrada(cursor, gem="0000000609")
     cursor.connection.commit()
 
-    conteudo = download.gerar_xlsx(recorte.Filtros(de="2026-01", ate="2026-01"))
+    conteudo = download.gerar_xlsx(recorte.Filtros(de="2026-01-01", ate="2026-01-31"))
     livro = load_workbook(io.BytesIO(conteudo))
     aba = livro["volumetria"]
     linhas = list(aba.values)
@@ -311,14 +311,14 @@ def test_xlsx_recusa_acima_do_teto(cursor, monkeypatch):
     monkeypatch.setattr(download, "TETO_XLSX", 0)
 
     with pytest.raises(download.DownloadGrandeDemais, match="CSV"):
-        download.gerar_xlsx(recorte.Filtros(de="2026-01", ate="2026-01"))
+        download.gerar_xlsx(recorte.Filtros(de="2026-01-01", ate="2026-01-31"))
 
 
 @tem_extracao
 def test_download_bate_com_o_csv_de_origem(banco_migrado):
     """O arquivo baixado somado contra o CSV do DW, no mesmo recorte."""
     carregar_tudo(FonteCSV(DIRETORIO_DW))
-    filtros = recorte.Filtros(de="2026-02", ate="2026-02", movimento="rec",
+    filtros = recorte.Filtros(de="2026-02-01", ate="2026-02-28", movimento="rec",
                               unidades=("CWBIII",))
 
     baixado = _ler_csv(download.gerar_csv(filtros))

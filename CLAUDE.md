@@ -36,9 +36,10 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   encerrar o projeto nesta máquina.
 - Fase atual: **construção da V3 — volumetria de catering lendo o DW Oracle**
   (aberta em 24/ago/2026; **V3.0 a V3.3 em 24/ago, V3.4 (login) e V3.5 (fonte
-  Oracle) em 25/ago, V3.5.1 (fuso de exibição) e V3.6 (deploy) em 26/ago**. O
-  V3.6 tem **código pronto e execução na VM pendente** — o procedimento de 14
-  passos está em `docs/DEPLOY.md`. V3.7 em diante não autorizado; status em
+  Oracle) em 25/ago, V3.5.1 (fuso de exibição), V3.6 (deploy) e V3.7 (recorte
+  por dia) em 26/ago**. O V3.6 foi **executado em 26/ago/2026: a V3 está em
+  produção na VM, porta 8003**, e a V2 saiu do ar. O V3.7 é código e **ainda não
+  foi para a VM**. V3.8 em diante não autorizado; status e aceite em
   `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.
@@ -52,6 +53,12 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   (V3.6) e o **cron é escrito em UTC** (`5 10` e `5 18` para 07h05/15h05 de
   Brasília), decidido para não mexer no fuso da VM, que é compartilhada com
   outros três projetos. Não "corrigir" para `5 7`: o motivo está no `DEPLOY.md`.
+- **O recorte da tela é por DIA desde o V3.7** (`AAAA-MM-DD`, inclusivo nas duas
+  pontas), com filtro de **dia do mês** (01..31) que corta dentro de todo mês do
+  período. Não confundir com o piso da carga: `DW_ANO_MINIMO` é o que o banco
+  guarda, `CAT_ABERTURA_DE` (padrão `ano-corrente`) é onde a tela abre. Coluna
+  que deixou de ser o mês inteiro **tem que ser declarada** — cabeçalho com a
+  faixa de dias, e aviso quando o filtro de dia está ativo.
 - O app da V3 **exige login** desde o V3.4: `catering/seguranca/` (papel separado
   de identidade, para o AD entrar depois), e local ele precisa de `CAT_SECRET_KEY`
   no ambiente — ver `docs/EXECUCAO_LOCAL.md`, caminho C. Credencial vai para o

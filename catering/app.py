@@ -99,16 +99,23 @@ def _conexao():
 
 
 def _filtros(de, ate, movimento, lente, faixa, pagina,
-             unidade, cliente, tipo_estoque, operacao):
+             unidade, cliente, tipo_estoque, operacao, dia=()):
     """Monta e valida o recorte. Um lugar so para os tres endpoints -- se cada
     um montasse o seu, a tela mostraria um recorte e baixaria outro.
 
     Filtro invalido e **400**, nao 500: 500 esconderia erro do chamador atras de
-    erro do servidor, e manda quem esta depurando olhar o lugar errado."""
+    erro do servidor, e manda quem esta depurando olhar o lugar errado.
+
+    `dia` entra como **texto** e nao como `list[int]` de proposito: com `int` o
+    FastAPI recusaria antes com 422 e uma mensagem de esquema, e o recorte
+    passaria a ter duas linguagens de erro diferentes dependendo de qual filtro
+    a pessoa errou. `recorte.dias_do_filtro()` converte e recusa em 400, como
+    todos os outros."""
     filtros = recorte.Filtros(
         de=de, ate=ate, movimento=movimento, lente=lente, faixa=faixa,
         pagina=pagina, unidades=tuple(unidade), clientes=tuple(cliente),
         tipos_estoque=tuple(tipo_estoque), operacoes=tuple(operacao),
+        dias=tuple(dia),
     )
     try:
         return filtros.validar()
@@ -254,16 +261,30 @@ def opcoes(usuario=Depends(sessao.exigir_login)):
             cur.execute("SELECT DISTINCT tipo FROM cat_tipos_estoque ORDER BY 1")
             tipos = [linha[0] for linha in cur.fetchall()]
 
-            # o periodo que existe no dado -- a tela abre nele em vez de chutar
+            # O periodo que EXISTE no dado. Deixou de ser o padrao da tela e
+            # passou a ser a dica de alcance: com 3,6 anos no banco, abrir em
+            # `min..max` daria 44 colunas para responder pergunta que ninguem
+            # fez. Mas a pessoa precisa SABER que 2023 esta ali, senao ela nao
+            # filtra para tras -- entao o intervalo aparece ao lado dos campos.
             cur.execute(
                 """
-                SELECT to_char(min(nk_calendario), 'YYYY-MM'),
-                       to_char(max(nk_calendario), 'YYYY-MM')
+                SELECT to_char(min(nk_calendario), 'YYYY-MM-DD'),
+                       to_char(max(nk_calendario), 'YYYY-MM-DD')
                 FROM (SELECT nk_calendario FROM cat_fato_recebimento
                       UNION ALL SELECT nk_calendario FROM cat_fato_expedicao) t
                 """
             )
             periodo = cur.fetchone()
+
+            # "Hoje" vem do POSTGRES, no fuso de exibicao, e nao do relogio do
+            # processo: o container roda em UTC, e as 21h de Brasilia ja sao o
+            # dia seguinte la -- a tela abriria com um dia que ainda nao
+            # comecou. E o mesmo defeito que o V3.5.1 corrigiu no rodape, so que
+            # aqui ele mexeria no recorte. O Postgres tambem e onde a base de
+            # fuso e confiavel (o `zoneinfo` depende de tzdata na imagem).
+            cur.execute("SELECT (now() AT TIME ZONE %s)::date",
+                        (contrato.fuso_exibicao(),))
+            hoje = cur.fetchone()[0]
 
             # procedencia: de quando e o dado que a tela esta mostrando.
             # `AT TIME ZONE` porque `terminada_em` e `timestamptz` e o `to_char`
@@ -288,12 +309,39 @@ def opcoes(usuario=Depends(sessao.exigir_login)):
     finally:
         conn.close()
 
+    # A abertura da tela: janeiro do ano corrente ate hoje (configuravel em
+    # `CAT_ABERTURA_DE`).
+    #
+    # **Sem trava no primeiro dia com dado, e isso foi medido no navegador.** A
+    # primeira versao abria em `max(abertura, primeiro dia do dado)`, para nao
+    # abrir com a ponta esquerda vazia. O efeito colateral apareceu na tela: o
+    # dado local comeca em 02/jan, entao a tela abria em 02/jan e o cabecalho
+    # declarava `2026-01 (02-31)` -- marcando como PARCIAL um janeiro que esta
+    # inteiro. A marca de mes parcial so vale se ela for rara; nascer ligada no
+    # padrao e o caminho mais curto para ninguem mais olhar para ela.
+    #
+    # Coluna vazia a esquerda nao custa nada (ela existe, e completa, e vale
+    # zero). Um marcador que mente, custa.
+    #
+    # A unica trava que fica e a da inversao, para `CAT_ABERTURA_DE` pinado no
+    # futuro nao abrir a tela com "periodo invertido" na cara de quem entrou.
+    abertura_de = min(contrato.abertura_de(hoje), hoje)
+    abertura_ate = hoje
+
     return {
         "unidades": unidades,
         "clientes": clientes,
         "operacoes": operacoes,
         "tipos_estoque": tipos,
         "periodo": {"de": periodo[0], "ate": periodo[1]},
+        "abertura": {"de": abertura_de.isoformat(), "ate": abertura_ate.isoformat()},
+        # Os dois tetos do download, vindos do Python para nao existir uma
+        # segunda copia deles no JavaScript. `teto_confirmacao` e onde a tela
+        # PERGUNTA antes de baixar; `teto_xlsx` e onde o servidor RECUSA -- e a
+        # tela usa esse para avisar antes de navegar, porque a recusa de um
+        # download apareceria como uma pagina de JSON cru.
+        "teto_confirmacao": download.TETO_CONFIRMACAO,
+        "teto_xlsx": download.TETO_XLSX,
         "lentes": [
             {"chave": c, "nome": d["nome"], "unidade": d["unidade"],
              "so_entrada": d["exp"] is None}
@@ -308,8 +356,8 @@ def opcoes(usuario=Depends(sessao.exigir_login)):
 
 @app.get("/api/matriz")
 def api_matriz(
-    de: str = Query(..., description="mes inicial, AAAA-MM"),
-    ate: str = Query(..., description="mes final, AAAA-MM"),
+    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
+    ate: str = Query(..., description="ultimo dia, AAAA-MM-DD (inclusivo)"),
     movimento: str = Query("rec"),
     lente: str = Query("liq"),
     faixa: str = Query("solicitado"),
@@ -318,11 +366,12 @@ def api_matriz(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    dia: list[str] = Query(default=[], description="dia do MES, 1..31"),
     usuario=Depends(sessao.exigir_login),
 ):
     """A Matriz do recorte."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
-                       unidade, cliente, tipo_estoque, operacao)
+                       unidade, cliente, tipo_estoque, operacao, dia)
     conn = _conexao()
     try:
         with conn.cursor() as cur:
@@ -334,8 +383,8 @@ def api_matriz(
 
 @app.get("/api/planilha")
 def api_planilha(
-    de: str = Query(..., description="mes inicial, AAAA-MM"),
-    ate: str = Query(..., description="mes final, AAAA-MM"),
+    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
+    ate: str = Query(..., description="ultimo dia, AAAA-MM-DD (inclusivo)"),
     movimento: str = Query("rec"),
     lente: str = Query("liq"),
     faixa: str = Query("solicitado"),
@@ -344,11 +393,12 @@ def api_planilha(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    dia: list[str] = Query(default=[], description="dia do MES, 1..31"),
     usuario=Depends(sessao.exigir_login),
 ):
     """Linhas cruas do recorte, 100 por pagina, paginadas no servidor."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
-                       unidade, cliente, tipo_estoque, operacao)
+                       unidade, cliente, tipo_estoque, operacao, dia)
     conn = _conexao()
     try:
         with conn.cursor() as cur:
@@ -360,8 +410,8 @@ def api_planilha(
 @app.get("/api/download")
 def api_download(
     request: Request,
-    de: str = Query(..., description="mes inicial, AAAA-MM"),
-    ate: str = Query(..., description="mes final, AAAA-MM"),
+    de: str = Query(..., description="primeiro dia, AAAA-MM-DD"),
+    ate: str = Query(..., description="ultimo dia, AAAA-MM-DD (inclusivo)"),
     formato: str = Query("csv"),
     movimento: str = Query("rec"),
     lente: str = Query("liq"),
@@ -370,6 +420,7 @@ def api_download(
     cliente: list[str] = Query(default=[]),
     tipo_estoque: list[str] = Query(default=[]),
     operacao: list[str] = Query(default=[]),
+    dia: list[str] = Query(default=[], description="dia do MES, 1..31"),
     usuario=Depends(sessao.exigir_login),
 ):
     """O recorte inteiro, em CSV (streaming) ou xlsx (sob teto).
@@ -382,7 +433,7 @@ def api_download(
     if formato not in ("csv", "xlsx"):
         raise HTTPException(status_code=400, detail=f"formato: {formato!r}")
     filtros = _filtros(de, ate, movimento, lente, faixa, 1,
-                       unidade, cliente, tipo_estoque, operacao)
+                       unidade, cliente, tipo_estoque, operacao, dia)
 
     # V3.4: `usuario` deixa de ser nulo. O resto do registro nao mudou de forma,
     # como o V3.3 previu -- e uma linha, e nao um retrabalho.

@@ -227,6 +227,65 @@ def fuso_exibicao() -> str:
         ) from None
     return nome
 
+
+# ---------------------------------------------------- abertura da tela
+# **O piso da CARGA e a abertura da TELA sao decisoes diferentes**, e confundir
+# as duas foi o que este bloco existe para impedir. A carga le de 2023 em diante
+# (`ano_minimo()`); a tela ABRE em janeiro do ano corrente e vai ate hoje. Quem
+# quiser 2023 filtra para tras -- o dado esta la.
+#
+# Antes deste lote a tela abria em `min(nk_calendario)..max(nk_calendario)` lido
+# do banco. Isso era certo enquanto o banco tinha um ano; com 3,6 anos dentro
+# dele a tela passaria a abrir em 01/2023, com 44 colunas, para responder uma
+# pergunta que ninguem fez (Maria, 26/ago/2026).
+#
+# Por que `ano-corrente` e nao a data fixa `2026-01-01`: a Maria descreveu
+# "janeiro do ano corrente ate o mes atual", que e rolante, e pediu a decisao em
+# configuracao. As duas coisas caberem na MESMA variavel e o que evita escolher
+# uma delas em silencio -- o padrao e o rolante, e pinar e escrever a data.
+#
+# O que o rolante custa, escrito antes de doer: em 01/jan/2027 a tela abre com
+# uma coluna so. A saida e `CAT_ABERTURA_DE=2026-01-01`, sem commit.
+#
+# **`hoje` entra como argumento, nao e lido do relogio aqui.** Duas razoes: o
+# relogio do container e UTC, e as 21h de Brasilia ja sao o dia seguinte em UTC
+# -- o mesmo defeito que o V3.5.1 corrigiu na exibicao; e funcao que le o
+# relogio por dentro nao se testa sem congelar o tempo. Quem chama pega o dia no
+# fuso de exibicao pelo Postgres, que e onde a base de fuso e confiavel.
+ABERTURA_ANO_CORRENTE = "ano-corrente"
+ABERTURA_PADRAO = ABERTURA_ANO_CORRENTE
+ENV_ABERTURA_DE = "CAT_ABERTURA_DE"
+
+_DATA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+class AberturaInvalida(ValueError):
+    """Valor de `CAT_ABERTURA_DE` que nao e nem o rolante nem uma data."""
+
+
+def abertura_de(hoje: date) -> date:
+    """O primeiro dia do recorte com que a tela abre.
+
+    `ano-corrente` (o padrao) -> 1o de janeiro do ano de `hoje`. Uma data
+    `AAAA-MM-DD` -> ela mesma. Qualquer outra coisa falha **nomeando a
+    variavel**: valor escrito errado tem que apontar para a configuracao, e nao
+    virar "abre em 1970" ou "abre em 2026" por acidente de parse."""
+    bruto = (os.environ.get(ENV_ABERTURA_DE) or "").strip()
+    if not bruto or bruto == ABERTURA_ANO_CORRENTE:
+        return date(hoje.year, 1, 1)
+    if not _DATA_ISO.match(bruto):
+        raise AberturaInvalida(
+            f"{ENV_ABERTURA_DE}={bruto!r} nao e {ABERTURA_ANO_CORRENTE!r} "
+            "nem uma data AAAA-MM-DD"
+        )
+    try:
+        return date.fromisoformat(bruto)
+    except ValueError:
+        raise AberturaInvalida(
+            f"{ENV_ABERTURA_DE}={bruto!r} nao e uma data que existe"
+        ) from None
+
+
 # ------------------------------------------------------------ identidade
 # Sem `nk_cliente` sobra 1 duplicata no recebimento e 65 na expedicao; sem
 # `descr_oper_wms` sobram 202 e 93; so (instancia, filial, gem) repete ate 3

@@ -34,6 +34,7 @@ cada teste, e o aceite carrega 78.768 linhas. Cada assert carrega mensagem
 propria, entao a falha continua dizendo o que quebrou.
 """
 
+import calendar
 import csv
 from collections import defaultdict
 from decimal import Decimal
@@ -45,7 +46,7 @@ import pytest
 from catering import contrato
 from catering.carga import carregar_tudo
 from catering.carga.fonte_csv import FonteCSV
-from catering.consulta import matriz
+from catering.consulta import matriz, recorte
 
 DIRETORIO_DW = Path(__file__).resolve().parent.parent / "docs" / "Analise"
 
@@ -78,12 +79,17 @@ def _numero(valor):
     return Decimal(valor) if valor else None
 
 
-def esperado_do_csv(movimento, lente, de, ate):
+def esperado_do_csv(movimento, lente, de, ate, dias=()):
     """A Matriz calculada em Python puro, direto do CSV.
 
     Devolve `{(sigla, raiz, faixa_ou_vazio, operacao, mes): valor}` -- as
     celulas das FOLHAS. Os niveis de cima sao somas das folhas, e o teste
-    confere isso separadamente."""
+    confere isso separadamente.
+
+    `de`/`ate` sao DATAS (`AAAA-MM-DD`) e `dias` e o filtro de dia do mes, como
+    no recorte de verdade. O recorte por dia entrou em 26/ago/2026, e o aceite
+    subiu junto: antes este caminho comparava mes com mes, o que nao provava
+    nada sobre corte no meio do mes."""
     caminho = DIRETORIO_DW / ARQUIVO[movimento]
     if movimento == "rec":
         colunas = {"": contrato.LENTES[lente]["rec"].upper()}
@@ -97,9 +103,14 @@ def esperado_do_csv(movimento, lente, de, ate):
     celulas = defaultdict(lambda: None)
     with caminho.open(encoding="utf-8", newline="") as arquivo:
         for linha in csv.DictReader(arquivo, delimiter=";"):
-            mes = _mes(linha["NK_CALENDARIO"])
-            if not (de <= mes <= ate):
+            # `AAAA-MM-DD` compara lexicograficamente na ordem certa, e o
+            # corte e feito no DIA -- e assim que o recorte de verdade corta.
+            dia = linha["NK_CALENDARIO"].strip()[:10]
+            if not (de <= dia <= ate):
                 continue
+            if dias and int(dia[8:10]) not in dias:
+                continue
+            mes = _mes(linha["NK_CALENDARIO"])
             if not linha["NK_INSTANCIA"].startswith("SLIN_"):
                 continue
             sigla_fonte = linha["NK_WMS_FILIAL"].strip()
@@ -135,9 +146,22 @@ def _folhas(nos, caminho=()):
     return saida
 
 
+# O recorte passou a ser por DIA (26/ago/2026), e a coluna continua mensal --
+# entao teste que fala de mes precisa das duas pontas dele. Calculado, e nao
+# escrito a mao, para nao existir um "2026-02-31" em teste nenhum.
+def _pontas_do_mes(mes):
+    """`'2026-02'` -> `('2026-02-01', '2026-02-28')`.
+
+    Nome comprido de proposito: `_mes` neste arquivo ja e a funcao que corta
+    `2026-01-05 00:00:00.000` em `2026-01`, e as duas juntas leem o mesmo tipo
+    de texto em direcoes opostas."""
+    ano, numero = (int(parte) for parte in mes.split("-"))
+    return f"{mes}-01", f"{mes}-{calendar.monthrange(ano, numero)[1]:02d}"
+
+
 # =============================================================== filtros
 def test_filtros_recusam_o_que_o_contrato_nao_admite():
-    matriz.Filtros(de="2026-01", ate="2026-03").validar()
+    matriz.Filtros(de="2026-01-01", ate="2026-03-31").validar()
 
     for kwargs, esperado in (
         ({"movimento": "xpto"}, "movimento"),
@@ -146,24 +170,99 @@ def test_filtros_recusam_o_que_o_contrato_nao_admite():
         ({"pagina": 0}, "pagina"),
     ):
         with pytest.raises(matriz.FiltroInvalido, match=esperado):
-            matriz.Filtros(de="2026-01", ate="2026-03", **kwargs).validar()
+            matriz.Filtros(de="2026-01-01", ate="2026-03-31", **kwargs).validar()
 
-    with pytest.raises(matriz.FiltroInvalido, match="AAAA-MM"):
-        matriz.Filtros(de="janeiro", ate="2026-03").validar()
+    with pytest.raises(matriz.FiltroInvalido, match="AAAA-MM-DD"):
+        matriz.Filtros(de="janeiro", ate="2026-03-31").validar()
     with pytest.raises(matriz.FiltroInvalido, match="invertido"):
-        matriz.Filtros(de="2026-03", ate="2026-01").validar()
+        matriz.Filtros(de="2026-03-01", ate="2026-01-31").validar()
+
+    # Mes fechado deixou de ser aceito: o recorte e por dia, e uma unica
+    # linguagem de formato e o que impede a tela de pedir uma coisa e o
+    # download de levar outra.
+    with pytest.raises(matriz.FiltroInvalido, match="AAAA-MM-DD"):
+        matriz.Filtros(de="2026-01", ate="2026-03").validar()
+    # Formato que o `date.fromisoformat` aceitaria sozinho, e a tela nunca manda
+    with pytest.raises(matriz.FiltroInvalido, match="AAAA-MM-DD"):
+        matriz.Filtros(de="20260101", ate="2026-03-31").validar()
+    # data que nao existe no calendario
+    with pytest.raises(matriz.FiltroInvalido, match="nao e uma data"):
+        matriz.Filtros(de="2026-02-30", ate="2026-03-31").validar()
+
+    for dia in ("0", "32", "-1", "x", "1.5"):
+        with pytest.raises(matriz.FiltroInvalido, match="dia"):
+            matriz.Filtros(de="2026-01-01", ate="2026-03-31",
+                           dias=(dia,)).validar()
+
+
+def test_dia_do_mes_normaliza_para_o_eco_e_o_sql_falarem_do_mesmo_conjunto():
+    """Repetido e fora de ordem viram um conjunto ordenado de inteiros.
+
+    Nao e estetica: `como_dict()` e o que a auditoria grava, e o `WHERE` sai da
+    mesma tupla. Se cada ponta normalizasse por conta propria, o registro de
+    download poderia descrever um recorte diferente do que saiu."""
+    filtros = matriz.Filtros(de="2026-01-01", ate="2026-01-31",
+                             dias=("06", 6, "4", " 9 ")).validar()
+    assert filtros.dias == (4, 6, 9)
+    assert filtros.como_dict()["dias"] == [4, 6, 9]
+
+    clausulas, params = recorte.onde(filtros)
+    assert params["dias"] == [4, 6, 9]
+    assert any("EXTRACT(DAY FROM f.nk_calendario)" in c for c in clausulas)
+
+    # Sem filtro de dia, a clausula nao existe -- nao e `IN (1..31)`, que
+    # cobraria o preco de uma expressao sem indice para nao filtrar nada.
+    _, sem = recorte.onde(matriz.Filtros(de="2026-01-01", ate="2026-01-31").validar())
+    assert "dias" not in sem
+
+
+def test_ponta_de_mes_parcial_aparece_no_cabecalho():
+    """`2026-08 (03-31)`: total rotulado como o mes que nao e o mes inteiro e o
+    numero que alguem copia para um relatorio sem saber."""
+    rotulos = recorte.rotulos_dos_meses("2026-08-03", "2026-09-05")
+    assert rotulos == {"2026-08": "2026-08 (03-31)", "2026-09": "2026-09 (01-05)"}
+
+    # mes inteiro sai sem parenteses: anotar o obvio treina a pessoa a ignorar
+    # a anotacao
+    assert recorte.rotulos_dos_meses("2026-01-01", "2026-02-28") == {
+        "2026-01": "2026-01", "2026-02": "2026-02",
+    }
+    # um mes so, parcial nas duas pontas
+    assert recorte.rotulos_dos_meses("2026-05-10", "2026-05-12") == {
+        "2026-05": "2026-05 (10-12)",
+    }
+    # fevereiro de ano bissexto termina em 29, e o rotulo tem que saber disso
+    assert recorte.rotulos_dos_meses("2028-02-01", "2028-02-29") == {
+        "2028-02": "2028-02",
+    }
+
+
+def test_o_aviso_do_filtro_de_dia_resume_em_faixas():
+    """Aviso que lista 28 numeros e uma parede que ninguem le -- e aviso que
+    ninguem le nao avisa nada."""
+    assert recorte.rotulo_dos_dias([4, 5, 6, 9, 20, 21]) == "04 a 06, 09, 20, 21"
+    assert recorte.rotulo_dos_dias([31]) == "31"
+    assert recorte.rotulo_dos_dias([]) == ""
+    assert recorte.aviso_dos_dias(()) is None
+    assert "04 a 06" in recorte.aviso_dos_dias([4, 5, 6])
 
 
 def test_mes_vazio_vira_coluna_vazia_e_nao_coluna_ausente():
     """Se a coluna do mes sem dado desaparecesse, as outras deslizariam e a
     comparacao entre linhas passaria a mentir."""
-    assert matriz.meses_do_periodo("2026-01", "2026-04") == [
+    assert matriz.meses_do_periodo("2026-01-01", "2026-04-30") == [
         "2026-01", "2026-02", "2026-03", "2026-04"
     ]
-    assert matriz.meses_do_periodo("2025-11", "2026-02") == [
+    assert matriz.meses_do_periodo("2025-11-01", "2026-02-28") == [
         "2025-11", "2025-12", "2026-01", "2026-02"
     ]
-    assert matriz.meses_do_periodo("2026-05", "2026-05") == ["2026-05"]
+    assert matriz.meses_do_periodo("2026-05-01", "2026-05-31") == ["2026-05"]
+    # O mes da ponta entra INTEIRO como coluna mesmo quando o periodo pega
+    # poucos dias dele: a coluna existe, e o cabecalho declara os dias.
+    assert matriz.meses_do_periodo("2026-08-31", "2026-09-01") == [
+        "2026-08", "2026-09"
+    ]
+    assert matriz.meses_do_periodo("2026-05-10", "2026-05-12") == ["2026-05"]
 
 
 def test_hierarquia_e_configuravel():
@@ -206,7 +305,7 @@ def test_aceite_celula_por_celula_contra_os_csvs(banco_migrado):
         with conn.cursor() as cur:
             for movimento, lente in (("rec", "liq"), ("rec", "pal"),
                                      ("exp", "liq"), ("exp", "val")):
-                de, ate = "2026-01", "2026-08"
+                de, ate = "2026-01-01", "2026-08-31"
                 # pagina grande o suficiente para nao cortar unidade: o aceite
                 # e sobre o numero, e paginacao tem teste proprio
                 resultado = matriz.matriz(cur, matriz.Filtros(
@@ -248,7 +347,7 @@ def test_no_de_cima_e_a_soma_dos_filhos(banco_migrado):
     try:
         with conn.cursor() as cur:
             resultado = matriz.matriz(cur, matriz.Filtros(
-                de="2026-01", ate="2026-03", movimento="rec", lente="liq"))
+                de="2026-01-01", ate="2026-03-31", movimento="rec", lente="liq"))
             for unidade in resultado["linhas"]:
                 for mes in resultado["meses"]:
                     soma = sum(
@@ -271,7 +370,7 @@ def test_saida_abre_as_tres_faixas_com_filhos_proprios(cursor):
     E o no de cima mostra a faixa escolhida -- as tres nao somam entre si."""
     _semear_saida(cursor)
     resultado = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="exp", lente="liq",
+        de="2026-01-01", ate="2026-01-31", movimento="exp", lente="liq",
         faixa="solicitado"))
 
     unidade = resultado["linhas"][0]
@@ -299,7 +398,7 @@ def test_saida_abre_as_tres_faixas_com_filhos_proprios(cursor):
 
     # trocar a faixa do botao troca o que o nivel de cima mostra
     outra = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="exp", lente="liq",
+        de="2026-01-01", ate="2026-01-31", movimento="exp", lente="liq",
         faixa="atendido"))
     assert outra["linhas"][0]["valores"]["2026-01"] == Decimal("80.000")
 
@@ -310,7 +409,7 @@ def test_pallet_na_saida_volta_vazio_com_aviso(cursor):
     memory/pagina-mostra-numero-nao-texto.md."""
     _semear_saida(cursor)
     resultado = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="exp", lente="pal"))
+        de="2026-01-01", ate="2026-01-31", movimento="exp", lente="pal"))
     assert resultado["linhas"] == []
     assert resultado["total"] == {"2026-01": None}
     assert any("só existe na entrada" in a for a in resultado["avisos"])
@@ -318,7 +417,7 @@ def test_pallet_na_saida_volta_vazio_com_aviso(cursor):
     # na entrada a mesma lente tem numero, e nenhum aviso de pallet
     _semear_entrada(cursor)
     entrada = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="rec", lente="pal"))
+        de="2026-01-01", ate="2026-01-31", movimento="rec", lente="pal"))
     assert entrada["total"]["2026-01"] == 7
     assert not any("só existe na entrada" in a for a in entrada["avisos"])
 
@@ -332,7 +431,7 @@ def test_dimensao_faltando_nao_faz_a_linha_desaparecer(cursor):
     cursor.execute("DELETE FROM cat_clientes")
 
     resultado = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="rec", lente="liq"))
+        de="2026-01-01", ate="2026-01-31", movimento="rec", lente="liq"))
     unidade = resultado["linhas"][0]
     assert unidade["chave"] == "NOVA", "a unidade sem dimensao sumiu da Matriz"
     assert unidade["rotulo"] == "NOVA", "sem dimensao, o rotulo cai para a fonte"
@@ -349,8 +448,9 @@ def test_filtros_recortam_de_verdade(cursor):
                     gem="0000000002")
 
     def total(mes="2026-01", **kwargs):
+        de, ate = _pontas_do_mes(mes)
         r = matriz.matriz(cursor, matriz.Filtros(
-            de=mes, ate=mes, movimento="rec", lente="liq", **kwargs))
+            de=de, ate=ate, movimento="rec", lente="liq", **kwargs))
         return r["total"][mes]
 
     assert total() == Decimal("30.000")
@@ -369,12 +469,96 @@ def test_periodo_recorta_pelo_calendario_e_nao_pela_solicitacao(cursor):
     _semear_entrada(cursor, calendario="2026-02-02", solic="2026-01-31",
                     peso="55.000")
     fevereiro = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-02", ate="2026-02", movimento="rec", lente="liq"))
+        de="2026-02-01", ate="2026-02-28", movimento="rec", lente="liq"))
     janeiro = matriz.matriz(cursor, matriz.Filtros(
-        de="2026-01", ate="2026-01", movimento="rec", lente="liq"))
+        de="2026-01-01", ate="2026-01-31", movimento="rec", lente="liq"))
     assert fevereiro["total"]["2026-02"] == Decimal("55.000")
     assert janeiro["total"]["2026-01"] is None, \
         "agregou pela data da solicitacao -- contraria a decisao A-5"
+
+
+@tem_extracao
+def test_aceite_do_recorte_por_dia_contra_os_csvs(banco_migrado):
+    """**O aceite do recorte por dia.** Duas implementacoes, mesmo numero.
+
+    Mesmo metodo do aceite do V3.2, com o recorte que o lote criou: periodo
+    comecando e terminando no MEIO do mes, e filtro de dia do mes por cima. Se o
+    `WHERE` e o caminho em Python discordarem de uma celula, este teste diz qual.
+
+    Por que isto e o teste que importa neste lote: um recorte que corta errado
+    nao estoura -- ele devolve um numero menor, plausivel, e ninguem ve."""
+    carregar_tudo(FonteCSV(DIRETORIO_DW))
+    conn = psycopg2.connect(__import__("os").environ["DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            for de, ate, dias in (
+                ("2026-03-03", "2026-05-05", ()),        # pontas parciais
+                ("2026-02-01", "2026-04-30", (1, 2, 3)), # dia do mes, meses inteiros
+                ("2026-06-10", "2026-07-20", (10, 11, 12, 13, 14, 15)),  # os dois
+            ):
+                filtros = matriz.Filtros(de=de, ate=ate, movimento="rec",
+                                         lente="liq", dias=dias)
+                resultado = matriz.matriz(cur, filtros)
+                do_sql = _folhas(resultado["linhas"])
+                do_csv = esperado_do_csv("rec", "liq", de, ate,
+                                         dias=recorte.dias_do_filtro(dias))
+
+                rotulo = f"{de} a {ate} dias={dias or 'todos'}"
+                assert do_sql, f"{rotulo}: a Matriz voltou vazia"
+                assert set(do_sql) == set(do_csv), (
+                    f"{rotulo}: conjunto de celulas divergiu -- "
+                    f"so no SQL: {sorted(set(do_sql) - set(do_csv))[:3]}; "
+                    f"so no CSV: {sorted(set(do_csv) - set(do_sql))[:3]}"
+                )
+                for chave, esperado in do_csv.items():
+                    assert do_sql[chave] == esperado, f"{rotulo}: celula {chave}"
+
+                # o cabecalho tem que declarar as pontas parciais
+                rotulos = resultado["rotulos_meses"]
+                primeiro, ultimo = resultado["meses"][0], resultado["meses"][-1]
+                if not de.endswith("-01"):
+                    assert "(" in rotulos[primeiro], (
+                        f"{rotulo}: a coluna {primeiro} e parcial e o cabecalho "
+                        "nao declara"
+                    )
+                if dias:
+                    assert any("dia do mês" in a for a in resultado["avisos"]), (
+                        f"{rotulo}: filtro de dia ativo sem aviso na tela"
+                    )
+    finally:
+        conn.close()
+
+
+@tem_extracao
+def test_total_linhas_da_matriz_bate_com_a_contagem_da_planilha(banco_migrado):
+    """O `total_linhas` que a Matriz devolve (soma dos `count(*)` dos grupos) e o
+    numero que a tela usa para avisar antes de um download grande.
+
+    Ele tem que ser o MESMO que a planilha conta com `count(*)` sobre o recorte
+    inteiro. Se divergirem, a tela avisa sobre um arquivo e baixa outro."""
+    from catering.consulta import planilha as mod_planilha
+
+    carregar_tudo(FonteCSV(DIRETORIO_DW))
+    conn = psycopg2.connect(__import__("os").environ["DATABASE_URL"])
+    try:
+        with conn.cursor() as cur:
+            for de, ate, dias in (
+                ("2026-01-01", "2026-08-31", ()),
+                ("2026-03-03", "2026-05-05", ()),
+                ("2026-01-01", "2026-08-31", (1, 15, 31)),
+            ):
+                filtros = matriz.Filtros(de=de, ate=ate, dias=dias)
+                da_matriz = matriz.matriz(cur, filtros)["total_linhas"]
+                da_planilha = mod_planilha.planilha(
+                    cur, matriz.Filtros(de=de, ate=ate, dias=dias)
+                )["paginacao"]["total_linhas"]
+                assert da_matriz == da_planilha, (
+                    f"{de} a {ate} dias={dias or 'todos'}: a Matriz contou "
+                    f"{da_matriz} linha(s) e a planilha {da_planilha}"
+                )
+                assert da_matriz > 0, "recorte com dado voltou contagem zero"
+    finally:
+        conn.close()
 
 
 # ------------------------------------------------------------- semeadura

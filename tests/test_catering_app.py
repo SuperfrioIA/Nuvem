@@ -21,6 +21,7 @@ o sinal tem que aparecer como falha de seguranca, e nao como catorze falhas de
 Matriz apontando para o lugar errado.
 """
 
+from datetime import date
 from decimal import Decimal
 
 import pytest
@@ -28,6 +29,7 @@ from fastapi.testclient import TestClient
 
 from catering import contrato
 from catering.app import app
+from catering.consulta import download
 from catering.seguranca import identidade, usuarios
 from tests.conftest import consultar
 from tests.test_catering_matriz import _semear_entrada, _semear_saida
@@ -88,7 +90,22 @@ def test_opcoes_saem_do_dado_e_nao_de_lista_fixa(cliente_v3, cursor):
     assert "XPTO" in corpo["unidades"], "unidade nova nao apareceu no filtro"
     assert "99999999" in [c["chave"] for c in corpo["clientes"]]
     assert "OPERACAO NOVA" in corpo["operacoes"]["rec"]
-    assert corpo["periodo"]["de"] == "2026-01"
+    # O periodo agora sai em DIA, e deixou de ser o padrao da tela: virou a dica
+    # de alcance ("o dado disponivel vai de X a Y"), para quem nao sabe que
+    # 2023 esta no banco poder filtrar para tras.
+    assert corpo["periodo"]["de"] == "2026-01-05"
+
+    # A abertura e outra coisa: e onde a tela COMECA. Janeiro do ano corrente
+    # ate hoje, e nunca antes do primeiro dia que tem dado.
+    hoje = date.today()
+    assert corpo["abertura"]["ate"] == hoje.isoformat()
+    assert corpo["abertura"]["de"] >= f"{hoje.year:04d}-01-01"
+    assert corpo["abertura"]["de"] <= corpo["abertura"]["ate"], \
+        "a tela abriria com periodo invertido"
+
+    # os dois tetos do download vem do Python, e nao de uma copia no JavaScript
+    assert corpo["teto_confirmacao"] == download.TETO_CONFIRMACAO
+    assert corpo["teto_xlsx"] == download.TETO_XLSX
 
     # as lentes vem do contrato, com o pallet marcado como so-entrada para a
     # tela poder desabilitar em vez de esconder
@@ -107,7 +124,7 @@ def test_matriz_devolve_a_arvore_e_o_recorte_aplicado(cliente_v3, cursor):
     semear(cursor, _semear_entrada, peso="12.500")
     resposta = cliente_v3.get(
         "/api/matriz",
-        params={"de": "2026-01", "ate": "2026-01", "movimento": "rec",
+        params={"de": "2026-01-01", "ate": "2026-01-31", "movimento": "rec",
                 "lente": "liq"},
     )
     assert resposta.status_code == 200
@@ -118,8 +135,10 @@ def test_matriz_devolve_a_arvore_e_o_recorte_aplicado(cliente_v3, cursor):
     assert corpo["lente"] == {"chave": "liq", "nome": "Peso líquido", "unidade": "t"}
     # o recorte volta ecoado: a tela nunca deve adivinhar o que pediu, e o
     # download do V3.3 precisa registrar isto na auditoria
-    assert corpo["filtros"]["de"] == "2026-01"
+    assert corpo["filtros"]["de"] == "2026-01-01"
+    assert corpo["filtros"]["ate"] == "2026-01-31"
     assert corpo["filtros"]["movimento"] == "rec"
+    assert corpo["filtros"]["dias"] == [], "sem filtro de dia, o eco e vazio"
 
     unidade = corpo["linhas"][0]
     assert unidade["chave"] == "RMSPII"
@@ -132,7 +151,7 @@ def test_numero_vai_como_texto_para_nao_perder_precisao(cliente_v3, cursor):
     semear(cursor, _semear_entrada, peso="12345.678")
     corpo = cliente_v3.get(
         "/api/matriz",
-        params={"de": "2026-01", "ate": "2026-01", "lente": "liq"},
+        params={"de": "2026-01-01", "ate": "2026-01-31", "lente": "liq"},
     ).json()
     valor = corpo["total"]["2026-01"]
     assert isinstance(valor, str), f"veio {type(valor).__name__}, esperado string"
@@ -143,11 +162,14 @@ def test_filtro_invalido_e_400_e_nao_500(cliente_v3):
     """500 aqui esconderia erro do chamador atras de erro do servidor -- e
     manda quem esta depurando olhar o lugar errado."""
     for params, pedaco in (
-        ({"de": "2026-01", "ate": "2026-01", "lente": "xpto"}, "lente"),
-        ({"de": "2026-01", "ate": "2026-01", "movimento": "xpto"}, "movimento"),
-        ({"de": "2026-01", "ate": "2026-01", "faixa": "xpto"}, "faixa"),
-        ({"de": "janeiro", "ate": "2026-01"}, "AAAA-MM"),
-        ({"de": "2026-03", "ate": "2026-01"}, "invertido"),
+        ({"de": "2026-01-01", "ate": "2026-01-31", "lente": "xpto"}, "lente"),
+        ({"de": "2026-01-01", "ate": "2026-01-31", "movimento": "xpto"}, "movimento"),
+        ({"de": "2026-01-01", "ate": "2026-01-31", "faixa": "xpto"}, "faixa"),
+        ({"de": "janeiro", "ate": "2026-01-31"}, "AAAA-MM-DD"),
+        ({"de": "2026-01", "ate": "2026-01"}, "AAAA-MM-DD"),
+        ({"de": "2026-01-01", "ate": "2026-01-31", "dia": "32"}, "dia"),
+        ({"de": "2026-01-01", "ate": "2026-01-31", "dia": "x"}, "dia"),
+        ({"de": "2026-03-01", "ate": "2026-01-31"}, "invertido"),
     ):
         resposta = cliente_v3.get("/api/matriz", params=params)
         assert resposta.status_code == 400, f"{params} devolveu {resposta.status_code}"
@@ -162,7 +184,7 @@ def test_saida_traz_as_tres_faixas_e_o_aviso(cliente_v3, cursor):
     semear(cursor, _semear_saida)
     corpo = cliente_v3.get(
         "/api/matriz",
-        params={"de": "2026-01", "ate": "2026-01", "movimento": "exp",
+        params={"de": "2026-01-01", "ate": "2026-01-31", "movimento": "exp",
                 "lente": "liq", "faixa": "solicitado"},
     ).json()
 
@@ -176,7 +198,7 @@ def test_pallet_na_saida_devolve_vazio_com_aviso(cliente_v3, cursor):
     semear(cursor, _semear_saida)
     corpo = cliente_v3.get(
         "/api/matriz",
-        params={"de": "2026-01", "ate": "2026-01", "movimento": "exp",
+        params={"de": "2026-01-01", "ate": "2026-01-31", "movimento": "exp",
                 "lente": "pal"},
     ).json()
     assert corpo["linhas"] == []
@@ -231,7 +253,7 @@ def test_planilha_pela_api(cliente_v3, cursor):
     semear(cursor, _semear_entrada, peso="12.500")
     corpo = cliente_v3.get(
         "/api/planilha",
-        params={"de": "2026-01", "ate": "2026-01", "movimento": "rec", "lente": "liq"},
+        params={"de": "2026-01-01", "ate": "2026-01-31", "movimento": "rec", "lente": "liq"},
     ).json()
 
     assert [c["chave"] for c in corpo["colunas"]] == [
@@ -243,7 +265,99 @@ def test_planilha_pela_api(cliente_v3, cursor):
     assert linha["guia"] == "0000000001"
     assert linha["valor"] == "12.500", "medida vai como texto, para nao perder precisao"
     # o recorte volta ecoado, como na Matriz
-    assert corpo["filtros"]["de"] == "2026-01"
+    assert corpo["filtros"]["de"] == "2026-01-01"
+
+
+# ------------------------------------------------- abertura da tela e dia do mes
+def test_abertura_da_tela_e_janeiro_do_ano_corrente(monkeypatch):
+    """O padrao e rolante: janeiro do ANO de hoje.
+
+    Testado com `hoje` injetado, e nao com o relogio: funcao que le o relogio
+    por dentro so se testa congelando o tempo, e o proximo 1o de janeiro nao e
+    hora de descobrir isso."""
+    monkeypatch.delenv(contrato.ENV_ABERTURA_DE, raising=False)
+    assert contrato.abertura_de(date(2026, 8, 26)) == date(2026, 1, 1)
+    assert contrato.abertura_de(date(2027, 1, 1)) == date(2027, 1, 1)
+    assert contrato.abertura_de(date(2030, 12, 31)) == date(2030, 1, 1)
+
+    # o valor explicito vale o mesmo que a ausencia
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, contrato.ABERTURA_ANO_CORRENTE)
+    assert contrato.abertura_de(date(2026, 8, 26)) == date(2026, 1, 1)
+
+    # pinar e escrever a data -- e o que resolve o janeiro de 2027 com uma
+    # coluna so, sem commit
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, "2026-01-01")
+    assert contrato.abertura_de(date(2027, 3, 15)) == date(2026, 1, 1)
+
+
+@pytest.mark.parametrize("ruim", ["janeiro", "2026-01", "20260101", "2026-02-30", "0"])
+def test_abertura_invalida_falha_nomeando_a_variavel(monkeypatch, ruim):
+    """Valor escrito errado tem que apontar para a configuracao, e nao virar
+    "abre em 1970" em silencio."""
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, ruim)
+    with pytest.raises(contrato.AberturaInvalida, match=contrato.ENV_ABERTURA_DE):
+        contrato.abertura_de(date(2026, 8, 26))
+
+
+def test_abertura_pinada_chega_na_tela(cliente_v3, cursor, monkeypatch):
+    """A configuracao tem que atravessar o endpoint, e nao so a funcao."""
+    semear(cursor, _semear_entrada)
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, "2026-01-20")
+    corpo = cliente_v3.get("/api/opcoes").json()
+    assert corpo["abertura"]["de"] == "2026-01-20"
+
+    # Data pinada ANTES do primeiro dia com dado vale como pedida: a alternativa
+    # (travar no primeiro dia do dado) foi construida, medida no navegador e
+    # DESFEITA -- ela fazia o cabecalho declarar `2026-01 (02-31)` num janeiro
+    # inteiro, so porque o dado comeca no dia 02. Marca de mes parcial que nasce
+    # ligada no padrao e marca que ninguem mais le. Coluna vazia a esquerda nao
+    # custa nada; marcador que mente, custa.
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, "2020-05-04")
+    corpo = cliente_v3.get("/api/opcoes").json()
+    assert corpo["abertura"]["de"] == "2020-05-04"
+    assert corpo["periodo"]["de"] == "2026-01-05",         "o alcance do dado continua sendo dica, e nao trava da abertura"
+
+
+def test_abertura_pinada_no_futuro_nao_abre_com_periodo_invertido(cliente_v3, monkeypatch):
+    """`de > ate` derrubaria a tela com 400 na cara de quem entrou -- e por um
+    valor de configuracao que a pessoa nem sabe que existe."""
+    monkeypatch.setenv(contrato.ENV_ABERTURA_DE, "2099-12-31")
+    corpo = cliente_v3.get("/api/opcoes").json()
+    assert corpo["abertura"]["de"] == corpo["abertura"]["ate"]
+
+
+def test_filtro_de_dia_do_mes_recorta_pela_api(cliente_v3, cursor):
+    """O `dia` chega como texto na URL e tem que recortar de verdade.
+
+    Filtro que nao filtra e pior que filtro ausente: a tela afirma um recorte
+    que o numero nao respeita."""
+    semear(cursor, _semear_entrada, calendario="2026-01-05", peso="10.000")
+    semear(cursor, _semear_entrada, calendario="2026-01-06", peso="20.000",
+           gem="0000000002")
+    semear(cursor, _semear_entrada, calendario="2026-02-05", peso="30.000",
+           gem="0000000003")
+
+    def total(**extra):
+        corpo = cliente_v3.get("/api/matriz", params={
+            "de": "2026-01-01", "ate": "2026-02-28", **extra
+        }).json()
+        return corpo, sum(Decimal(v) for v in corpo["total"].values() if v)
+
+    corpo, tudo = total()
+    assert tudo == Decimal("60.000")
+    assert corpo["avisos"] == [] or all("dia do mês" not in a for a in corpo["avisos"])
+
+    # dia 05 dos DOIS meses -- e isto que distingue o filtro de dia do periodo
+    corpo, so_dia_5 = total(dia="5")
+    assert so_dia_5 == Decimal("40.000"), "o dia do mes tem que valer em todo mês"
+    assert corpo["filtros"]["dias"] == [5]
+    assert any("dia do mês" in a for a in corpo["avisos"]), \
+        "coluna que deixou de ser o mes inteiro sem aviso na tela"
+
+    _, dois_dias = total(dia=["5", "6"])
+    assert dois_dias == Decimal("60.000")
+    _, nenhum = total(dia="28")
+    assert nenhum == 0
 
 
 def test_planilha_e_matriz_usam_o_mesmo_recorte(cliente_v3, cursor):
@@ -252,7 +366,7 @@ def test_planilha_e_matriz_usam_o_mesmo_recorte(cliente_v3, cursor):
     semear(cursor, _semear_entrada, sigla="RMSPII", peso="10.000")
     semear(cursor, _semear_entrada, sigla="CWBIII", gem="0000000002", peso="20.000")
 
-    params = {"de": "2026-01", "ate": "2026-01", "movimento": "rec",
+    params = {"de": "2026-01-01", "ate": "2026-01-31", "movimento": "rec",
               "lente": "liq", "unidade": ["RMSPII"]}
     da_matriz = cliente_v3.get("/api/matriz", params=params).json()
     da_planilha = cliente_v3.get("/api/planilha", params=params).json()
@@ -267,12 +381,12 @@ def test_download_csv_pela_api(cliente_v3, cursor):
     semear(cursor, _semear_entrada, peso="1234.567")
     resposta = cliente_v3.get(
         "/api/download",
-        params={"de": "2026-01", "ate": "2026-01", "movimento": "rec",
+        params={"de": "2026-01-01", "ate": "2026-01-31", "movimento": "rec",
                 "formato": "csv"},
     )
     assert resposta.status_code == 200
     assert resposta.headers["content-type"].startswith("text/csv")
-    assert "catering_entrada_2026-01_a_2026-01.csv" in \
+    assert "catering_entrada_2026-01-01_a_2026-01-31.csv" in \
         resposta.headers["content-disposition"]
 
     texto = resposta.content.decode("utf-8-sig")
@@ -293,7 +407,7 @@ def test_download_xlsx_pela_api(cliente_v3, cursor):
     semear(cursor, _semear_entrada, gem="0000000609")
     resposta = cliente_v3.get(
         "/api/download",
-        params={"de": "2026-01", "ate": "2026-01", "formato": "xlsx"},
+        params={"de": "2026-01-01", "ate": "2026-01-31", "formato": "xlsx"},
     )
     assert resposta.status_code == 200
     assert "spreadsheetml" in resposta.headers["content-type"]
@@ -308,14 +422,14 @@ def test_download_ignora_pagina_e_recusa_formato_desconhecido(cliente_v3, cursor
 
     resposta = cliente_v3.get(
         "/api/download",
-        params={"de": "2026-01", "ate": "2026-01", "formato": "csv", "pagina": 2},
+        params={"de": "2026-01-01", "ate": "2026-01-31", "formato": "csv", "pagina": 2},
     )
     linhas = resposta.content.decode("utf-8-sig").strip().splitlines()
     assert len(linhas) == 4, "o download deveria trazer as 3 linhas, nao uma pagina"
 
     ruim = cliente_v3.get(
         "/api/download",
-        params={"de": "2026-01", "ate": "2026-01", "formato": "pdf"},
+        params={"de": "2026-01-01", "ate": "2026-01-31", "formato": "pdf"},
     )
     assert ruim.status_code == 400
     assert "formato" in ruim.json()["detail"]
