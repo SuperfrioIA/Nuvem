@@ -905,6 +905,22 @@ período. A chave de sete colunas (migration 0023, com `ano_solic`) foi medida
 única sobre 201.848 e 231.886 linhas em 25/ago/2026; esta sondagem é o que
 confirma que continua.
 
+**A outra metade da trava, desde o V3.8.1: a seção `preenchimento`.** Ela existe
+porque em 27/ago/2026 esta trava liberou uma carga que morreu — provava
+identidade e não provava contrato. O esperado:
+
+```
+preenchimento -- sobre as 232.089 linha(s) da janela dentro do escopo:
+  nenhuma coluna obrigatoria vem vazia  ->  a carga passa no contrato
+  sk_cliente             1 vazia(s) (aceita nulo)  ->  2025: 1
+  nk_wms_cliente         1 vazia(s) (aceita nulo)  ->  2025: 1
+```
+
+**Se aparecer `PARE`, não carregue.** Coluna obrigatória vindo vazia derruba a
+rodada inteira na primeira linha ruim, e o conserto é decisão de contrato (soltar
+a coluna, como fez a 0024) e não de janela. As linhas marcadas `aceita nulo` são
+esperadas — vazio declarado, não defeito.
+
 Confira também `janela` (tem que dizer `de 2023-01-01 em diante`) e `linhas`
 (`na tabela` e `na janela` praticamente iguais).
 
@@ -949,6 +965,99 @@ reconstruiu a tabela — é seguro, mas não é incremental (ver o V3_PLANO).
 | carga falha no meio | nada foi perdido: o upsert não apaga e a rodada anterior continua no banco. `cat_cargas.erro` diz a camada |
 | disco apertado | estreitar com `DW_ANO_MINIMO=2024` no `.env` e recarregar; o que já entrou fica |
 | a tela abre em 2023 | o V3.7 não está na imagem — `docker compose build` de novo |
+
+## V3.8.1 — Terminar a carga do histórico (procedimento)
+
+**Por que existe:** em 27/ago/2026 a carga cheia entrou no recebimento (202.087
+linhas, 2023–2026) e **falhou na expedição** numa linha de 2025 sem `sk_cliente`
+— um acerto de estoque sem cliente do outro lado. A expedição fez rollback e
+ficou como estava, só com 2026. O V3.8.1 solta as duas colunas de cliente que não
+identificam a linha (migration 0024) e faz o `--sondar` medir preenchimento.
+
+**Estado antes de começar:** recebimento com histórico, expedição sem, dimensões
+não atualizadas. Nada corrompido — a tela abre em 2026, e a assimetria só aparece
+filtrando para trás.
+
+### O procedimento
+
+**1. Backup.** Mesmo motivo do V3.8, e agora com 202 mil linhas novas dentro:
+
+```
+cd /home/ubuntu/nuvemIA
+./scripts/backup.sh && ls -lh backups/ | tail -3
+```
+
+**2. Deploy e migration.** A 0024 é `DROP NOT NULL` — não reescreve linha, não
+varre tabela, roda em milissegundos:
+
+```
+git pull
+docker compose build nuvem-cat
+docker compose up -d nuvem-cat
+docker compose run --rm nuvem-cat alembic upgrade head    # tem que ir a 0024_cliente_nulavel
+curl -s localhost:8003/health
+```
+
+**3. A trava, agora com as duas metades:**
+
+```
+docker compose run --rm nuvem-cat python -m catering.carga --fonte oracle --sondar
+```
+
+Duas coisas têm que sair certas em **cada** tabela:
+
+- `identidade`: `chave de hoje ... -> UNICA`;
+- `preenchimento`: `nenhuma coluna obrigatoria vem vazia`. As duas colunas de
+  cliente devem aparecer logo abaixo, marcadas `aceita nulo`, com `2025: 1` —
+  é a linha do acerto de estoque, agora declarada em vez de fatal.
+
+Se qualquer uma das duas falhar, **pare aqui** e traga a saída.
+
+**4. A carga cheia.** Os dois movimentos, ~434 mil linhas, ~3 min:
+
+```
+MODO=completa ./scripts/carga_catering.sh
+tail -40 logs/carga_catering.log
+```
+
+O recebimento vai reler as 202 mil e reportar **tudo igual** (`0 inserida, 0
+atualizada`) — é a prova de idempotência saindo de graça. A expedição é a que
+insere. E é esta passada completa que faz as **dimensões** rodarem, que ficaram de
+fora em 27/ago.
+
+**5. Conferência.** Por ano e nas duas tabelas:
+
+```
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT 'rec' AS mov, extract(year from nk_calendario) AS ano, count(*)
+  FROM cat_fato_recebimento GROUP BY 1,2
+  UNION ALL
+  SELECT 'exp', extract(year from nk_calendario), count(*)
+  FROM cat_fato_expedicao GROUP BY 1,2 ORDER BY 1,2"
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT id, tabela_origem, status, linhas_lidas, linhas_inseridas,
+         linhas_atualizadas, erro
+  FROM cat_cargas ORDER BY id DESC LIMIT 4"
+sudo docker compose exec -T nuvem-db psql -U nuvem -d nuvem -c "
+  SELECT count(*) FROM cat_fato_expedicao WHERE sk_cliente IS NULL"
+```
+
+Esperado: quatro anos nas duas tabelas, `status = 'ok'` nas duas cargas, e
+**exatamente 1** linha com `sk_cliente` nulo.
+
+**6. Na tela:** abrir em 01/01/2026 até hoje, filtrar para trás até 2023 e ver as
+duas medidas (recebimento e expedição) com número nas colunas antigas — antes
+deste lote a expedição vinha zerada em 2023–2025.
+
+**7. Amanhã, 07h05:** o incremental volta a ser pequeno nas duas tabelas.
+
+### Se der errado
+
+| sintoma | o que fazer |
+|---|---|
+| `PARE` no preenchimento, em coluna nova | não carregue; a saída diz coluna e ano, e a decisão é de contrato |
+| `alembic upgrade head` falha | não carregue; a 0024 é pré-requisito da carga |
+| carga falha no meio | nada foi perdido: o upsert não apaga. `cat_cargas.erro` nomeia linha e coluna |
 
 ## Comandos úteis / rollback
 

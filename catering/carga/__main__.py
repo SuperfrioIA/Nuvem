@@ -72,6 +72,25 @@ def _sondagem(fonte, movimentos) -> int:
             print(f"    colisao: gem {gem} / {filial} aparece {quantas}x, "
                   f"de {de} a {ate}"
                   f"{'  <- MESMO dia: linha repetida de verdade' if mesma_data else '  <- datas diferentes: falta data na identidade'}")
+        medido = resumo.get("preenchimento") or {}
+        if medido:
+            no_escopo = f"{medido['linhas']:,}".replace(",", ".")
+            bloqueiam = [c for c in medido["colunas"] if c["bloqueia"]]
+            print(f"  preenchimento -- sobre as {no_escopo} linha(s) da janela "
+                  "dentro do escopo:")
+            if bloqueiam:
+                print("    PARE -- coluna obrigatoria vindo vazia derruba a "
+                      "rodada inteira:")
+            else:
+                print("    nenhuma coluna obrigatoria vem vazia  ->  a carga "
+                      "passa no contrato")
+            declaradas = [c for c in medido["colunas"] if not c["bloqueia"]]
+            for coluna in bloqueiam + declaradas:
+                anos = ", ".join(f"{ano}: {quantas}"
+                                 for ano, quantas in coluna["por_ano"])
+                marca = "OBRIGATORIA" if coluna["bloqueia"] else "aceita nulo"
+                print(f"    {coluna['coluna']:<22} {coluna['quantas']} vazia(s) "
+                      f"({marca})  ->  {anos}")
         if resumo["amostra"]:
             print("  primeira linha (tipo que o driver entrega -> valor que o banco recebe):")
             for coluna, (tipo, bruto, tipado) in resumo["amostra"].items():

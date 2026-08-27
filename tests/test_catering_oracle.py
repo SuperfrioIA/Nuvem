@@ -138,6 +138,10 @@ class CursorFalso:
             self._resultado = iter(self.conexao.colisoes)
         elif "GROUP BY ANO_SOLIC" in sql.upper():
             self._resultado = iter(self.conexao.discordantes)
+        elif "SUM(CASE WHEN" in sql.upper():
+            # `SUM(CASE WHEN` e so do `sql_vazios`: o `sql_resumo` tambem tem
+            # CASE, mas dentro de COUNT/MIN/MAX.
+            self._resultado = iter(self.conexao.vazios)
         elif sql.lstrip().upper().startswith("SELECT COUNT(*)"):
             self._resultado = iter([self.conexao.resumo])
         else:
@@ -155,7 +159,8 @@ class ConexaoFalsa:
     """Conexao de mentira. Guarda o que foi executado e se foi fechada."""
 
     def __init__(self, movimento="rec", linhas=(), resumo=None, erro=None,
-                 colunas=None, identidade=None, colisoes=(), discordantes=()):
+                 colunas=None, identidade=None, colisoes=(), discordantes=(),
+                 vazios=()):
         self.description = [
             (nome,) for nome in (colunas or fonte_oracle.colunas_dw(movimento))
         ]
@@ -168,6 +173,7 @@ class ConexaoFalsa:
         )
         self.colisoes = list(colisoes)
         self.discordantes = list(discordantes)
+        self.vazios = list(vazios)
         self.erro = erro
         self.executados = []
         self.fechada = False
@@ -653,6 +659,120 @@ def test_sondar_nao_pergunta_por_colisao_quando_a_chave_e_unica():
     resumo = fonte_com(conexao).sondar("rec")
     assert resumo["colisoes"] == []
     assert not any("HAVING" in sql.upper() for sql, _ in conexao.executados)
+
+
+def _vazios_falsos(movimento, por_ano):
+    """O que `sql_vazios` devolve: (ano, linhas no ano, uma contagem por coluna
+    do contrato, na ordem dele).
+
+    `por_ano` e `{ano: (linhas, {coluna: quantas})}` -- escrito pelo NOME da
+    coluna para o teste nao depender da posicao dela no contrato, que muda
+    quando uma coluna nova entra. `Decimal` porque e assim que o driver entrega
+    NUMBER com `fetch_decimals` ligado, e converter isso e trabalho do codigo
+    sob teste."""
+    colunas = [nome for nome, _tipo, _nulo in contrato.colunas(movimento)]
+    linhas = []
+    for ano, (no_ano, vazias) in sorted(por_ano.items()):
+        desconhecidas = set(vazias) - set(colunas)
+        assert not desconhecidas, f"coluna que nao existe no contrato: {desconhecidas}"
+        linhas.append(
+            (Decimal(str(ano)), Decimal(str(no_ano)))
+            + tuple(Decimal(str(vazias.get(nome, 0))) for nome in colunas)
+        )
+    return linhas
+
+
+def test_sondar_mede_preenchimento_e_soma_os_anos():
+    """A trava do deploy precisa de UMA pergunta respondida: a carga vai passar?
+
+    O caso e o real de 27/ago/2026 -- `sk_cliente` e `nk_wms_cliente` vazios na
+    mesma linha de 2025 (acerto de estoque sem cliente). Depois da 0024 os dois
+    aceitam nulo, entao eles aparecem na medicao e **nao** bloqueiam.
+
+    A soma por ano e feita em Python de proposito: uma consulta por coluna
+    furada custaria uma varredura da tabela inteira cada, e isto roda antes de
+    toda carga cheia."""
+    conexao = ConexaoFalsa(
+        "exp",
+        linhas=[linha_nativa("exp")],
+        resumo=_resumo_falso(232089, 232089),
+        vazios=_vazios_falsos("exp", {
+            2025: (70822, {"sk_cliente": 1, "nk_wms_cliente": 1,
+                           "qtde_vlr_atendido": 40}),
+            2026: (45000, {"qtde_vlr_atendido": 2}),
+        }),
+    )
+    medido = fonte_com(conexao).sondar("exp")["preenchimento"]
+
+    assert medido["linhas"] == 70822 + 45000
+    por_nome = {coluna["coluna"]: coluna for coluna in medido["colunas"]}
+    assert set(por_nome) == {"sk_cliente", "nk_wms_cliente", "qtde_vlr_atendido"},         "coluna sem vazio nao entra na lista -- seriam 45 linhas de zero"
+    assert por_nome["sk_cliente"]["quantas"] == 1
+    assert por_nome["sk_cliente"]["por_ano"] == [(2025, 1)]
+    assert por_nome["qtde_vlr_atendido"]["por_ano"] == [(2025, 40), (2026, 2)]
+    assert not any(coluna["bloqueia"] for coluna in medido["colunas"]),         "nenhuma das tres e obrigatoria no contrato"
+
+
+def test_preenchimento_marca_bloqueio_em_coluna_obrigatoria():
+    """Vazio em coluna da chave natural e outra conversa: a carga morre nela.
+
+    Este e o teste que faz a trava valer -- sem ele, `bloqueia` poderia ser
+    sempre falso e a sondagem liberaria a carga que vai falhar, que e
+    exatamente o que aconteceu em 27/ago/2026."""
+    conexao = ConexaoFalsa(
+        "rec",
+        linhas=[linha_nativa("rec")],
+        resumo=_resumo_falso(202087, 202087),
+        vazios=_vazios_falsos("rec", {
+            2024: (52000, {"nk_wms_filial": 3, "qtde_peso2": 7}),
+        }),
+    )
+    medido = fonte_com(conexao).sondar("rec")["preenchimento"]
+
+    bloqueiam = [c["coluna"] for c in medido["colunas"] if c["bloqueia"]]
+    assert bloqueiam == ["nk_wms_filial"], "so a obrigatoria bloqueia"
+    assert "nk_wms_filial" in contrato.CHAVE_NATURAL
+
+
+def test_a_medicao_de_vazio_usa_a_mesma_definicao_do_carregador():
+    """`TRIM` em coluna de texto, e nao `IS NULL` sozinho.
+
+    O contrato exige PREENCHIDO e nao apenas nao-nulo (`transformacao.py`), e
+    uma trava que medisse diferente do carregador aprovaria carga que vai
+    falhar. Cobre TODAS as colunas do contrato: a nulavel vazia e a limitacao
+    que a tela declara, e sai na mesma leitura."""
+    for movimento in contrato.MOVIMENTOS:
+        sql = fonte_oracle.sql_vazios(movimento)
+        colunas = contrato.colunas(movimento)
+        assert sql.count("SUM(CASE WHEN") == len(colunas), movimento
+        for nome, tipo, _nulo in colunas:
+            no_dw = contrato.coluna_dw(nome, movimento)
+            esperado = (f"TRIM({no_dw}) IS NULL" if tipo == "TEXT"
+                        else f"{no_dw} IS NULL")
+            assert esperado in sql, f"{movimento}/{nome}"
+
+
+def test_a_trava_filtra_escopo_e_a_extracao_nao():
+    """As duas consultas respondem perguntas diferentes, e a diferenca e
+    proposital: a extracao nao filtra escopo para a linha de fora ser CONTADA e
+    logada em Python (o tripwire do V3.1), e a trava filtra porque ela existe
+    para prever se a carga passa -- e a carga pula a linha fora de escopo ANTES
+    de conferir contrato, entao contar vazio nela seria alarme falso.
+
+    `SUBSTR` e nao `LIKE` porque o prefixo termina em `_`, que no LIKE do Oracle
+    e curinga de um caractere: `LIKE 'SLIN_%'` casaria `SLINX_PRD` tambem."""
+    prefixo = contrato.PREFIXO_INSTANCIA
+    for movimento in contrato.MOVIMENTOS:
+        vazios = fonte_oracle.sql_vazios(movimento)
+        instancia = contrato.coluna_dw("nk_instancia", movimento)
+        # A clausula inteira, e nao o prefixo solto: `NK_SLIN_EMPRESA` e
+        # `NK_SLIN_FILIAL` sao colunas do contrato e carregam `SLIN_` no nome,
+        # entao procurar o prefixo solto acusaria escopo na lista de SELECT.
+        escopo = f"SUBSTR({instancia}, 1, {len(prefixo)}) = '{prefixo}'"
+        assert escopo in vazios
+        assert "LIKE" not in vazios.upper(), "LIKE com prefixo terminado em _"
+        extracao, _binds = fonte_oracle.sql_select(movimento)
+        assert escopo not in extracao,             "a extracao nao filtra escopo -- ver test_escopo_nao_e_filtrado_no_sql"
 
 
 def test_chave_concatenada_sai_do_contrato_e_protege_nulo():

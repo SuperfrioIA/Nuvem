@@ -38,10 +38,14 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   (aberta em 24/ago/2026; **V3.0 a V3.3 em 24/ago, V3.4 (login) e V3.5 (fonte
   Oracle) em 25/ago, V3.5.1 (fuso de exibição), V3.6 (deploy) e V3.7 (recorte
   por dia) em 26/ago**. O V3.6 foi **executado em 26/ago/2026: a V3 está em
-  produção na VM, porta 8003**, e a V2 saiu do ar. **V3.7 e V3.8 (27/ago) são
-  código e ainda NÃO foram para a VM** — os dois sobem na mesma janela, nesta
-  ordem, e a carga cheia do histórico só depois da sondagem provar a chave
-  natural (`docs/DEPLOY.md`, "V3.7 + V3.8"). O **V3.7.1** (filtros com caixas de
+  produção na VM, porta 8003**, e a V2 saiu do ar. **V3.7 e V3.8 subiram na VM em
+  27/ago**, e a carga do histórico entrou **pela metade**: o recebimento
+  carregou 2023–2026 (202.087 linhas) e a expedição travou numa linha de 2025 sem
+  `sk_cliente`, fez rollback e continua só com 2026. O **V3.8.1** (mesmo dia)
+  conserta — solta as duas colunas de cliente que não identificam a linha
+  (migration 0024) e faz o `--sondar` medir **preenchimento**, não só identidade
+  — e é **código que ainda NÃO foi para a VM**: procedimento em `docs/DEPLOY.md`,
+  seção "V3.8.1". O **V3.7.1** (filtros com caixas de
   seleção) está **mapeado e não autorizado**, e o V3.9 em diante também não;
   status e aceite em `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
@@ -49,6 +53,14 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
 - **A IA não conecta no DW.** Ele é produção. O V3.5 construiu a leitura inteira
   contra driver falso, e a prova de leitura real é um comando que a Maria roda
   (`python -m catering.carga --fonte oracle --sondar`).
+- **Ampliar a janela da carga é ampliar o contrato inteiro** (aprendido no
+  V3.8.1, 27/ago/2026). Nulabilidade e unicidade foram medidas em 2026 e não
+  valem para 2023–2025 só porque a coluna é a mesma: a chave quebrou na 0023 e a
+  nulabilidade quebrou na 0024, na mesma semana e pela mesma causa. Antes de
+  mexer no piso, o `--sondar` tem que sair certo nas **duas** seções —
+  `identidade` e `preenchimento`. Coluna obrigatória é a que identifica a linha
+  ou a coloca na tela; fora dessas, vazio na fonte é fato, não defeito nosso
+  (a regra está escrita no `catering/contrato.py`).
 - **`DW_ANO_MINIMO` é o piso da CARGA (padrão 2023 desde o V3.8) e
   `CAT_ABERTURA_DE` é onde a TELA abre (padrão janeiro do ano corrente).** Não
   confundir. O piso está no `WHERE` de **toda** rodada, não só da primeira: subi-lo

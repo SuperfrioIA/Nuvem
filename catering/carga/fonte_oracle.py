@@ -278,6 +278,89 @@ def sql_resumo(movimento):
     )
 
 
+def _condicao_vazia(nome, tipo, movimento) -> str:
+    """"Vazia" aqui e a MESMA coisa que o carregador entende por vazia.
+
+    No Oracle `''` ja e NULL, entao `IS NULL` cobre os dois casos; o `TRIM`
+    cobre a coluna que vem so com espaco, que `transformacao.py` tambem trata
+    como vazia (`NOT NULL` no contrato significa PREENCHIDO). Medir com
+    definicao diferente da do carregador seria uma trava aprovando carga que vai
+    falhar -- o pior defeito possivel numa trava."""
+    coluna = contrato.coluna_dw(nome, movimento)
+    return f"TRIM({coluna}) IS NULL" if tipo == "TEXT" else f"{coluna} IS NULL"
+
+
+def sql_vazios(movimento) -> str:
+    """Uma varredura: quantas linhas tem vazio em cada coluna do contrato, por ano.
+
+    Tres decisoes que valem explicacao:
+
+      - **por ano, e nao o total**, porque o total sai da soma em Python e o ano
+        e o que localiza o problema. Uma consulta por coluna furada custaria uma
+        varredura da tabela inteira cada, e isto roda antes de toda carga cheia;
+      - **todas as colunas, nao so as obrigatorias.** A obrigatoria vazia
+        BLOQUEIA (derruba a rodada); a nulavel vazia e a limitacao que a tela
+        declara -- guia cancelada sem confirmacao, acerto de estoque sem
+        cliente. Sondagem que so mostra o que bloqueia esconde metade do que se
+        sabe da fonte, e sai na mesma leitura;
+      - **esta e a unica consulta do modulo que filtra escopo**, e a diferenca e
+        proposital. `sql_select` nao filtra para a linha fora de escopo ser
+        CONTADA e logada em Python (o tripwire do V3.1); esta existe para PREVER
+        se a carga passa, e a carga pula a linha fora de escopo ANTES de conferir
+        contrato -- contar vazio nela seria alarme falso.
+
+    `SUBSTR` e nao `LIKE` porque o prefixo termina em `_`, que no `LIKE` do
+    Oracle e curinga de um caractere: `LIKE 'SLIN_%'` casaria `SLINX_PRD`
+    tambem."""
+    somas = ", ".join(
+        f"SUM(CASE WHEN {_condicao_vazia(nome, tipo, movimento)} THEN 1 ELSE 0 END)"
+        for nome, tipo, _nulo in contrato.colunas(movimento)
+    )
+    calendario = contrato.coluna_dw("nk_calendario", movimento)
+    instancia = contrato.coluna_dw("nk_instancia", movimento)
+    prefixo = contrato.PREFIXO_INSTANCIA
+    ano = f"EXTRACT(YEAR FROM {calendario})"
+    return (
+        f"SELECT {ano}, COUNT(*), {somas}"
+        f" FROM {contrato.tabela(movimento)}"
+        f" WHERE {calendario} >= :piso"
+        f" AND SUBSTR({instancia}, 1, {len(prefixo)}) = '{prefixo}'"
+        f" GROUP BY {ano} ORDER BY 1"
+    )
+
+
+def preenchimento(movimento, por_ano) -> dict:
+    """O resultado cru de `sql_vazios` virando o que a trava precisa dizer.
+
+    Devolve so as colunas que tem vazio -- a lista completa seria 45 linhas de
+    zero -- e cada uma marcada com `bloqueia`, que e a unica coisa que decide se
+    a carga pode rodar."""
+    colunas = contrato.colunas(movimento)
+    linhas = 0
+    totais = [0] * len(colunas)
+    por_coluna = [[] for _ in colunas]
+    for ano, no_ano, *contagens in por_ano:
+        linhas += int(no_ano)
+        for indice, quantas in enumerate(contagens):
+            quantas = int(quantas)
+            if quantas:
+                totais[indice] += quantas
+                por_coluna[indice].append((int(ano), quantas))
+    return {
+        "linhas": linhas,
+        "colunas": [
+            {
+                "coluna": nome,
+                "quantas": totais[indice],
+                "bloqueia": not aceita_nulo,
+                "por_ano": por_coluna[indice],
+            }
+            for indice, (nome, _tipo, aceita_nulo) in enumerate(colunas)
+            if totais[indice]
+        ],
+    }
+
+
 # O separador da chave concatenada. `CHR(31)` (unit separator) e nao `|` porque
 # esta consulta existe para ser acreditada: se um valor contivesse o separador,
 # duas chaves diferentes colidiriam no texto e a medicao inventaria duplicata.
@@ -287,7 +370,7 @@ _SEPARADOR = "CHR(31)"
 def _chave_concatenada(movimento) -> str:
     """A chave natural como uma expressao de texto, gerada do contrato.
 
-    `NVL` em toda coluna: as seis sao NOT NULL no contrato, mas se uma vier nula
+    `NVL` em toda coluna: as sete sao NOT NULL no contrato, mas se uma vier nula
     o `||` colapsaria a chave inteira para NULL e o `COUNT(DISTINCT)` a
     ignoraria -- a medicao erraria para baixo exatamente no caso em que o dado
     piorou."""
@@ -486,7 +569,13 @@ class FonteOracle:
         que este metodo devolve e a evidencia de que a sessao abre, o GRANT
         vale, o contrato bate coluna por coluna, o volume e comparavel ao que a
         sondagem de 25/ago mediu, e o numero chega tipado como o Postgres
-        precisa."""
+        precisa.
+
+        Desde o V3.8.1 ele tambem mede **preenchimento**, e por um motivo
+        pago: a trava do `docs/DEPLOY.md` provava identidade na janela nova e
+        nao provava contrato, entao a carga do historico completo (27/ago/2026)
+        foi liberada e morreu numa linha de 2025 sem `sk_cliente`. Ampliar a
+        janela e ampliar o contrato inteiro."""
         piso = {"piso": contrato.piso_do_periodo()}
         resumo = {
             "movimento": movimento,
@@ -525,6 +614,8 @@ class FonteOracle:
                 if resto[-1]:
                     cur.execute(sql_ano_discordante(movimento), piso)
                     discordantes = list(cur)
+                cur.execute(sql_vazios(movimento), piso)
+                medido_o_vazio = preenchimento(movimento, list(cur))
         finally:
             conexao.close()
 
@@ -534,6 +625,7 @@ class FonteOracle:
         resumo["nk_calendario_na_janela"] = (jan_cal_min, jan_cal_max)
         resumo["dw_data_alteracao"] = (alt_min, alt_max)
         resumo["identidade"] = identidade
+        resumo["preenchimento"] = medido_o_vazio
         resumo["colisoes"] = colisoes
         resumo["ano_discordante"] = discordantes
 
