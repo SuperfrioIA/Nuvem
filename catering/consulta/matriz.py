@@ -34,6 +34,19 @@ escolhida no botao nao vai ao banco de novo.
 solicitado + atendido + separado nao significa nada: sao tres leituras do mesmo
 pedido em momentos diferentes.
 
+## A coluna e o mes -- e as vezes NAO e o mes inteiro
+
+O recorte passou a ser por dia (26/ago/2026) e ganhou o filtro de dia do mes. A
+coluna continua mensal, porque foi o que a Maria pediu ("pra mostrar na matriz
+faz o que voce falou mesmo"), mas com 03/08 a 05/09 a coluna de agosto tem
+apenas os dias 03 a 31.
+
+Um total rotulado "2026-08" que nao e agosto e o numero que alguem copia para um
+relatorio sem saber. Entao a Matriz **declara** as duas formas de parcialidade:
+o cabecalho traz a faixa de dias da ponta (`rotulos_meses`, montado em
+`recorte.py`), e o filtro de dia do mes -- que corta em TODAS as colunas e por
+isso nao cabe num cabecalho -- entra como aviso.
+
 ## Duas matrizes, nao uma
 
 Entrada e saida sao consultas separadas, como eram os dois payloads do artefato
@@ -73,6 +86,7 @@ from catering.consulta.recorte import (  # reexportados: a API deste modulo nao 
     FiltroInvalido,
     Filtros,
     meses_do_periodo,
+    rotulos_dos_meses,
 )
 
 TABELA = recorte.TABELA
@@ -136,11 +150,23 @@ def _sql(movimento, niveis, medidas, filtros):
         if rotulo != chave:
             selecoes.append(f"{rotulo} AS rotulo_{i}")
     selecoes.append("to_char(date_trunc('month', f.nk_calendario), 'YYYY-MM') AS mes")
+
+    # Tudo o que entrou ate aqui e chave de agrupamento; o que vem depois e
+    # agregado. Contar por subtracao (`len(selecoes) - len(medidas)`) amarrava o
+    # GROUP BY a quantos agregados existem, e a `count(*)` abaixo teria virado
+    # um off-by-one silencioso -- que num GROUP BY nao estoura, so soma errado.
+    agrupamento = ", ".join(str(i + 1) for i in range(len(selecoes)))
+
     for apelido, coluna in medidas.items():
         selecoes.append(f"SUM(f.{coluna}) AS medida_{apelido or 'unica'}")
+    # Quantas LINHAS do fato entraram em cada grupo. Somando os grupos da o
+    # total de linhas do recorte -- de graca, na consulta que ja roda, e e o
+    # numero que a tela precisa para avisar antes de um download grande. Vale
+    # como invariante tambem: tem que bater com o `total_linhas` da planilha,
+    # que conta o MESMO recorte por outro caminho.
+    selecoes.append("count(*) AS linhas")
 
     de_para_where, params = recorte.de_para_where(filtros)
-    agrupamento = ", ".join(str(i + 1) for i in range(len(selecoes) - len(medidas)))
     sql = "\n".join((
         f"SELECT {', '.join(selecoes)}",
         de_para_where,
@@ -224,9 +250,15 @@ def matriz(cur, filtros: Filtros) -> dict:
     niveis = HIERARQUIA[movimento]
     medidas = _medidas_da_consulta(movimento, filtros.lente)
     meses = meses_do_periodo(filtros.de, filtros.ate)
+    rotulos_meses = rotulos_dos_meses(filtros.de, filtros.ate)
     lente = contrato.LENTES[filtros.lente]
 
     avisos = []
+    # Isto NAO cabe no cabecalho: o filtro de dia corta dentro de todas as
+    # colunas, inclusive as do meio. Sem o aviso, "2026-05" parece maio.
+    aviso_dia = recorte.aviso_dos_dias(filtros.dias)
+    if aviso_dia:
+        avisos.append(aviso_dia)
     if not medidas:
         # Pallet na saida. So aparece quando o caso ocorre -- disciplina do
         # `memory/pagina-mostra-numero-nao-texto.md`.
@@ -235,7 +267,7 @@ def matriz(cur, filtros: Filtros) -> dict:
             "expedição tem essa medida na fonte — a coluna fica vazia de "
             "propósito, não é falha de carga."
         )
-        return _vazia(filtros, meses, lente, avisos)
+        return _vazia(filtros, meses, rotulos_meses, lente, avisos)
 
     sql, params = _sql(movimento, niveis, medidas, filtros)
     cur.execute(sql, params)
@@ -243,8 +275,10 @@ def matriz(cur, filtros: Filtros) -> dict:
     concretos = [n for n in niveis if n != FAIXA]
 
     linhas = []
+    total_linhas = 0
     for bruta in cur.fetchall():
         registro = dict(zip(colunas, bruta))
+        total_linhas += registro["linhas"]
         chaves = [registro[f"chave_{i}"] for i in range(len(concretos))]
         rotulos = [
             registro.get(f"rotulo_{i}", registro[f"chave_{i}"]) or registro[f"chave_{i}"]
@@ -281,8 +315,12 @@ def matriz(cur, filtros: Filtros) -> dict:
                   "unidade": lente["unidade"]},
         "niveis": list(niveis),
         "meses": meses,
+        "rotulos_meses": rotulos_meses,
         "linhas": pagina,
         "total": {m: raiz["valores"].get(m) for m in meses},
+        # O recorte inteiro, nao a pagina: e o que a tela usa para avisar antes
+        # de um download grande, e download nunca e de uma pagina so.
+        "total_linhas": total_linhas,
         "paginacao": {
             "pagina": filtros.pagina,
             "por_pagina": UNIDADES_POR_PAGINA,
@@ -310,25 +348,26 @@ def _ordenar(nos, meses):
 
 def _eco(filtros):
     """Devolve o recorte aplicado. A tela nunca deve adivinhar o que pediu -- e
-    o download do V3.3 precisa registrar isso na auditoria."""
-    return {
-        "de": filtros.de, "ate": filtros.ate, "movimento": filtros.movimento,
-        "lente": filtros.lente, "faixa": filtros.faixa,
-        "unidades": list(filtros.unidades), "clientes": list(filtros.clientes),
-        "tipos_estoque": list(filtros.tipos_estoque),
-        "operacoes": list(filtros.operacoes),
-    }
+    o download do V3.3 precisa registrar isso na auditoria.
+
+    Delega para `Filtros.como_dict()`, que e o que a auditoria grava. Isto era
+    uma copia campo a campo dos mesmos campos, e a copia cobrou no lote do
+    filtro de dia: acrescentar `dias` em um dos dois lados e nao no outro faria
+    a tela ecoar um recorte e o registro guardar outro."""
+    return filtros.como_dict()
 
 
-def _vazia(filtros, meses, lente, avisos):
+def _vazia(filtros, meses, rotulos_meses, lente, avisos):
     return {
         "filtros": _eco(filtros),
         "lente": {"chave": filtros.lente, "nome": lente["nome"],
                   "unidade": lente["unidade"]},
         "niveis": list(HIERARQUIA[filtros.movimento]),
         "meses": meses,
+        "rotulos_meses": rotulos_meses,
         "linhas": [],
         "total": {m: None for m in meses},
+        "total_linhas": 0,
         "paginacao": {"pagina": 1, "por_pagina": UNIDADES_POR_PAGINA,
                       "total_unidades": 0, "paginas": 1},
         "avisos": avisos,

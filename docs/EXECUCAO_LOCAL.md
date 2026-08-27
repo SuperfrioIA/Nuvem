@@ -221,6 +221,27 @@ Usuário depois do primeiro: `python -m catering.seguranca criar --login ...`
   timeout de conexão antes de perceberem que era o container, não o
   código). Em suítes longas, vale checar o container periodicamente
   durante a execução, não só antes.
+- **O distro do WSL desligando entre comandos é a mesma falha com outra
+  cara** (medido em 26/ago/2026, no V3.7). O WSL2 desliga a VM quando
+  nenhuma sessão está presa nela (`vmIdleTimeout`), e leva o Docker e o
+  container junto. O sintoma engana: cada `wsl ... -e docker ...` religa o
+  distro, o container volta pela política `unless-stopped`, e a conexão
+  funciona **uma vez** — a checagem passa e a suíte, logo depois, estoura
+  `connection refused` em dezenas de arquivos. Pior: `docker start` sozinho
+  nem sempre restabelece o redirecionamento de `localhost:5433` (o
+  `Get-NetTCPConnection` mostra a porta escutando e a conexão é recusada
+  igual); `docker restart` restabelece.
+
+  A saída é manter uma sessão presa no distro durante a rodada — em outro
+  terminal, ou em segundo plano:
+
+  ```
+  wsl -d Ubuntu-24.04 -e bash -lc "sleep 2400"
+  ```
+
+  Com isso a suíte inteira roda sem uma única falha de conexão. Quem
+  iniciar esse processo encerra ele no fim (`Stop-Process` do PID anotado,
+  ou o `Ctrl+C` do terminal onde ele está).
 
 ### Carga da volumetria de catering (V3.5)
 
@@ -264,6 +285,22 @@ rodar a carga de novo — ela traz o passado sem tocar em código. **Subir o pis
 de volta não apaga o que já entrou:** a carga só insere e atualiza, então
 desfazer exige `DELETE` à mão. Ano inválido (`26`, `20226`) falha nomeando a
 variável, em vez de carregar tudo ou nada em silêncio.
+
+**`CAT_ABERTURA_DE` (padrão `ano-corrente`)** é outra coisa, e a confusão entre
+as duas é fácil: `DW_ANO_MINIMO` é o piso da **carga** (o que o banco guarda);
+`CAT_ABERTURA_DE` é o primeiro dia do recorte com que a **tela abre** (onde a
+pessoa começa a olhar). Quem quiser o passado filtra para trás — o campo de data
+não tem mínimo.
+
+| valor | efeito |
+|---|---|
+| `ano-corrente` (padrão) | 1º de janeiro do ano de hoje |
+| `AAAA-MM-DD` | data fixa, para pinar (ex.: em 01/jan/2027 o rolante abre com uma coluna só) |
+
+O `ate` é sempre **hoje**, lido do Postgres no fuso de `CAT_FUSO_EXIBICAO` — não
+do relógio do processo, que no container é UTC. Valor que não é nem
+`ano-corrente` nem uma data falha nomeando a variável. Ela é lida pelo **app**,
+então vale no caminho C e no compose; a carga não a conhece.
 
 > **A mesma armadilha do `.env` do caminho C vale aqui**: o projeto não usa
 > `python-dotenv`, então num `python` bare a credencial tem que estar exportada

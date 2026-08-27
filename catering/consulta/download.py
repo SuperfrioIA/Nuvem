@@ -64,6 +64,17 @@ from catering.consulta import recorte
 logger = logging.getLogger(__name__)
 
 TETO_XLSX = 150_000
+
+# Acima disto a TELA pergunta antes de comecar o download (Maria, 26/ago/2026).
+# Nao e recusa: o CSV sai em streaming, sem teto, e o recorte inteiro e um
+# pedido legitimo. O que se evita e a pessoa disparar 434 mil linhas sem saber
+# -- e essa e a diferenca entre um aviso e uma trava.
+#
+# Constante propria, e nao um apelido de `TETO_XLSX`: hoje as duas valem o mesmo
+# numero por decisao, e nao porque uma dependa da outra. Uma responde "este
+# formato aguenta?", a outra "voce quer mesmo?". Amarrar as duas faria o dia em
+# que uma mudasse mover a outra sem ninguem pedir.
+TETO_CONFIRMACAO = 150_000
 BLOCO = 2_000
 BOM = "﻿"
 
@@ -110,8 +121,17 @@ def contar(cur, filtros) -> int:
 
 
 def nome_do_arquivo(filtros, extensao):
+    """Nome do arquivo baixado, com o periodo dentro dele.
+
+    O sufixo `_dias` aparece quando o filtro de dia do mes esta ativo. Sem ele o
+    nome `catering_entrada_2026-01-01_a_2026-08-31` prometeria oito meses
+    inteiros num arquivo que pode ter apenas alguns dias de cada mes -- e o nome
+    do arquivo e o que sobrevive fora da tela, no e-mail de outra pessoa. Quais
+    dias sairam nao entra no nome (viraria ilegivel): quem precisa da resposta
+    exata tem o recorte inteiro em `cat_auditoria`."""
     movimento = "entrada" if filtros.movimento == "rec" else "saida"
-    return f"catering_{movimento}_{filtros.de}_a_{filtros.ate}.{extensao}"
+    dias = "_dias" if filtros.dias else ""
+    return f"catering_{movimento}_{filtros.de}_a_{filtros.ate}{dias}.{extensao}"
 
 
 # ------------------------------------------------------------- formatacao

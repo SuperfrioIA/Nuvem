@@ -18,13 +18,34 @@ As dimensoes nao tem FK vindo do fato, de proposito (V3.0). Isso obriga
 entrou na dimensao **nao pode fazer a linha desaparecer**. Desaparecer em
 silencio e o pior desfecho -- o numero fica menor e ninguem ve.
 
+## Duas coisas diferentes com a palavra "dia"
+
+O recorte tem **periodo** e **filtro de dia do mes**, e eles nao se substituem:
+
+  - `de`/`ate` sao **datas** (`AAAA-MM-DD`), inclusivas nas duas pontas. Era mes
+    fechado (`AAAA-MM`) ate 26/ago/2026; a Maria pediu o grao do dia para poder
+    olhar 03/08 a 05/09 sem levar agosto e setembro inteiros;
+  - `dias` e a **multi-selecao 01..31**, que recorta DENTRO de todo mes do
+    periodo -- pegar jan a ago e tirar os dias 1, 2 e 3 exclui esses dias nos
+    oito meses. E a semantica do slicer "Dia" do Power BI, que foi a referencia
+    pedida. E dia **do mes**, nao dia da semana.
+
+A consequencia que a tela tem que declarar: com qualquer dos dois ativo, a
+coluna "2026-08" deixa de ser o mes de agosto. Total rotulado como mes que nao e
+o mes e o numero que alguem copia para um relatorio -- por isso
+`rotulos_dos_meses()` e `rotulo_dos_dias()` moram aqui, do lado da definicao do
+recorte, e nao no navegador.
+
 ## Injecao de SQL
 
 Todo VALOR de filtro vai como parametro nomeado. Os unicos identificadores
 interpolados sao nomes de coluna que saem do `contrato.py` e passam por
-conferencia contra ele -- nunca do usuario.
+conferencia contra ele -- nunca do usuario. `dias` chega como texto da URL e sai
+daqui como **lista de inteiros**, o que fecha a porta por construcao.
 """
 
+import calendar
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -52,7 +73,11 @@ class FiltroInvalido(Exception):
 
 @dataclass
 class Filtros:
-    """O recorte da tela. `de`/`ate` sao meses (`YYYY-MM`), inclusivos."""
+    """O recorte da tela.
+
+    `de`/`ate` sao **datas** (`AAAA-MM-DD`), inclusivas nas duas pontas.
+    `dias` e a multi-selecao de dia do mes (01..31); vazio significa todos.
+    Ver a docstring do modulo para a diferenca entre as duas."""
 
     de: str
     ate: str
@@ -63,6 +88,7 @@ class Filtros:
     clientes: tuple = ()
     tipos_estoque: tuple = ()
     operacoes: tuple = ()
+    dias: tuple = ()
     pagina: int = 1
 
     def validar(self):
@@ -73,9 +99,15 @@ class Filtros:
         if self.faixa not in contrato.FAIXAS:
             raise FiltroInvalido(f"faixa: {self.faixa!r}")
         for nome in ("de", "ate"):
-            mes_para_data(getattr(self, nome), nome)
-        if mes_para_data(self.de, "de") > mes_para_data(self.ate, "ate"):
+            data_do_recorte(getattr(self, nome), nome)
+        if data_do_recorte(self.de, "de") > data_do_recorte(self.ate, "ate"):
             raise FiltroInvalido(f"periodo invertido: {self.de} > {self.ate}")
+        # Normaliza AQUI, e nao no SQL: o eco da tela, o registro da auditoria e
+        # o `WHERE` tem que falar do MESMO conjunto. Se cada um normalizasse por
+        # conta propria, o dia em que um deles mudasse de ideia sobre repetido ou
+        # fora de ordem, a auditoria passaria a descrever um recorte que nao foi
+        # o que saiu.
+        self.dias = dias_do_filtro(self.dias)
         if self.pagina < 1:
             raise FiltroInvalido(f"pagina: {self.pagina}")
         return self
@@ -91,19 +123,58 @@ class Filtros:
             "unidades": list(self.unidades), "clientes": list(self.clientes),
             "tipos_estoque": list(self.tipos_estoque),
             "operacoes": list(self.operacoes),
+            "dias": list(self.dias),
         }
 
 
-def mes_para_data(mes, campo="mes") -> date:
+_DATA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def data_do_recorte(valor, campo="data") -> date:
+    """`AAAA-MM-DD` -> `date`, estrito.
+
+    A conferencia do formato vem ANTES do `fromisoformat` de proposito: o
+    `fromisoformat` do Python 3.11+ aceita `20260105` e outras variantes ISO, e
+    aceitar formato que a tela nunca manda e abrir uma porta que ninguem fecha
+    depois. `2026-02-30` cai no segundo teste, que e o do calendario."""
+    bruto = str(valor)
+    if not _DATA_ISO.match(bruto):
+        raise FiltroInvalido(f"{campo} deve ser AAAA-MM-DD, veio {valor!r}")
     try:
-        ano, m = str(mes).split("-")
-        return date(int(ano), int(m), 1)
-    except (ValueError, AttributeError):
-        raise FiltroInvalido(f"{campo} deve ser AAAA-MM, veio {mes!r}") from None
+        return date.fromisoformat(bruto)
+    except ValueError:
+        raise FiltroInvalido(f"{campo}: {valor!r} nao e uma data que existe") from None
+
+
+DIA_MAXIMO = 31
+
+
+def dias_do_filtro(valores) -> tuple:
+    """Os dias do mes selecionados, como inteiros unicos e ordenados.
+
+    Ordenar e deduplicar nao e estetica: e o que faz o rotulo da tela e o
+    registro da auditoria serem estaveis para a mesma escolha. Dia 29, 30 e 31
+    sao aceitos sem olhar o mes -- num mes que nao tem dia 31 a selecao
+    simplesmente nao casa com linha nenhuma, que e o comportamento certo e nao
+    erro do usuario."""
+    saida = set()
+    for bruto in valores or ():
+        try:
+            dia = int(str(bruto).strip())
+        except ValueError:
+            raise FiltroInvalido(f"dia: {bruto!r} nao e um numero") from None
+        if not 1 <= dia <= DIA_MAXIMO:
+            raise FiltroInvalido(f"dia: {dia} esta fora de 1..{DIA_MAXIMO}")
+        saida.add(dia)
+    return tuple(sorted(saida))
 
 
 def proximo_mes(d: date) -> date:
     return date(d.year + 1, 1, 1) if d.month == 12 else date(d.year, d.month + 1, 1)
+
+
+def ultimo_dia_do_mes(d: date) -> date:
+    return date(d.year, d.month, calendar.monthrange(d.year, d.month)[1])
 
 
 def meses_do_periodo(de, ate):
@@ -111,7 +182,9 @@ def meses_do_periodo(de, ate):
 
     Mes vazio tem que virar coluna vazia, nao coluna ausente: se a coluna
     desaparece, as outras deslizam e a comparacao entre linhas passa a mentir."""
-    atual, fim = mes_para_data(de, "de"), mes_para_data(ate, "ate")
+    inicio = data_do_recorte(de, "de")
+    fim = data_do_recorte(ate, "ate")
+    atual = date(inicio.year, inicio.month, 1)
     saida = []
     while atual <= fim:
         saida.append(f"{atual.year:04d}-{atual.month:02d}")
@@ -119,13 +192,84 @@ def meses_do_periodo(de, ate):
     return saida
 
 
+def rotulos_dos_meses(de, ate):
+    """`{mes: rotulo}` das colunas, declarando as pontas PARCIAIS.
+
+    Com periodo de 03/08 a 05/09 a coluna de agosto tem os dias 03 a 31 e a de
+    setembro os dias 01 a 05 -- nenhuma das duas e o mes inteiro. O cabecalho diz
+    isso (`2026-08 (03-31)`), porque a ressalva tem que viver onde ela e lida
+    (`memory/pagina-mostra-numero-nao-texto.md`). Mes inteiro sai sem
+    parenteses: anotar o obvio treina a pessoa a ignorar a anotacao."""
+    inicio = data_do_recorte(de, "de")
+    fim = data_do_recorte(ate, "ate")
+    saida = {}
+    for mes in meses_do_periodo(de, ate):
+        ano, numero = (int(parte) for parte in mes.split("-"))
+        primeiro = date(ano, numero, 1)
+        ultimo = ultimo_dia_do_mes(primeiro)
+        borda_de = max(inicio, primeiro)
+        borda_ate = min(fim, ultimo)
+        if borda_de == primeiro and borda_ate == ultimo:
+            saida[mes] = mes
+        else:
+            saida[mes] = f"{mes} ({borda_de.day:02d}-{borda_ate.day:02d})"
+    return saida
+
+
+def rotulo_dos_dias(dias) -> str:
+    """Os dias selecionados em faixas: `04 a 31`, `01, 03 a 05, 09`.
+
+    Uma selecao de 28 dias listada numero por numero e uma parede que ninguem
+    le -- e aviso que ninguem le nao avisa nada."""
+    dias = dias_do_filtro(dias)
+    if not dias:
+        return ""
+    faixas, inicio, anterior = [], dias[0], dias[0]
+    for dia in dias[1:] + (None,):
+        if dia is not None and dia == anterior + 1:
+            anterior = dia
+            continue
+        if inicio == anterior:
+            faixas.append(f"{inicio:02d}")
+        elif anterior == inicio + 1:
+            faixas.append(f"{inicio:02d}, {anterior:02d}")
+        else:
+            faixas.append(f"{inicio:02d} a {anterior:02d}")
+        inicio = anterior = dia
+    return ", ".join(faixas)
+
+
+def aviso_dos_dias(dias):
+    """O aviso do filtro de dia do mes, ou `None` quando ele nao esta ativo.
+
+    Mora aqui porque a Matriz e a planilha tem que dizer a MESMA coisa sobre o
+    mesmo recorte -- duas copias do texto derivariam, e a que derivasse seria
+    lida por alguem que confia nela."""
+    if not dias:
+        return None
+    return (
+        "Filtro de dia do mês ativo: o recorte leva apenas os dias "
+        f"{rotulo_dos_dias(dias)} de cada mês, não o mês inteiro."
+    )
+
+
 def onde(filtros: Filtros):
     """`(clausulas, params)` do recorte. **A unica definicao de filtro.**"""
-    clausulas = ["f.nk_calendario >= %(de)s", "f.nk_calendario < %(ate)s"]
+    # Intervalo FECHADO nas duas pontas, e nao meio-aberto como era no recorte
+    # por mes: `nk_calendario` e DATE (meia-noite sempre, ver
+    # `transformacao.py`), entao `<= ate` e exato -- e "03/08 a 05/09" tem que
+    # incluir o dia 05, que e o que a pessoa escolheu.
+    clausulas = ["f.nk_calendario >= %(de)s", "f.nk_calendario <= %(ate)s"]
     params = {
-        "de": mes_para_data(filtros.de, "de"),
-        "ate": proximo_mes(mes_para_data(filtros.ate, "ate")),
+        "de": data_do_recorte(filtros.de, "de"),
+        "ate": data_do_recorte(filtros.ate, "ate"),
     }
+    # Dia do mes: recorta DENTRO de cada mes do periodo. Nao usa indice (e
+    # expressao sobre a coluna) e nao faz falta -- quem estreita e o intervalo
+    # de datas acima, que usa o indice da 0019.
+    if filtros.dias:
+        clausulas.append("EXTRACT(DAY FROM f.nk_calendario) = ANY(%(dias)s)")
+        params["dias"] = list(filtros.dias)
     if filtros.unidades:
         clausulas.append(f"{SIGLA} = ANY(%(unidades)s)")
         params["unidades"] = list(filtros.unidades)

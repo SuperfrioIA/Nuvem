@@ -67,6 +67,21 @@ def test_o_servico_recebe_as_variaveis_sem_as_quais_ele_nao_serve(variavel):
         f"{variavel} nao chega no container"
 
 
+@pytest.mark.parametrize("variavel", [
+    "CAT_FUSO_EXIBICAO", "CAT_ABERTURA_DE", "DW_ANO_MINIMO",
+])
+def test_variavel_de_configuracao_e_declarada_no_compose(variavel):
+    """As que TEM padrao no codigo tambem precisam estar declaradas aqui.
+
+    O compose nao repassa o `.env` inteiro para dentro do container -- ele
+    repassa o que o servico declara. Variavel de configuracao ausente daqui
+    funciona no host (pytest, CLI) e e **silenciosamente ignorada** na VM: quem
+    escrever `CAT_ABERTURA_DE=2026-01-01` no `.env` de producao veria a tela
+    continuar abrindo no padrao, sem erro nenhum para investigar."""
+    assert variavel in COMPOSE["services"][SERVICO]["environment"], \
+        f"{variavel} nao chega no container -- ajustar no .env da VM nao teria efeito"
+
+
 def test_toda_variavel_obrigatoria_do_compose_esta_no_env_exemplo():
     """**O teste que existe por causa de um bug real deste lote.**
 
