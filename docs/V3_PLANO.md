@@ -13,10 +13,9 @@ V2.
 
 **V3.7.1** (filtros com caixas de seleção), **V3.7.2** (os dois movimentos na
 mesma matriz, com o pai somando "movimentação") **e V3.7.3** (desmarcar tudo)
-**foram feitos em 27/ago/2026**. O V3.7.1 e o V3.7.2 foram **validados no
-navegador pela Maria no mesmo dia** — e foi essa validação que gerou o V3.7.3, que
-conserta um defeito de interação que o V3.7.1 tinha introduzido. **O V3.7.3 ainda
-não foi validado no navegador.**
+**foram feitos e validados no navegador em 27/ago/2026**, os três. A validação do
+V3.7.1 foi o que gerou o V3.7.3, que conserta um defeito de interação introduzido
+pelo próprio V3.7.1 — o ciclo está registrado na seção dele.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -2766,10 +2765,18 @@ nascia `undefined` no DOM falso (no navegador é sempre booleano) e o
 `classList.toggle` do shim tinha regex errada. Registrado porque é a armadilha
 óbvia desse tipo de prova — um shim frouxo mede o shim.
 
-**O que NÃO foi validado: o navegador.** Vale a ressalva de sempre — o harness
-prova a lógica, não que o painel abre no lugar certo nem que o amarelo de
-pendência ficou legível. Aprovação estética é humana
+**O navegador — validado pela Maria em 27/ago/2026** ("validado"), no caminho C
+com os CSVs de 21/ago recarregados. Nenhum defeito reportado. Isso cobre o que o
+harness não podia: o painel abrindo no lugar certo e o amarelo de pendência sendo
+legível — aprovação estética é humana por regra
 (`memory/validar-tela-no-navegador.md`).
+
+**O ciclo dos três lotes de hoje vale registrar como método**, porque ele se
+repetiu: o V3.7.1 passou por suíte verde e por 22 asserções de harness, e o
+defeito de interação (13 cliques para isolar um cliente) só apareceu quando a
+Maria usou a tela. Nenhuma das duas provas podia achá-lo — a suíte não vê
+interação, e o harness só verifica o que eu pensei em verificar. **Lote de tela
+não fecha sem alguém usando a tela**, e aqui a prova disso é que o V3.7.3 existe.
 
 ### A alternativa que ficou fora, e por quê
 
