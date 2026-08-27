@@ -252,6 +252,57 @@ def test_vazio_em_coluna_obrigatoria_derruba():
         tr.transformar(linha_crua("exp", nk_calendario=""), "exp")
 
 
+def test_coluna_da_chave_natural_continua_obrigatoria():
+    """A regra do V3.8.1 solta coluna que ninguem le -- e nao a chave.
+
+    Este teste existe para que o proximo erro de carga por vazio nao seja
+    "resolvido" afrouxando a identidade: chave com nulo nao e chave, o UNIQUE do
+    Postgres deixa duplicado entrar, e a Matriz somaria a mesma guia duas vezes.
+    Junto vem `nk_calendario` (a coluna que a Matriz agrega) e
+    `dw_data_alteracao` (a marca d'agua do incremental)."""
+    obrigatorias = ("nk_calendario", "dw_data_alteracao") + contrato.CHAVE_NATURAL
+    for movimento in contrato.MOVIMENTOS:
+        aceita_nulo = {
+            nome: nulo for nome, _tipo, nulo in contrato.colunas(movimento)
+        }
+        for coluna in obrigatorias:
+            assert aceita_nulo[coluna] is False, f"{movimento}/{coluna}"
+
+    # E o comportamento, nao so a declaracao: texto vazio tambem derruba.
+    with pytest.raises(tr.LinhaInvalida, match="nk_cliente"):
+        tr.transformar(linha_crua("exp", nk_cliente=""), "exp")
+    with pytest.raises(tr.LinhaInvalida, match="dw_data_alteracao"):
+        tr.transformar(linha_crua("rec", dw_data_alteracao=None), "rec")
+
+
+def test_acerto_de_estoque_sem_cliente_entra(banco_migrado):
+    """A linha que derrubou a carga do historico completo em 27/ago/2026.
+
+    Era **1** linha em 232.089 (`ACERTO DE ESTOQUE - SEM CUSTO`, 2025): acerto
+    de estoque nao tem cliente do outro lado, e o DW nao resolveu nem a
+    surrogate (`sk_cliente`) nem o codigo do WMS (`nk_wms_cliente`). Nenhuma das
+    duas identifica a linha nem aparece na tela, e as duas juntas custavam 3,6
+    anos de historico.
+
+    Vale nas DUAS tabelas de proposito: `PROCEDENCIA` e `DIMENSOES` sao
+    compartilhadas no contrato, e a 0024 soltou as duas -- schema estrito de um
+    lado divergiria do contrato do outro."""
+    fonte = FonteFalsa({
+        movimento: [linha_crua(movimento, sk_cliente=None, nk_wms_cliente="")]
+        for movimento in contrato.MOVIMENTOS
+    })
+    for movimento, tabela in (("rec", "cat_fato_recebimento"),
+                              ("exp", "cat_fato_expedicao")):
+        resultado = carregar_movimento(fonte, movimento)
+        assert resultado.status == "ok", resultado.erro
+        assert resultado.inseridas == 1
+        assert consultar(
+            f"SELECT sk_cliente, nk_wms_cliente FROM {tabela}"
+        ) == [(None, None)], f"{movimento}: texto vazio tem que virar NULL"
+        # A identidade continua inteira: quem a tela usa e o nk_cliente.
+        assert consultar(f"SELECT nk_cliente FROM {tabela}") == [("67945071",)]
+
+
 def test_booleano_nao_passa_por_numero():
     """`True` e `int` em Python e passaria calado como 1. Peso `True` seria um
     numero inventado."""

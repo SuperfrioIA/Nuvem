@@ -354,6 +354,21 @@ CHAVE_ARMAZEM = ("nk_instancia", "nk_slin_empresa", "nk_slin_filial")
 
 # --------------------------------------------------------------- colunas
 # (nome, tipo SQL, aceita nulo). Tipo medido no dado, nao inferido do nome.
+#
+# ## O que faz uma coluna ser obrigatoria (regra fechada no V3.8.1)
+#
+# Fechada depois de **uma** linha derrubar a carga do historico inteiro em
+# 27/ago/2026: obrigatoria e a coluna sem a qual a linha nao pode ser
+# **identificada** nem **colocada na tela** -- as sete de `CHAVE_NATURAL`, o
+# `nk_calendario` que a Matriz agrega, e o `dw_data_alteracao` que e a marca
+# d'agua do incremental. Fora dessas, vazio na fonte e **fato**: derrubar a
+# rodada por causa de uma celula que nenhuma tela le troca um dado ausente por
+# a indisponibilidade de tudo.
+#
+# Isto nao afrouxa `NOT NULL`, que continua significando **preenchido** e nao
+# apenas nao-nulo -- texto vazio em coluna obrigatoria e erro
+# (`transformacao.py`), porque `nk_wms_filial = ''` passaria no constraint do
+# banco e viraria unidade fantasma em `cat_unidades`.
 PROCEDENCIA = (
     ("pk_dw", "INTEGER", False),            # PK_FATO_VOL_*_CAT: procedencia, nao identidade
     ("dw_processo", "TEXT", False),
@@ -363,7 +378,12 @@ PROCEDENCIA = (
     ("sk_instancia", "INTEGER", False),
     ("sk_empresa", "INTEGER", False),
     ("sk_filial", "INTEGER", False),
-    ("sk_cliente", "INTEGER", False),
+    # Nulavel desde o V3.8.1, e a medicao e a justificativa: **1** linha vazia
+    # em 232.089 na expedicao (2025, operacao `ACERTO DE ESTOQUE - SEM CUSTO`
+    # -- acerto de estoque nao tem cliente do outro lado). E procedencia:
+    # nenhuma tela da V3 le `sk_*`, e a identidade da linha nao depende dela --
+    # quem esta na chave e o `nk_cliente`, que veio preenchido.
+    ("sk_cliente", "INTEGER", True),
 )
 
 DIMENSOES = (
@@ -376,7 +396,10 @@ DIMENSOES = (
     ("nk_slin_empresa", "TEXT", False),
     ("nk_slin_filial", "TEXT", False),
     ("nk_cliente", "TEXT", False),
-    ("nk_wms_cliente", "TEXT", False),
+    # Nulavel desde o V3.8.1, pela MESMA linha que soltou o `sk_cliente`: e o
+    # codigo do cliente no WMS, e nenhuma tela o le -- a tela junta cliente por
+    # `nk_cliente` (`catering/consulta/recorte.py`).
+    ("nk_wms_cliente", "TEXT", True),
     ("data_solic", "DATE", False),
     ("ano_solic", "SMALLINT", False),
     # 0% vazio no medido, mas nulavel de proposito: guia de recebimento

@@ -2365,11 +2365,15 @@ Não toca no recorte (período, dia do mês, `WHERE`, auditoria), não mexe em
 backend, não tem migration e não substitui o botão Limpar. Não inclui busca no
 painel (gatilho acima) nem "Selecionar tudo" com estado intermediário por grupo.
 
-## Lote V3.8 — Histórico completo do DW (código feito, execução pendente, 27/ago/2026)
+## Lote V3.8 — Histórico completo do DW (executado em 27/ago/2026 — metade entrou)
 
 Autorizado em 27/ago/2026: *"agora quero trazer os dados full da tabela do dw"*.
 **O código está pronto; a execução na VM é da Maria** — procedimento numerado em
 `docs/DEPLOY.md`, seção "V3.7 + V3.8".
+
+**Executado em 27/ago/2026, e entrou metade:** o recebimento carregou inteiro e a
+expedição travou numa linha só. O que aconteceu está no "Aceite do V3.8" no fim
+desta seção; o conserto é o **V3.8.1**, a seção seguinte.
 
 ### A decisão que inverte a de 25/ago, e por que não é contradição
 
@@ -2480,6 +2484,144 @@ python -m pytest tests/test_catering_*.py tests/test_migracao.py
 
 **270 testes, ~6min20, verde** (27/ago/2026) — mesmo número do V3.7: este lote
 mudou o valor de constantes medidas e o sentido de um teste, não a quantidade.
+
+### Aceite do V3.8 — executado em 27/ago/2026, e entrou metade
+
+A Maria rodou o procedimento. O deploy subiu (V3.7 e V3.8 na mesma imagem), a
+sondagem liberou, e o `MODO=completa` fez:
+
+| tabela | status | lidas | inseridas | atualizadas |
+|---|---|---|---|---|
+| recebimento | `ok` | 202.087 | 165.170 | 0 |
+| expedição | **`erro`** | 0 | 0 | 0 |
+
+**As 36.917 linhas que a conta não fecha são as iguais**, não linhas perdidas:
+202.087 − 165.170 são as de 2026 que já estavam no banco e voltaram byte a byte
+idênticas, e o `WHERE ... IS DISTINCT FROM` do upsert não as conta como
+atualização (é a decisão do V3.1 funcionando — update incondicional reportaria
+36.917 atualizadas em toda rodada e esconderia mudança real).
+
+A expedição morreu na linha 143.410 da fonte:
+
+```
+coluna 'sk_cliente' e obrigatoria no contrato e veio vazia (None)
+chave: SLIN_RMSPII_PRD/RMSPII/0000003623/2025/SECO 2018/
+       ACERTO DE ESTOQUE - SEM CUSTO/24216040
+```
+
+Três consequências, e nenhuma é perda de dado:
+
+1. **rollback, não carga parcial.** A expedição ficou exatamente como estava (só
+   2026, da rodada das 07h05). É a decisão de 24/ago funcionando: o upsert não
+   apaga, então o custo de uma falha é frescor, não furo;
+2. **as dimensões não rodaram** — a ordem é recebimento → expedição → dimensões, e
+   a rodada parou antes. Cliente, unidade e nome de estoque que só existem em
+   2023–2025 ainda não têm linha canônica. A tela **não esconde nada** por isso:
+   os joins são `LEFT` com `COALESCE`, então aparece o valor cru da fonte (raiz
+   de CNPJ em vez da razão social);
+3. **a tela abriu em 2026**, como o V3.7 prometeu — então a assimetria (recebimento
+   com histórico, expedição sem) só aparece para quem filtrar para trás.
+
+## Lote V3.8.1 — A linha sem cliente, e a trava que não media contrato (27/ago/2026)
+
+Autorizado em 27/ago/2026, depois da medição: *"só as duas"*.
+
+### O achado: uma linha em 232.089
+
+A carga para na **primeira** linha ruim, então o erro dizia uma coluna e não
+dizia quantas. A medição — as 29 colunas obrigatórias das duas tabelas, na janela
+inteira, só leitura — respondeu:
+
+| tabela | linhas na janela | obrigatória vindo vazia |
+|---|---|---|
+| recebimento | 202.087 | **nenhuma** |
+| expedição | 232.089 | `sk_cliente` em **1**, `nk_wms_cliente` em **1** (2025) |
+
+Mesma linha: `ACERTO DE ESTOQUE - SEM CUSTO`. Acerto de estoque não tem cliente
+do outro lado, e o DW não resolveu nem a surrogate nem o código do WMS.
+
+### A decisão, e a regra que ela fecha
+
+As duas colunas passam a aceitar nulo (migration 0024). O que decide não é o
+tamanho do problema, é o papel das colunas:
+
+- **`sk_cliente` é procedência.** Nenhuma consulta da V3 lê `sk_*`;
+- **`nk_wms_cliente` é o código do cliente no WMS.** Nenhuma tela o lê — a tela
+  junta cliente por `nk_cliente`, que nessa linha **veio preenchido**. Identidade
+  e exibição ficam intactas.
+
+A regra que sai disso está escrita no `contrato.py`: **obrigatória é a coluna sem
+a qual a linha não pode ser identificada nem colocada na tela** — as sete da
+chave natural, o `nk_calendario` que a Matriz agrega e o `dw_data_alteracao` que é
+a marca d'água. Fora dessas, vazio na fonte é **fato**, e derrubar a rodada por
+causa de uma célula que ninguém lê troca um dado ausente pela indisponibilidade
+de tudo.
+
+Três alternativas descartadas, com o motivo:
+
+| alternativa | por que não |
+|---|---|
+| pular a linha e seguir | é carga parcial com outro nome: a Matriz mostraria um número quase certo e ninguém saberia o que falta |
+| estreitar o piso de volta para 2026 | perde o histórico, que é o que foi pedido |
+| afrouxar a classe inteira (as cinco `sk_*`) | apaga cinco alarmes que hoje funcionam para resolver um problema que a trava nova passa a pegar **antes** da carga |
+
+### O furo era do procedimento, não da fonte
+
+A trava do V3.8 provava **identidade** na janela nova (`chave de hoje` UNICA) e
+não provava **preenchimento**. Ampliar a janela é ampliar o contrato inteiro, e a
+nulabilidade tinha sido medida nos CSVs de 21/ago, que tinham um ano só — o mesmo
+erro de raciocínio que a 0023 registrou sobre a unicidade da chave, na mesma
+semana e pela mesma causa.
+
+Por isso o lote não é só a migration: o **`--sondar` passa a medir preenchimento**
+e a dizer `PARE` quando uma obrigatória vem vazia. Uma varredura por tabela,
+agrupada por ano — o ano é o que localiza o problema, e uma consulta por coluna
+furada custaria uma varredura da tabela inteira cada.
+
+A medição cobre **todas** as colunas, não só as obrigatórias: a nulável vazia é a
+limitação que a tela declara (guia cancelada sem confirmação, acerto de estoque
+sem cliente) e sai na mesma leitura. Sondagem que só mostra o que bloqueia
+esconde metade do que se sabe da fonte.
+
+### O que mudou no código
+
+| arquivo | mudança |
+|---|---|
+| `catering/contrato.py` | `sk_cliente` e `nk_wms_cliente` nuláveis, com a medição no comentário, e a regra do obrigatório escrita |
+| `alembic/versions/0024_cliente_nulavel.py` | `DROP NOT NULL` nas duas colunas, nas **duas** tabelas de fato |
+| `catering/carga/fonte_oracle.py` | `sql_vazios()` e `preenchimento()`: a sondagem passa a medir contrato |
+| `catering/carga/__main__.py` | seção `preenchimento` na saída do `--sondar` |
+| `tests/test_catering_oracle.py` | 4 testes (medida igual à do carregador, bloqueio, soma por ano, escopo) |
+| `tests/test_catering_carga.py` | a linha do acerto entrando nas duas tabelas, e a chave natural continuando obrigatória |
+
+**Migration nas duas tabelas de propósito:** `PROCEDENCIA` e `DIMENSOES` são
+compartilhadas pelos dois movimentos no contrato, e o teste de schema confere
+coluna por coluna contra o catálogo — schema estrito de um lado divergiria do
+contrato do outro.
+
+### Consequências declaradas
+
+1. **A linha entra com duas células nulas**, e a sondagem passa a mostrá-la para
+   sempre na lista "aceita nulo". Vazio declarado é melhor que vazio consertado;
+2. **a sondagem ficou mais longa e custa uma varredura a mais por tabela.** É o
+   preço de a trava responder "a carga vai passar?" em vez de "a chave é única?";
+3. **medida vazia aparece agora** — as células da guia cancelada de jan/2026, que
+   sempre existiram e nunca tinham sido mostradas fora de um teste;
+4. **`downgrade` da 0024 falha** se a linha já tiver entrado. É o comportamento
+   certo: descer exigiria apagar linha de fato.
+
+### Execução (pendente, é da Maria)
+
+`docs/DEPLOY.md`, seção "V3.8.1". Deploy → `alembic upgrade head` → sondagem (a
+seção `preenchimento` tem que dizer que nenhuma obrigatória vem vazia) →
+`MODO=completa`, que reconsome o recebimento (relê 202 mil e reporta tudo igual,
+prova de idempotência de graça) e é a passada que faz as dimensões rodarem.
+
+### Suíte
+
+```
+python -m pytest tests/test_catering_*.py tests/test_migracao.py
+```
 
 ## Regras de trabalho
 
