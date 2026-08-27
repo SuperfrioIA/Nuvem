@@ -11,9 +11,9 @@ expedição; ver "Aceite do V3.8.1"). Do V3.9 em diante a divisão em lotes na s
 final é proposta, não plano em execução — autorização é por lote, como na V1 e na
 V2.
 
-**Mapeados e NÃO autorizados: V3.7.1** (filtros com caixas de seleção) **e
-V3.7.2** (os dois movimentos na mesma matriz). A ordem foi decidida pela Maria em
-27/ago/2026: **V3.7.1 primeiro**.
+**V3.7.1** (filtros com caixas de seleção) **foi feito em 27/ago/2026**, na
+ordem que a Maria decidiu (V3.7.1 antes do V3.7.2). **Mapeado e NÃO autorizado:
+V3.7.2** (os dois movimentos na mesma matriz).
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -261,7 +261,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento construído e desligado — **feito em 25/ago/2026**, ver seção abaixo | **sim** |
 | **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
-| **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
+| **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **feito em 27/ago/2026**, ver seção abaixo | não |
 | **V3.7.2** | Os dois movimentos na mesma matriz, com o pai somando "movimentação" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
 | **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **executado em 27/ago/2026**, e entrou metade: o conserto é o V3.8.1 | não |
 | **V3.8.1** | A linha sem cliente (migration 0024) e o `--sondar` medindo preenchimento — **executado em 27/ago/2026**, histórico completo em produção | não |
@@ -2276,12 +2276,12 @@ VM. Coluna por dia na Matriz, dropdowns de Ano/Mês e trava dura de período
 ficaram **fora por decisão**, não por falta de tempo. Nada em `backend/`,
 `frontend/` ou nas migrations.
 
-## Lote V3.7.1 — Filtros com caixas de seleção (mapeado em 27/ago/2026, NÃO autorizado)
+## Lote V3.7.1 — Filtros com caixas de seleção (feito em 27/ago/2026)
 
-**Nada deste lote está construído.** Ele está aqui porque foi decidido e pedido
-para depois — *"só mapeie esse novo lote, fazemos ele depois"* (Maria,
-27/ago/2026). O que sobrevive à sessão tem que viver neste documento
-(`memory/uma-sessao-por-lote.md`), inclusive o que ainda não foi feito.
+Mapeado mais cedo em 27/ago/2026 (*"só mapeie esse novo lote, fazemos ele
+depois"*) e **autorizado no mesmo dia**: *"pode seguir com o próximo lote"*. O
+mapeamento foi feito antes da construção de propósito, e as decisões que ele
+fixou entraram como estavam — nenhuma foi re-discutida na execução.
 
 ### De onde veio
 
@@ -2359,7 +2359,71 @@ A alternativa que ficou para trás, e não precisa ser re-perguntada: manter a
 altura de hoje, com as caixas dentro do espaço que os selects já ocupam, era
 funcionalmente idêntico e só não ganhava espaço.
 
-### O que prova este lote
+### O que foi construído, e as três decisões que a execução obrigou a tomar
+
+O desenho previsto sobreviveu: o `<select multiple>` continua no DOM, escondido,
+como fonte da verdade, e o painel de caixas só o comanda. `parametros()` e
+`opcoesSelect()` **não mudaram uma linha**, como previsto — mas duas outras
+mudaram, e a previsão de que nada mais mexeria estava errada:
+
+- `preencheOperacoes()` ganhou uma linha (`atualizaCaixa('#operacao')`). A lista
+  de operação é **por movimento**, então trocar Entrada/Saída troca as opções, e
+  o painel tem que ser remontado sobre elas. Sem isso, o painel de operação
+  mostraria a lista do movimento anterior;
+- o **Limpar** ganhou uma linha (`atualizaCaixas()`) e passou a iterar
+  `COM_CAIXAS` em vez da lista literal dos cinco seletores. A lista literal
+  duplicada era o defeito esperando o sexto filtro: ele entraria numa cópia e
+  não na outra, e o Limpar deixaria um filtro em pé sem dizer.
+
+Três decisões que o desenho não tinha respondido, e que a execução não podia
+adiar:
+
+1. **Não existe estado "nenhum item marcado".** Com nada selecionado o painel
+   mostra **tudo** marcado e o botão diz "Todos" — porque "sem filtro" e "todos"
+   são a mesma linha do `WHERE`. A consequência: desmarcar um item em "Todos"
+   significa **"todos menos este"**, e desmarcar o último selecionado volta para
+   "Todos". A alternativa — deixar o painel vazio e o rótulo dizendo "Todos" —
+   seria a tela mentindo sobre o próprio recorte.
+2. **"Selecionar tudo" fica desabilitado quando está marcado.** Marcado já *é*
+   "sem filtro", então não existe ação para desmarcar. Deixá-lo habilitado e não
+   fazer nada pareceria defeito; desabilitado, ele diz que aquele já é o estado.
+3. **O select só recebe `.escondido` depois de o painel existir.** As regras de
+   `select[multiple]` ficaram no CSS de propósito: se a montagem do widget
+   falhasse no meio, a pessoa fica com o campo nativo em vez de nada. Degradação
+   por construção, e não por promessa.
+
+### O aceite — e o que ele NÃO cobre
+
+**A máquina de estados foi provada fora do navegador**, contra o código real
+extraído do `matriz.html` e rodado com um DOM mínimo em node: 21 asserções nos
+nove casos que decidem o que vai na URL — "Todos" inicial, "todos menos este",
+remarcar tudo voltando para **URL vazia** (a decisão 1 do desenho), rótulo com
+nome único e com contagem, desmarcar o último, "Selecionar tudo", o Limpar
+ressincronizando os cinco, lista de um item só, e `selecionados()` continuando a
+ler do select. O harness é descartável e **não foi versionado** — o projeto não
+tem suíte de JS, e inventar uma neste lote seria escopo que ninguém pediu. O que
+ficou versionado é o teste estrutural abaixo.
+
+`node --check` no script: limpo. **Suíte da V3: 277 testes, verdes, 5min02** —
+que é o que prova que nada de backend se mexeu.
+
+**Um teste novo, e ele guarda a fiação, não o comportamento:**
+`test_todo_filtro_de_multipla_escolha_tem_painel_de_caixas` compara os
+`<select multiple>` do HTML servido com a lista `COM_CAIXAS`. O defeito que ele
+pega é silencioso: um sexto filtro acrescentado sem entrar na lista fica visível
+como select nativo entre os botões, **e o Limpar deixa de zerá-lo** — o recorte
+sai com um filtro em pé que a tela não mostra. Nada disso levanta erro; só sai
+número de menos.
+
+**O que NÃO foi validado: o navegador.** Marcar, desmarcar, Esc, clique fora,
+foco pelas setas, a barra encurtada e o console limpo continuam pendentes, e a
+aprovação estética é humana por regra (`memory/validar-tela-no-navegador.md`).
+O harness em node prova a *lógica*; ele não prova que o painel abre no lugar
+certo, que ele não fica atrás de outro elemento, nem que a barra ficou boa de
+olhar. Para validar: caminho C do `docs/EXECUCAO_LOCAL.md`, e **recarregar os
+CSVs** — o pytest zera o banco local.
+
+### O que o mapeamento previa como prova
 
 **O navegador, e não a suíte.** A página é HTML com JS embutido e o projeto não
 tem suíte de JS. Então: marcar, desmarcar, "Selecionar tudo", Limpar, rótulo do

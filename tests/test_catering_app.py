@@ -21,6 +21,7 @@ o sinal tem que aparecer como falha de seguranca, e nao como catorze falhas de
 Matriz apontando para o lugar errado.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -217,6 +218,43 @@ def test_pagina_e_o_logo_sao_servidos(cliente_v3):
     logo = cliente_v3.get("/logo.png")
     assert logo.status_code == 200
     assert logo.headers["content-type"] == "image/png"
+
+
+def test_todo_filtro_de_multipla_escolha_tem_painel_de_caixas(cliente_v3):
+    """V3.7.1 -- os cinco `<select multiple>` e a lista `COM_CAIXAS` tem que ser
+    o MESMO conjunto.
+
+    O painel de caixas de selecao e uma camada sobre o select, que continua no
+    DOM como fonte da verdade. Quem entrar depois e acrescentar um sexto filtro
+    de multipla escolha sem por ele em `COM_CAIXAS` produz um defeito silencioso
+    e feio: o select fica visivel entre botoes (a barra volta a ter duas
+    alturas), o `Limpar` deixa de zerar aquele filtro -- porque o Limpar tambem
+    itera `COM_CAIXAS` -- e o recorte sai com um filtro em pe que a tela nao
+    mostra. Nada disso levanta erro; so sai numero de menos.
+
+    Este teste e estrutural de proposito: le o HTML servido, nao executa JS. O
+    projeto nao tem suite de JavaScript, e o comportamento do painel (marcar,
+    "Selecionar tudo", Esc, clique fora) se prova no navegador."""
+    pagina = cliente_v3.get("/")
+    assert pagina.status_code == 200
+    html = pagina.text
+
+    ids_no_html = set(re.findall(r'<select id="([^"]+)" multiple', html))
+
+    declarada = re.search(r"const COM_CAIXAS = \[([^\]]+)\];", html)
+    assert declarada, "COM_CAIXAS desapareceu do script da tela"
+    ids_com_painel = {
+        alvo.strip().strip("'\"").lstrip("#")
+        for alvo in declarada.group(1).split(",")
+    }
+
+    assert ids_no_html == ids_com_painel, (
+        "filtro de multipla escolha sem painel de caixas (ou o contrario): "
+        f"no HTML {sorted(ids_no_html)}, em COM_CAIXAS {sorted(ids_com_painel)}"
+    )
+    # A lista de hoje, escrita para o teste falar do numero e nao so da relacao:
+    # unidade, cliente, tipo de estoque, operacao e dia do mes.
+    assert len(ids_no_html) == 5
 
 
 def test_app_da_v3_nao_depende_do_app_da_v2():
