@@ -254,6 +254,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.5** | Troca de `extrair()` para Oracle + agendamento construído e desligado — **feito em 25/ago/2026**, ver seção abaixo | **sim** |
 | **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
+| **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
 | **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia | não autorizado |
 | **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.10** | Laboratório novo, sobre o dado do DW | não autorizado |
@@ -2174,6 +2175,103 @@ Não baixou o piso da carga (continua 2026), não rodou recarga, não encostou n
 VM. Coluna por dia na Matriz, dropdowns de Ano/Mês e trava dura de período
 ficaram **fora por decisão**, não por falta de tempo. Nada em `backend/`,
 `frontend/` ou nas migrations.
+
+## Lote V3.7.1 — Filtros com caixas de seleção (mapeado em 27/ago/2026, NÃO autorizado)
+
+**Nada deste lote está construído.** Ele está aqui porque foi decidido e pedido
+para depois — *"só mapeie esse novo lote, fazemos ele depois"* (Maria,
+27/ago/2026). O que sobrevive à sessão tem que viver neste documento
+(`memory/uma-sessao-por-lote.md`), inclusive o que ainda não foi feito.
+
+### De onde veio
+
+Fechando o V3.7, a pergunta da Maria foi: *"precisa ser Ctrl + clique? Não pode
+apenas ser clique em mais de 1?"*
+
+Os cinco filtros de múltipla escolha (unidade, cliente, tipo de estoque,
+operação e agora dia do mês) são `<select multiple>` nativos. A **capacidade** de
+escolher vários sempre existiu — está medida no V3.7: unidade `RMSPII + CWBIII`
+soma 13.153,8 + 944,1 = 14.097,9 t em jan/2026, e filtros diferentes se
+estreitam. O que não existe é a **descoberta**: no `select` nativo o clique
+simples *substitui* a seleção, e só Ctrl (ou Cmd) acrescenta — comportamento do
+navegador, não do nosso código, e que não está escrito em lugar nenhum da tela.
+
+Duas saídas foram apresentadas:
+
+| | o que é | custo |
+|---|---|---|
+| **A** | clique simples **alterna**: intercepta o `mousedown` na opção, inverte o `selected`, cancela o nativo. Ctrl e Shift continuam valendo | ~10 linhas |
+| **B** | **lista de caixas de seleção com "Selecionar tudo"**, como o slicer do Power BI | widget próprio |
+
+**Escolhida a B**, e o motivo é o que importa: *"estamos mais acostumados com a
+B"*. É o padrão que a operação já usa no BI — a caixa marcada diz sozinha o que
+está selecionado, sem depender de convenção nenhuma. A **A fica registrada como
+alternativa viável**, não como ideia descartada: se a B se mostrar grande demais
+na hora de fazer, a A entrega o "clique simples em mais de um" por um décimo do
+trabalho.
+
+### O desenho que faz isso ser pequeno
+
+O `<select multiple>` **continua no DOM, escondido, como fonte da verdade**. O
+painel de caixas só o comanda. Consequência: `parametros()`, `opcoesSelect()` e o
+botão Limpar não mudam **uma linha** — a mudança é uma camada de interface sobre
+o que já existe, e não uma reescrita do recorte. Nenhum arquivo de backend,
+nenhuma migration.
+
+```
+CLIENTE
+┌──────────────────────────┐
+│ Seleções múltiplas    ▾  │   fechado: "Todos" / "SAPORE S.A" / "3 selecionados"
+└──────────────────────────┘
+   ┌──────────────────────────┐
+   │ ☐ Selecionar tudo        │
+   │ ─────────────────────────│
+   │ ☑ ANGA ALIMENTACAO E ... │
+   │ ☐ BRF S.A.               │
+   │ ☑ CONVIDA REFEICOES LTDA.│
+   └──────────────────────────┘
+```
+
+### Três decisões já tomadas, para não serem re-discutidas na execução
+
+1. **"Selecionar tudo" marcado = nenhum filtro na consulta.** Marcar os 14
+   clientes e não filtrar dão o mesmo número hoje, e **não são a mesma coisa
+   amanhã**: se um cliente novo aparecer na carga, "sem filtro" inclui ele e "os
+   14 que eu marquei" não. Manda-se **nada** na URL quando está tudo marcado — é
+   o que o "Todos" do BI significa, deixa a auditoria honesta ("sem filtro de
+   cliente") e não infla a URL do download.
+2. **Sem campo de busca dentro do painel.** As listas hoje têm 6, 14, 6, 12 e 31
+   itens; busca nesse tamanho é peso sem ganho. **Gatilho para acrescentar
+   depois:** a lista de cliente passar de ~25 itens — o que o V3.8 pode causar,
+   ao acordar clientes de 2023 que não operam mais.
+3. **Comportamento mínimo, que não precisa ser pedido:** Esc fecha, clique fora
+   fecha, Tab e setas navegam, e clicar numa caixa **não** fecha o painel — se
+   fechasse, marcar três itens exigiria abrir três vezes, que é o problema do
+   Ctrl+clique com outra roupa.
+
+### A decisão que falta, e é da Maria
+
+**A barra de filtros encurta.** Hoje são cinco caixas de 64px de altura ocupando
+duas linhas; viram cinco botões de uma linha. É ganho de espaço real e é mudança
+visual — aprovação estética é humana
+(`memory/validar-tela-no-navegador.md`). Se a preferência for manter a barra como
+está, a altura se preserva sem prejuízo funcional.
+
+### O que prova este lote
+
+**O navegador, e não a suíte.** A página é HTML com JS embutido e o projeto não
+tem suíte de JS. Então: marcar, desmarcar, "Selecionar tudo", Limpar, rótulo do
+botão fechado e console limpo, nos cinco filtros; `node --check` no script; e a
+suíte da V3 verde **para provar que nada de backend se mexeu** (270 testes).
+
+Um detalhe de execução que já se sabe: validar na tela exige subir o caminho C e
+**recarregar os CSVs**, porque o pytest zera o banco local.
+
+### O que este lote NÃO faz
+
+Não toca no recorte (período, dia do mês, `WHERE`, auditoria), não mexe em
+backend, não tem migration e não substitui o botão Limpar. Não inclui busca no
+painel (gatilho acima) nem "Selecionar tudo" com estado intermediário por grupo.
 
 ## Regras de trabalho
 

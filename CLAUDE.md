@@ -39,7 +39,8 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   Oracle) em 25/ago, V3.5.1 (fuso de exibição), V3.6 (deploy) e V3.7 (recorte
   por dia) em 26/ago**. O V3.6 foi **executado em 26/ago/2026: a V3 está em
   produção na VM, porta 8003**, e a V2 saiu do ar. O V3.7 é código e **ainda não
-  foi para a VM**. V3.8 em diante não autorizado; status e aceite em
+  foi para a VM**. O **V3.7.1** (filtros com caixas de seleção) está **mapeado e
+  não autorizado**, e o V3.8 em diante também não; status e aceite em
   `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.
