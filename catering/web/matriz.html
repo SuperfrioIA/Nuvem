@@ -106,6 +106,7 @@ select.escondido{display:none}
   padding:8px 14px;border:1px solid var(--brand-azul-conexao);
   border-radius:var(--radius-sm);cursor:pointer;background:transparent;
   color:var(--brand-azul-principal)}
+.secundario:disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- conteudo ---------- */
 main{padding:18px 22px 40px}
@@ -230,7 +231,7 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
     <div class="grupo" id="lente"></div>
   </div>
   <div class="campo" id="campo-faixa">
-    <label>Faixa da expedição</label>
+    <label id="rotulo-faixa">Faixa da expedição</label>
     <div class="grupo" id="faixa"></div>
   </div>
   <div class="campo">
@@ -284,8 +285,24 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
 // do backend (lição do V2.1). Aqui só há formatação e navegação.
 const $ = s => document.querySelector(s);
 const ROTULO_NIVEL = {unidade:'Unidade', cliente:'Cliente', faixa:'Faixa',
-                     operacao:'Operação', tipo_estoque:'Tipo de estoque'};
+                     operacao:'Operação', tipo_estoque:'Tipo de estoque',
+                     movimento:'Movimento'};
+// O terceiro movimento e "as duas juntas" (V3.7.2). O rotulo e a regra de "so
+// na Matriz" vem do backend (`/api/opcoes`), para nao existirem em duas copias.
+const CONJUNTA = 'amb';
 const trilha = niveis => niveis.map(n => ROTULO_NIVEL[n] || n).join(' › ');
+
+/* O aviso do zero a esquerda fica no controle do CSV, nao numa parede de texto:
+   e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela e lida. O
+   xlsx nao tem o problema, e a nota diz por que. */
+const NOTA_DOWNLOAD =
+  'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
+  + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
+  + 'identificador, baixe em Excel (xlsx), que preserva.';
+const NOTA_DOWNLOAD_CONJUNTA =
+  'O download responde por um movimento por vez: as duas tabelas do DW têm 36 e '
+  + '46 colunas, então não existe linha crua "entrada + saída". Escolha Entrada '
+  + 'ou Saída para baixar. A soma dos dois é uma leitura da Matriz, que agrega.';
 
 let OPCOES = null, ESTADO = {
   visao:'matriz', movimento:'rec', lente:'liq', faixa:'solicitado',
@@ -324,27 +341,79 @@ function botoes(alvo, itens, chaveEstado, aoTrocar){
   });
 }
 
+// O rotulo do movimento escolhido, vindo das opcoes do servidor.
+const rotuloMovimento = () => {
+  const m = (OPCOES.movimentos || []).find(x => x.chave === ESTADO.movimento);
+  return m ? m.rotulo : ESTADO.movimento;
+};
+
+/* Entrada + saida e visao de MATRIZ, e nao do recorte inteiro (V3.7.2).
+
+   A Matriz agrega, e por isso pode somar os dois movimentos. A planilha mostra
+   linha crua e o download leva a linha inteira -- e as duas tabelas do DW tem 36
+   e 46 colunas. Nao existe "linha crua entrada + saida", entao os dois saem de
+   cena aqui em vez de o servidor recusar depois de a pessoa clicar. O servidor
+   recusa igual (400), e essa recusa continua sendo a trava de verdade.
+
+   O filtro de operacao tambem sai: as duas listas de `descr_oper_wms` sao
+   diferentes, e filtrar por uma delas zeraria o outro movimento em silencio. */
+function limitesDoMovimento(){
+  const conjunta = ESTADO.movimento === CONJUNTA;
+
+  const operacao = CAIXAS.get('#operacao');
+  if (operacao){
+    if (conjunta) Array.from($('#operacao').options).forEach(o => { o.selected = false; });
+    operacao.botao.disabled = conjunta;
+    operacao.titulo = conjunta
+      ? 'Não vale em Entrada + saída: as duas tabelas têm listas de operação '
+        + 'diferentes. Escolha Entrada ou Saída para filtrar por operação.'
+      : '';
+    atualizaCaixa('#operacao');
+  }
+
+  ['#baixar-csv', '#baixar-xlsx'].forEach(alvo => { $(alvo).disabled = conjunta; });
+  $('#nota-download').textContent = conjunta ? NOTA_DOWNLOAD_CONJUNTA : NOTA_DOWNLOAD;
+}
+
 function desenhaBotoes(){
-  botoes('#movimento', [
-    {chave:'rec', rotulo:'Entrada'}, {chave:'exp', rotulo:'Saída'}
-  ], 'movimento', () => { ESTADO.abertos = new Set(); preencheOperacoes(); });
+  botoes('#movimento', (OPCOES.movimentos || []).map(m => ({
+    chave: m.chave, rotulo: m.rotulo
+  })), 'movimento', () => {
+    ESTADO.abertos = new Set();
+    // A planilha nao existe na conjunta: sair para a Matriz ANTES de carregar,
+    // senao o primeiro pedido sai para um endpoint que vai recusar.
+    if (ESTADO.movimento === CONJUNTA && ESTADO.visao === 'planilha')
+      ESTADO.visao = 'matriz';
+    preencheOperacoes();
+  });
 
   botoes('#lente', OPCOES.lentes.map(l => ({
     chave:l.chave, rotulo:l.nome,
-    // Pallet na saída fica visível mas desabilitado: esconder faria parecer
-    // que a medida não existe; desabilitado diz que ela não existe ALI.
-    desabilitado: ESTADO.movimento === 'exp' && l.so_entrada
+    // Pallet fica visível mas desabilitado onde não existe: esconder faria
+    // parecer que a medida não existe; desabilitado diz que ela não existe ALI.
+    // Na conjunta ele também sai — a soma seria só a entrada com o nome de
+    // "movimentação", que é número certo com nome errado.
+    desabilitado: ESTADO.movimento !== 'rec' && l.so_entrada
   })), 'lente');
 
   botoes('#faixa', OPCOES.faixas.map(f => ({chave:f.chave, rotulo:f.rotulo})), 'faixa');
-  $('#campo-faixa').style.display = ESTADO.movimento === 'exp' ? '' : 'none';
+  // A faixa responde uma pergunta DIFERENTE nas duas visões, então o rótulo
+  // muda: na saída ela é um nível da árvore ("Faixa da expedição"); na conjunta
+  // ela escolhe qual das três colunas da expedição entra na soma.
+  $('#campo-faixa').style.display = ESTADO.movimento === 'rec' ? 'none' : '';
+  $('#rotulo-faixa').textContent = ESTADO.movimento === CONJUNTA
+    ? 'A expedição entra como' : 'Faixa da expedição';
 
   // Trocar de visao reseta a pagina: a Matriz pagina UNIDADE (12) e a planilha
   // pagina LINHA (100) -- carregar a pagina 7 da planilha na Matriz mostraria
   // vazio e pareceria defeito.
   botoes('#visao', [
-    {chave:'matriz', rotulo:'Matriz'}, {chave:'planilha', rotulo:'Planilha'}
+    {chave:'matriz', rotulo:'Matriz'},
+    {chave:'planilha', rotulo:'Planilha',
+     desabilitado: ESTADO.movimento === CONJUNTA}
   ], 'visao', () => { ESTADO.pagina = 1; });
+
+  limitesDoMovimento();
 }
 
 function opcoesSelect(alvo, itens){
@@ -765,11 +834,15 @@ async function carrega(){
   const d = await resposta.json();
   ULTIMO = d;
   TOTAL = {assinatura: assinatura(), linhas: d.total_linhas};
-  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
-  $('#titulo').textContent = `Matriz — ${mov}, ${d.lente.nome}`;
-  $('#desc').textContent =
-    `${d.lente.nome} em ${d.lente.unidade}, por mês. ` +
-    (ESTADO.movimento === 'exp' ? `Faixa: ${OPCOES.faixas.find(f => f.chave === d.filtros.faixa).rotulo}.` : '');
+  const faixa = () => OPCOES.faixas.find(f => f.chave === d.filtros.faixa).rotulo;
+  $('#titulo').textContent = `Matriz — ${rotuloMovimento()}, ${d.lente.nome}`;
+  $('#desc').textContent = ESTADO.movimento === CONJUNTA
+    ? `O + abre unidade › cliente › expedição e recebimento. O total da linha é `
+      + `a movimentação — os dois somados —, que é como o BI lê a matriz. A `
+      + `expedição entra pela faixa ${faixa()}. Tipo de operação não abre aqui: `
+      + `veja num movimento só. ${d.lente.nome} em ${d.lente.unidade}, por mês.`
+    : `${d.lente.nome} em ${d.lente.unidade}, por mês. `
+      + (ESTADO.movimento === 'exp' ? `Faixa: ${faixa()}.` : '');
   $('#avisos').innerHTML = (d.avisos || [])
     .map(a => `<p class="aviso">${a}</p>`).join('');
   redesenha(); paginacao(d.paginacao); metodo(d);
@@ -864,8 +937,7 @@ async function carregaPlanilha(){
   }
   const d = await resposta.json();
   TOTAL = {assinatura: assinatura(), linhas: d.paginacao.total_linhas};
-  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
-  $('#titulo').textContent = `Planilha — ${mov}, ${d.lente.nome}`;
+  $('#titulo').textContent = `Planilha — ${rotuloMovimento()}, ${d.lente.nome}`;
   $('#desc').textContent =
     `Uma linha por registro do DW, no mesmo recorte da Matriz. ${d.lente.nome} em ${d.lente.unidade}.`;
   $('#avisos').innerHTML = (d.avisos || []).map(a => `<p class="aviso">${a}</p>`).join('');
@@ -904,13 +976,8 @@ async function inicia(){
   desenhaBotoes();
   $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
 
-  // O aviso do zero a esquerda fica no controle do CSV, nao numa parede de
-  // texto: e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela
-  // e lida. O xlsx nao tem o problema, e a nota diz por que.
-  $('#nota-download').textContent =
-    'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
-    + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
-    + 'identificador, baixe em Excel (xlsx), que preserva.';
+  // A nota do download vive em `limitesDoMovimento()`, que a troca conforme o
+  // movimento -- ver as duas constantes no topo do script.
   // O download navega (nao e fetch), entao um 401 apareceria como JSON cru na
   // tela. Confere a sessao antes de navegar -- `busca` redireciona se caiu.
   //
