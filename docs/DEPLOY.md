@@ -478,6 +478,25 @@ pasta de uploads retidos, ambos comprimidos e carimbados com data/hora em
 restaura o dump informado. Pede confirmação explícita (digitar `restaurar`) antes
 de rodar.
 
+> ### ⚠ Medido em 26/ago/2026: esta linha NUNCA foi instalada
+>
+> Durante o deploy do V3.6, o `crontab -l` da VM mostrou **apenas** o backup do
+> **Conciliador** (`conciliadorEstoque/infra/backup/backup-db.sh`, 04h UTC), que
+> é de outro projeto. A linha abaixo, documentada desde o Bloco G1 (03/ago/2026),
+> não estava lá.
+>
+> Consequência: **o banco da Nuvem IA não tem cópia automática** — e ele agora
+> guarda a V3 em produção, além das tabelas da V1/V2. O único dump existente é o
+> avulso de 26/ago 16h30, feito à mão no passo 2 do deploy.
+>
+> Instalar não colide com nada: 03h UTC fica antes do backup do Conciliador (04h)
+> e longe das cargas (10h05 e 18h05 UTC).
+>
+> **Lição do episódio:** documentar "rodar diariamente" não faz rodar. Passo de
+> instalação que não tem verificação depois vira passo que ninguém sabe se foi
+> dado. Por isso a seção do V3.6 acima confere o `crontab -l` em vez de mandar
+> instalar e seguir.
+
 **Rodar diariamente na VM** (crontab do usuário que roda o compose):
 
 ```bash
@@ -647,13 +666,31 @@ chegou no container).
 **12. ⚠ NÃO-RETORNO 2 — desligar a V2.** Só depois do 11 passar.
 
 ```bash
-docker compose up -d --remove-orphans
-docker compose ps                      # esperado: nuvem-cat e nuvem-db, sem nuvem-app
+docker stop nuvemia-nuvem-app-1
+docker rm nuvemia-nuvem-app-1
 ```
 
-O `--remove-orphans` é o que remove o container da V2, agora que o serviço não
-existe mais no arquivo. **Sem ele o container antigo continua rodando**, servindo
-a 8002, e o desligamento não aconteceu de fato.
+**Por nome, e não com `docker compose up -d --remove-orphans`.** As duas formas
+funcionam, e a pergunta da Maria na execução de 26/ago/2026 — *"não vai remover
+nada das outras aplicações, né?"* — é a razão de a documentada ser esta.
+
+`--remove-orphans` age por **exclusão**: remove o que não está no arquivo, dentro
+do projeto `nuvemia`. É seguro por construção (os containers do Conciliador e do
+Hub têm outro `com.docker.compose.project`), e ainda assim é a forma errada de
+documentar uma operação em VM compartilhada: ela exige que quem executa confie
+num filtro invisível. O comando por nome age por **inclusão** — um container,
+nomeado, sem padrão e sem "o que sobrou". É a mesma postura da tabela do Passo
+1.1: *resolver por nome, item a item*.
+
+Para provar o escopo antes, se der vontade (não muda nada):
+
+```bash
+docker ps -a --filter "label=com.docker.compose.project=nuvemia"   --format '{{.Names}}  [{{.Label "com.docker.compose.service"}}]'
+```
+
+`docker rm` remove o **container**, não a imagem nem o volume. E como o serviço
+já não existe no compose, ele não volta: `restart: unless-stopped` não se aplica
+a container removido.
 
 **13. Conferir que o vizinho não foi afetado.** Este passo existe porque é a
 pergunta que dá medo, e medo se responde com evidência:

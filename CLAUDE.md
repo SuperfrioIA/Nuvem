@@ -55,8 +55,8 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   faria as atualizações do DW em linha antiga pararem de chegar, e a nossa cópia
   do histórico congelaria divergindo da fonte em silêncio. A credencial (`DW_USER`,
   `DW_SENHA`) vive no `.env` — nunca no chat, em log, em teste ou em commit.
-- O agendamento da carga (07h05 e 15h05) **está escrito e ainda desligado**
-  (`scripts/carga_catering.sh`): ele é o passo 14 do deploy. As duas pendências
+- O agendamento da carga **está LIGADO** desde 26/ago/2026
+  (`scripts/carga_catering.sh`, no crontab da VM). As duas pendências
   do `docs/DEPLOY.md` estão fechadas — o serviço `nuvem-cat` existe no compose
   (V3.6) e o **cron é escrito em UTC** (`5 10` e `5 18` para 07h05/15h05 de
   Brasília), decidido para não mexer no fuso da VM, que é compartilhada com
@@ -71,10 +71,13 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   de identidade, para o AD entrar depois), e local ele precisa de `CAT_SECRET_KEY`
   no ambiente — ver `docs/EXECUCAO_LOCAL.md`, caminho C. Credencial vai para o
   `.env`, nunca no chat nem em commit.
-- **A V2 está congelada** (Maria, 24/ago/2026): não se mexe mais nela. Ela
-  continua sendo o que está em produção na VM, então `backend/`, `frontend/` e
-  as migrations até a 0018 ficam **intactos** — a V3 não altera nem importa
-  código de lá. Regra reaproveitada entra por **cópia com teste próprio**.
+- **A V2 está congelada e, desde 26/ago/2026, FORA DO AR** (o V3.6 removeu o
+  serviço do compose; ela não é mais o que está em produção). `backend/`,
+  `frontend/` e as migrations até a 0018 continuam **intactos** — a V3 não
+  altera nem importa código de lá, e o desligamento foi por remoção de serviço,
+  sem editar uma linha. **Nada foi apagado:** o bloco fica comentado no
+  `docker-compose.yml`, o volume `nuvem_db_data` e as tabelas da V1/V2 seguem no
+  banco. Reativar o laboratório é descomentar e `up -d`. Regra reaproveitada entra por **cópia com teste próprio**.
   **No V3.6 ela sai do ar** (decisão da Maria, 26/ago/2026: nenhuma das telas
   era usada) — e sai **sem edição de código**, removendo o serviço do compose.
   O bloco fica comentado no `docker-compose.yml`, e o código, o volume e as
@@ -90,6 +93,11 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   Graph é somente leitura por construção e a suíte tem guarda pra isso; a regra
   vale também pra qualquer escrita pelo sistema de arquivos — nunca rodar com o
   diretório de trabalho dentro da pasta sincronizada do DataHub.
+- **Pendência com risco, medida em 26/ago/2026:** o banco de produção **não tem
+  backup automático**. O crontab da VM tem o backup do *Conciliador* (outro
+  projeto) e as duas cargas da V3, mas não a linha do `scripts/backup.sh` da
+  Nuvem IA — documentada desde o Bloco G1 e nunca instalada. O único dump é o
+  avulso de 26/ago 16h30. Ver `docs/DEPLOY.md`, seção de backup.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
   explícito. "Beleza" vago não é OK.
 - Commits **sem** co-autor Anthropic (nada de `Co-Authored-By`).
