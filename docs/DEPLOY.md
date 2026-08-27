@@ -1158,6 +1158,102 @@ alguém reportar como se fosse.
 | Matriz vazia em Entrada + saída | conferir a medida: **Pallets não existe na expedição** e a conjunta recusa de propósito, com aviso |
 | qualquer coisa | `git checkout <commit anterior> && docker compose build nuvem-cat && docker compose up -d nuvem-cat`. **Nenhum dado precisa ser desfeito** |
 
+## Rede compartilhada com o Hub — o Hub passa a LER o `nuvem-db` (procedimento)
+
+Contexto: a tela de volumetria de catering (a V3, porta 8003) entra no Hub
+(porta 8001) como módulo **somente leitura** sobre **este** banco — desenho e
+lotes em `docs/PLANO_VOLUMETRIA_CATERING.md` do repositório do Hub; este é o
+lote **H3**. O que muda aqui é infraestrutura, não dado: uma rede Docker externa
+(`hub-nuvem`) em que só o `nuvem-db` e o `hub` entram, e um role `hub_leitura`
+que só tem `SELECT` nas seis tabelas `cat_*`. O `nuvem-db` continua sem porta
+publicada; a carga, o cron e a tela da 8003 não mudam. O banco oficial segue
+sendo este, e a escrita segue sendo só da carga.
+
+### O que muda, em uma frase
+
+O container do `nuvem-db` é **recriado** para ganhar a rede — alguns segundos de
+banco fora do ar. O dado está no volume `nuvem_db_data` e não é tocado.
+
+### Pré-requisitos
+
+- **Fora das janelas da carga**: 07h05 e 15h05 de Brasília (`5 10` e `5 18` UTC
+  no cron). Uma carga no meio da recriação falharia e ficaria `erro` em
+  `cat_cargas` — sem estrago, mas com ruído.
+- **Dump avulso antes** (`./scripts/backup.sh`) — o banco não tem backup
+  automático (seção "Backup e restauração"). Recriar container não apaga
+  volume, mas a hora de mexer na infra do banco é a hora de ter dump recente.
+- PR `feat/rede-compartilhada-hub` mergeada na `main`.
+- Uma senha nova para o role, gerada agora e que só vai viver no `.env` do
+  **Hub**: `openssl rand -hex 24`. Nunca a senha do usuário `nuvem`.
+
+### O procedimento
+
+```bash
+cd /home/ubuntu/nuvemIA
+
+# 1) a rede, uma vez. `external: true` nos dois composes: o compose NAO cria nem apaga.
+docker network create hub-nuvem
+docker network ls | grep hub-nuvem
+
+# 2) o compose novo, e SO o servico do banco (Passo 1.1: nunca `up -d` seco)
+git pull
+docker compose up -d nuvem-db
+docker compose ps                                   # nuvem-db healthy, nuvem-cat de pe
+docker network inspect hub-nuvem --format '{{range .Containers}}{{.Name}} {{end}}'
+#   esperado: o container do nuvem-db (nome como o `docker compose ps` mostra)
+
+# 3) o role somente leitura. A senha entra por variavel de sessao, nao no comando
+#    (argumento aparece em `ps` e no historico do shell).
+read -s SENHA_HUB    # cola a senha do openssl e Enter
+docker compose exec -T nuvem-db psql -U nuvem -d nuvem -v ON_ERROR_STOP=1 -v senha="$SENHA_HUB" <<'SQL'
+CREATE ROLE hub_leitura LOGIN PASSWORD :'senha';
+-- terceira trava, no proprio role: mesmo que um cliente esqueca de pedir, a
+-- sessao nasce somente leitura (o Hub tambem pede, por conexao)
+ALTER ROLE hub_leitura SET default_transaction_read_only = on;
+GRANT CONNECT ON DATABASE nuvem TO hub_leitura;
+GRANT USAGE ON SCHEMA public TO hub_leitura;
+-- SO estas seis. Tabela nova em cat_* NAO ganha acesso sozinha: exige GRANT
+-- aqui E a copia do contrato no Hub -- e a regra das duas PRs, de proposito.
+GRANT SELECT ON cat_fato_recebimento, cat_fato_expedicao,
+                cat_unidades, cat_clientes, cat_tipos_estoque, cat_cargas
+  TO hub_leitura;
+SQL
+unset SENHA_HUB
+
+# 4) prova, dentro do container (socket local, sem senha): le, nao escreve, nao ve o resto
+docker compose exec -T nuvem-db psql -U hub_leitura -d nuvem -c "select count(*) from cat_fato_recebimento"
+#   esperado: o numero de linhas (202.087 em 27/ago)
+docker compose exec -T nuvem-db psql -U hub_leitura -d nuvem -c "insert into cat_cargas (tabela_origem) values ('x')"
+#   esperado: ERROR:  cannot execute INSERT in a read-only transaction
+docker compose exec -T nuvem-db psql -U hub_leitura -d nuvem -c "select count(*) from cat_auditoria"
+#   esperado: ERROR:  permission denied for table cat_auditoria
+```
+
+**5) o lado do Hub** — `VOLUMETRIA_DB_URL=postgresql://hub_leitura:<senha>@nuvem-db:5432/nuvem`
+no `.env` do Hub e `docker compose up -d --build` lá — é o runbook do Hub
+(`docs/DEPLOY_VM.md`, seção 7). Sem essa variável o card do Hub responde 503 e
+nada mais acontece: este procedimento sozinho não expõe nada.
+
+### O que o Hub NÃO passa a poder
+
+Ler `cat_auditoria` e `cat_usuarios` (sem GRANT), escrever em qualquer tabela
+(role read-only + conexão read-only), alcançar o DW (a credencial `DW_*` só
+existe no `.env` daqui). O `information_schema` visto pelo `hub_leitura` mostra
+só as seis tabelas — por isso, se o Hub acusar "tabela não existe ou o role não
+tem SELECT", a primeira suspeita é GRANT faltando, não migration.
+
+### Se der errado
+
+- **Voltar o banco à rede antiga**: `git checkout main -- docker-compose.yml`
+  (ou reverter a PR), `docker compose up -d nuvem-db`. O Hub perde o caminho e
+  o card volta a 503.
+- **Apagar o role**: `DROP ROLE hub_leitura;` (ele não é dono de nada, então não
+  precisa de `DROP OWNED`). Antes, tirar a variável do `.env` do Hub.
+- **Apagar a rede**: só depois de os dois serviços saírem dela —
+  `docker network rm hub-nuvem`.
+- Erro `network hub-nuvem declared as external, but could not be found` no
+  `up`: o passo 1 não rodou nesta VM.
+
 ## Comandos úteis / rollback
 
 ```bash

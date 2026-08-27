@@ -103,6 +103,15 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - nuvem_db_data:/var/lib/postgresql/data
+    # O Hub (porta 8001) le a volumetria DESTE banco, somente leitura, pelo role
+    # `hub_leitura` -- e chega ate aqui pela rede externa `hub-nuvem`, sem o banco
+    # publicar porta nenhuma. `default` continua listada porque declarar
+    # `networks` desliga a adesao automatica a rede do compose, e e por ela que
+    # o `nuvem-cat` (tela e carga) fala com o banco. Ver docs/DEPLOY.md, secao
+    # "Rede compartilhada com o Hub".
+    networks:
+      - default
+      - hub-nuvem
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nuvem -d nuvem"]
       interval: 2s
@@ -112,3 +121,12 @@ services:
 
 volumes:
   nuvem_db_data:
+
+networks:
+  # Criada UMA vez na VM, a mao (`docker network create hub-nuvem`); o compose
+  # do Hub declara a mesma rede como externa e poe o servico `hub` nela. So
+  # `nuvem-db` e `hub` entram: a carga (`nuvem-cat`) fica fora, e o Hub nunca
+  # enxerga o DW. `external: true` = o compose nao cria nem apaga a rede; se ela
+  # nao existir, `up` falha nomeando-a em vez de subir um banco inalcancavel.
+  hub-nuvem:
+    external: true

@@ -123,6 +123,17 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   projeto) e as duas cargas da V3, mas não a linha do `scripts/backup.sh` da
   Nuvem IA — documentada desde o Bloco G1 e nunca instalada. O único dump é o
   avulso de 26/ago 16h30. Ver `docs/DEPLOY.md`, seção de backup.
+- **O Hub lê este banco** (integração decidida em 27/ago/2026; plano em
+  `docs/PLANO_VOLUMETRIA_CATERING.md` do repositório do Hub): pela rede Docker
+  externa `hub-nuvem` e pelo role `hub_leitura`, que só tem `SELECT` nas seis
+  tabelas `cat_fato_recebimento`, `cat_fato_expedicao`, `cat_unidades`,
+  `cat_clientes`, `cat_tipos_estoque` e `cat_cargas` (procedimento em
+  `docs/DEPLOY.md`, "Rede compartilhada com o Hub"). Consequências para quem
+  mexer no schema `cat_*`: **tabela nova não ganha acesso sozinha** (exige
+  `GRANT` explícito), e o Hub tem uma **cópia do contrato de colunas** que
+  falha alto quando diverge — mudança de schema aqui é sempre acompanhada de
+  PR no Hub (`backend/volumetria_catering/contrato.py`). A escrita continua
+  sendo só da carga; o Hub nunca enxerga o DW.
 - Antes de criar/alterar arquivos: apresentar plano em texto simples e aguardar OK
   explícito. "Beleza" vago não é OK.
 - Commits **sem** co-autor Anthropic (nada de `Co-Authored-By`).
