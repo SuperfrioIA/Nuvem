@@ -966,7 +966,17 @@ reconstruiu a tabela — é seguro, mas não é incremental (ver o V3_PLANO).
 | disco apertado | estreitar com `DW_ANO_MINIMO=2024` no `.env` e recarregar; o que já entrou fica |
 | a tela abre em 2023 | o V3.7 não está na imagem — `docker compose build` de novo |
 
-## V3.8.1 — Terminar a carga do histórico (procedimento)
+## V3.8.1 — Terminar a carga do histórico (EXECUTADO em 27/ago/2026)
+
+**Executado em 27/ago/2026, 11h20. O histórico completo (2023–2026) está em
+produção nas duas tabelas:** 202.087 linhas no recebimento e 232.089 na
+expedição, batendo exato com o que a sondagem mediu no DW antes da carga; as duas
+cargas `ok`; 1 linha com `sk_cliente` nulo (a esperada); dimensões recalculadas
+às 14:20:56 UTC. Detalhe e aritmética no `docs/V3_PLANO.md`, "Aceite do V3.8.1".
+
+O procedimento fica aqui porque ele é o modelo de qualquer ampliação de janela
+futura — a trava das duas metades (`identidade` **e** `preenchimento`) é o que
+faltava em 27/ago de manhã.
 
 **Por que existe:** em 27/ago/2026 a carga cheia entrou no recebimento (202.087
 linhas, 2023–2026) e **falhou na expedição** numa linha de 2025 sem `sk_cliente`
