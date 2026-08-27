@@ -268,15 +268,30 @@ def test_mes_vazio_vira_coluna_vazia_e_nao_coluna_ausente():
 def test_hierarquia_e_configuravel():
     """O terceiro nivel foi lido do contrato escrito, nao do artefato (que nao
     existe mais). Este teste fixa que trocar de nivel e mudar `HIERARQUIA`, e
-    que a saida tem o nivel `faixa` e a entrada nao."""
+    que a saida tem o nivel `faixa` e a entrada nao.
+
+    O invariante do fim e o que importa: **todo nivel ou vem do SQL (tem entrada
+    em `NIVEL`) ou esta declarado como nao vindo dele (`FORA_DO_SQL`)**. Nivel
+    novo que escape dos dois desalinha os indices de `chave_0..n` na leitura do
+    resultado, e isso nao levanta erro -- so troca rotulo de lugar. O V3.7.2
+    acrescentou o SEGUNDO nivel fora do SQL (`movimento`), e foi este teste que
+    cobrou a existencia de uma lista em vez de uma excecao solta."""
     assert matriz.HIERARQUIA["rec"] == ("unidade", "cliente", "operacao")
     assert matriz.HIERARQUIA["exp"] == ("unidade", "cliente", "faixa", "operacao")
-    assert matriz.FAIXA not in matriz.HIERARQUIA["rec"], \
+    assert matriz.HIERARQUIA[recorte.CONJUNTA] == ("unidade", "cliente", "movimento")
+    assert matriz.FAIXA not in matriz.HIERARQUIA["rec"], (
         "entrada nao tem faixa: a medida nao se repete nela"
+    )
+    # a conjunta e a arvore MAIS CURTA das tres, e e isso que a torna possivel
+    assert len(matriz.HIERARQUIA[recorte.CONJUNTA]) == 3
+    assert matriz.MOVIMENTO not in matriz.HIERARQUIA["rec"]
+    assert matriz.MOVIMENTO not in matriz.HIERARQUIA["exp"]
     for niveis in matriz.HIERARQUIA.values():
         for nivel in niveis:
-            assert nivel == matriz.FAIXA or nivel in matriz.NIVEL, \
-                f"nivel {nivel!r} nao tem definicao de SQL em NIVEL"
+            assert nivel in matriz.FORA_DO_SQL or nivel in matriz.NIVEL, (
+                f"nivel {nivel!r} nao vem do SQL (NIVEL) nem esta declarado "
+                "como fora dele (FORA_DO_SQL)"
+            )
 
 
 def test_pallet_nao_existe_na_saida():
@@ -560,6 +575,171 @@ def test_total_linhas_da_matriz_bate_com_a_contagem_da_planilha(banco_migrado):
     finally:
         conn.close()
 
+
+# ------------------------------------------------ V3.7.2: os dois movimentos
+def test_conjunta_soma_os_dois_e_cada_filha_bate_com_a_visao_de_um_movimento_so(cursor):
+    """O aceite do V3.7.2, e ele e aritmetico -- duas igualdades:
+
+      1. o no PAI e EXATAMENTE a soma das duas filhas, mes a mes;
+      2. cada filha e IDENTICA ao que a visao de um movimento so devolve no
+         mesmo recorte.
+
+    Se a primeira falhar, o total rotulado "movimentacao" mente. Se a segunda
+    falhar, a conjunta e a visao simples discordam sobre o MESMO dado -- e as
+    duas ficam sem credibilidade, porque nao da para saber qual esta certa.
+
+    Os valores sao assimetricos de proposito (140 na entrada, 100 na saida): com
+    100 e 100 uma troca de lado passaria batido. E fevereiro tem so entrada,
+    porque o mes em que um dos dois lados nao existe e onde a soma erra com mais
+    facilidade."""
+    _semear_entrada(cursor, peso="140.000", calendario="2026-01-05")
+    _semear_saida(cursor, calendario="2026-01-05")
+    _semear_entrada(cursor, peso="30.000", calendario="2026-02-10",
+                    gem="0000000002")
+
+    comum = dict(de="2026-01-01", ate="2026-02-28", lente="liq",
+                 faixa="solicitado")
+    juntas = matriz.matriz(cursor, matriz.Filtros(
+        movimento=recorte.CONJUNTA, **comum))
+    entrada = matriz.matriz(cursor, matriz.Filtros(movimento="rec", **comum))
+    saida = matriz.matriz(cursor, matriz.Filtros(movimento="exp", **comum))
+
+    assert juntas["niveis"] == ["unidade", "cliente", "movimento"], \
+        "a arvore da conjunta tem tres niveis, como as outras duas"
+
+    unidade = juntas["linhas"][0]
+    cliente = unidade["filhos"][0]
+    filhos = cliente["filhos"]
+    por_movimento = {no["chave"]: no for no in filhos}
+
+    # ordem FIXA, e nao ranking -- ver `matriz.ORDEM_MOVIMENTO`
+    assert [no["chave"] for no in filhos] == ["exp", "rec"]
+    assert [no["rotulo"] for no in filhos] == ["Expedicao", "Recebimento"]
+    assert [no["nivel"] for no in filhos] == ["movimento", "movimento"]
+
+    # 1) o pai e a soma das filhas, em cada mes e em cada nivel acima
+    for mes in ("2026-01", "2026-02"):
+        soma = sum(no["valores"].get(mes) or 0 for no in filhos)
+        assert cliente["valores"].get(mes) == soma, \
+            f"{mes}: o cliente marcou {cliente['valores'].get(mes)} e as duas " \
+            f"filhas somam {soma}"
+        assert unidade["valores"].get(mes) == soma, \
+            f"{mes}: a unidade nao fecha com as filhas"
+        assert juntas["total"][mes] == soma, \
+            f"{mes}: o total do recorte nao fecha com as filhas"
+
+    # 2) cada filha e identica a visao de um movimento so
+    assert por_movimento["rec"]["valores"] == entrada["linhas"][0]["valores"], \
+        "Recebimento na conjunta divergiu da visao Entrada"
+    assert por_movimento["exp"]["valores"] == saida["linhas"][0]["valores"], \
+        "Expedicao na conjunta divergiu da visao Saida"
+
+    # os numeros, escritos: 140 + 100 em janeiro, e so os 30 da entrada em fev
+    assert cliente["valores"]["2026-01"] == Decimal("240.000")
+    assert cliente["valores"]["2026-02"] == Decimal("30.000")
+
+    # a contagem de linhas soma as DUAS consultas -- e ela e o numero que a tela
+    # usa para avisar antes de um download grande
+    assert juntas["total_linhas"] == entrada["total_linhas"] + saida["total_linhas"]
+
+    # e a soma acumula os dois vieses, o que a tela tem que declarar
+    juntos = " ".join(juntas["avisos"])
+    assert "movimentação" in juntos and "lados opostos" in juntos
+    assert "operação não abre" in juntos
+
+
+def test_na_conjunta_a_faixa_deixa_de_ser_nivel_e_escolhe_quem_entra_na_soma(cursor):
+    """Na saida, `faixa` e um NIVEL da arvore: as tres aparecem, porque nao somam
+    entre si. Na conjunta ela vira botao e responde outra pergunta -- qual das
+    tres colunas da expedicao entra na soma. Trocar o botao troca o total, e a
+    arvore continua com dois filhos por cliente, nao cinco."""
+    _semear_entrada(cursor, peso="140.000")
+    _semear_saida(cursor)
+    comum = dict(de="2026-01-01", ate="2026-01-31",
+                 movimento=recorte.CONJUNTA, lente="liq")
+
+    for faixa, esperado in (("solicitado", "240.000"),
+                            ("atendido", "220.000"),
+                            ("separado", "210.000")):
+        resultado = matriz.matriz(cursor, matriz.Filtros(faixa=faixa, **comum))
+        assert resultado["total"]["2026-01"] == Decimal(esperado), \
+            f"faixa {faixa}: 140 da entrada + a coluna dela na expedicao"
+        filhos = resultado["linhas"][0]["filhos"][0]["filhos"]
+        assert [no["chave"] for no in filhos] == ["exp", "rec"], \
+            "a faixa nao pode ter virado nivel na conjunta"
+        assert not any("não somam entre si" in a for a in resultado["avisos"]), \
+            "o aviso das tres faixas e da visao Saida, onde elas sao niveis"
+
+
+def test_conjunta_recusa_filtro_de_operacao_em_vez_de_zerar_um_lado():
+    """As duas tabelas tem listas de `descr_oper_wms` diferentes. Filtrar por uma
+    operacao que so existe na entrada zeraria a linha de Expedicao -- sem erro,
+    sem aviso, com o total da "movimentacao" virando so a entrada. Recusar alto e
+    o unico desfecho honesto enquanto nao houver decisao de produto sobre o que
+    esse filtro deve significar falando de duas listas diferentes."""
+    with pytest.raises(recorte.FiltroInvalido) as erro:
+        matriz.Filtros(de="2026-01-01", ate="2026-01-31",
+                       movimento=recorte.CONJUNTA,
+                       operacoes=("SAIDA NORMAL",)).validar()
+    assert "operacao" in str(erro.value)
+    # sem o filtro, o mesmo recorte passa -- a recusa e do filtro, nao da visao
+    matriz.Filtros(de="2026-01-01", ate="2026-01-31",
+                   movimento=recorte.CONJUNTA).validar()
+    # e nas visoes de um movimento so ele continua valendo
+    matriz.Filtros(de="2026-01-01", ate="2026-01-31", movimento="exp",
+                   operacoes=("SAIDA NORMAL",)).validar()
+
+
+def test_conjunta_com_pallet_recusa_em_vez_de_mostrar_so_a_entrada(cursor):
+    """Pallet nao existe na expedicao. Em Entrada + saida a soma seria
+    EXATAMENTE a entrada, rotulada "movimentacao" -- numero certo com nome
+    errado, que e pior que erro visivel, porque ninguem vai conferir."""
+    _semear_entrada(cursor)
+    _semear_saida(cursor)
+    resultado = matriz.matriz(cursor, matriz.Filtros(
+        de="2026-01-01", ate="2026-01-31", movimento=recorte.CONJUNTA,
+        lente="pal"))
+    assert resultado["linhas"] == []
+    assert resultado["total"] == {"2026-01": None}
+    assert any("nome errado" in a for a in resultado["avisos"]), \
+        "a recusa tem que dizer POR QUE, e nao so vir vazia"
+
+    # na entrada a mesma lente tem numero
+    entrada = matriz.matriz(cursor, matriz.Filtros(
+        de="2026-01-01", ate="2026-01-31", movimento="rec", lente="pal"))
+    assert entrada["total"]["2026-01"] == 7
+
+
+def test_recorte_de_dois_movimentos_nao_escolhe_tabela_em_silencio():
+    """`de_para_where` sem movimento explicito LEVANTA quando o recorte e `amb`.
+
+    Esta e a trava estrutural que protege a planilha e o download: eles chamam a
+    funcao SEM o argumento, entao um `amb` que escapasse da recusa do endpoint
+    vira erro -- e nao meia resposta com cara de resposta inteira."""
+    filtros = matriz.Filtros(de="2026-01-01", ate="2026-01-31",
+                             movimento=recorte.CONJUNTA).validar()
+    with pytest.raises(recorte.FiltroInvalido):
+        recorte.de_para_where(filtros)
+    # com a tabela explicita, as duas saem
+    assert "cat_fato_recebimento" in recorte.de_para_where(filtros, "rec")[0]
+    assert "cat_fato_expedicao" in recorte.de_para_where(filtros, "exp")[0]
+
+
+def test_o_terceiro_movimento_e_da_tela_e_nao_do_dado():
+    """`contrato.MOVIMENTOS` e o conjunto do DADO -- o CHECK da 0019, o contrato
+    de colunas, o nome da tabela de origem da carga. `amb` nao e uma terceira
+    tabela nem um terceiro tipo de linha: e um jeito de LER as duas.
+
+    Se alguem juntar os dois conjuntos, a carga passa a aceitar um movimento que
+    nao tem tabela -- e o erro aparece longe, na hora de escrever."""
+    assert recorte.CONJUNTA not in contrato.MOVIMENTOS
+    assert recorte.CONJUNTA in recorte.MOVIMENTOS_DA_TELA
+    assert set(contrato.MOVIMENTOS) < set(recorte.MOVIMENTOS_DA_TELA)
+    assert recorte.movimentos_do_recorte(recorte.CONJUNTA) == ("rec", "exp")
+    for movimento in contrato.MOVIMENTOS:
+        assert recorte.movimentos_do_recorte(movimento) == (movimento,)
+        assert movimento in recorte.TABELA
+    assert recorte.CONJUNTA not in recorte.TABELA
 
 # ------------------------------------------------------------- semeadura
 _COMUNS = (

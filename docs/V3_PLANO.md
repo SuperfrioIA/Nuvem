@@ -11,9 +11,10 @@ expedição; ver "Aceite do V3.8.1"). Do V3.9 em diante a divisão em lotes na s
 final é proposta, não plano em execução — autorização é por lote, como na V1 e na
 V2.
 
-**V3.7.1** (filtros com caixas de seleção) **foi feito em 27/ago/2026**, na
-ordem que a Maria decidiu (V3.7.1 antes do V3.7.2). **Mapeado e NÃO autorizado:
-V3.7.2** (os dois movimentos na mesma matriz).
+**V3.7.1** (filtros com caixas de seleção) **e V3.7.2** (os dois movimentos na
+mesma matriz, com o pai somando "movimentação") **foram feitos em 27/ago/2026**,
+na ordem que a Maria decidiu. Os dois estão **construídos e testados, e nenhum
+foi validado no navegador** — a validação visual é dela.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -262,7 +263,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
 | **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **feito em 27/ago/2026**, ver seção abaixo | não |
-| **V3.7.2** | Os dois movimentos na mesma matriz, com o pai somando "movimentação" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
+| **V3.7.2** | Os dois movimentos na mesma matriz, com o pai somando "movimentação" — **feito em 27/ago/2026**, ver seção abaixo | não |
 | **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **executado em 27/ago/2026**, e entrou metade: o conserto é o V3.8.1 | não |
 | **V3.8.1** | A linha sem cliente (migration 0024) e o `--sondar` medindo preenchimento — **executado em 27/ago/2026**, histórico completo em produção | não |
 | **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
@@ -2439,11 +2440,12 @@ Não toca no recorte (período, dia do mês, `WHERE`, auditoria), não mexe em
 backend, não tem migration e não substitui o botão Limpar. Não inclui busca no
 painel (gatilho acima) nem "Selecionar tudo" com estado intermediário por grupo.
 
-## Lote V3.7.2 — Os dois movimentos na mesma matriz (mapeado em 27/ago/2026, NÃO autorizado)
+## Lote V3.7.2 — Os dois movimentos na mesma matriz (feito em 27/ago/2026)
 
-**Nada deste lote está construído.** Ele entra aqui porque foi pedido e decidido
-para depois, e o que sobrevive à sessão tem que viver neste documento
-(`memory/uma-sessao-por-lote.md`).
+Mapeado e **autorizado no mesmo dia**, 27/ago/2026: *"pode seguir com o próximo
+lote, para já fazermos tudo junto"*. As cinco decisões que o mapeamento copiou do
+artefato entraram como estavam; o que a execução mudou está marcado como correção
+mais abaixo, e não reescrito por cima.
 
 ### De onde veio, e por que ele reabre uma decisão fechada
 
@@ -2497,7 +2499,7 @@ total da tela divergir do download do V3.3 em um dígito — e divergência de u
 dígito é justamente a que ninguém investiga. Bate com a regra da V3 ("valor cru
 na API, formatação na tela") e entra como teste do lote.
 
-### Três pontos abertos, que são decisão da Maria
+### Três pontos que o artefato não resolvia (resolvidos mais abaixo)
 
 1. **Pallets.** `LENTES["pal"]["exp"] = None` — a expedição não tem pallet. Em
    "Entrada + saída" a soma daria **exatamente a entrada**, rotulada
@@ -2521,29 +2523,100 @@ Nenhuma migration, nenhuma tabela nova, nenhuma coluna nova. No backend, um
 terceiro valor aceito em `movimento` e uma entrada a mais em `HIERARQUIA`; a soma
 é feita em **Python**, sobre as duas consultas que já existem, e **não em SQL** —
 unir as duas tabelas num `UNION` traria de volta exatamente o problema que a
-decisão 3 remove. Na tela, a linha do contador ganha um terceiro termo
-(`2 movimentos`), como no print.
+decisão 3 remove.
 
-O download e a planilha do V3.3 seguem o **mesmo recorte da Matriz por
-construção** (`recorte.de_para_where()`), e isso não é opcional aqui: se a tela
-mostrar os dois movimentos e o arquivo mostrar um, as duas passam a mentir uma
-sobre a outra. O lote inclui os três, ou não fecha.
+> **Correção de duas coisas que este mapeamento errou** (escritas na execução,
+> 27/ago/2026, para não parecerem esquecimento):
+>
+> 1. **A planilha e o download NÃO entram, e a versão anterior deste texto dizia
+>    o contrário** ("o lote inclui os três, ou não fecha"). O raciocínio estava
+>    invertido. É verdade que os três compartilham o recorte por construção
+>    (`recorte.de_para_where()`), mas o que a conjunta muda não é o **recorte** —
+>    é de **quantas tabelas** as linhas vêm. E aí a simetria acaba: a Matriz
+>    **agrega**, e por isso pode somar; a planilha mostra **linha crua** e o
+>    download leva a **linha inteira**. Unir linha crua de 36 colunas com linha
+>    crua de 46 não encurta nada — é a união incoerente que o V3.2 recusou, e ela
+>    continua recusada. Os dois passam a **recusar com 400** em Entrada + saída,
+>    com a mensagem dizendo o que fazer, e a tela desabilita os controles antes
+>    de a pessoa clicar.
+> 2. **O contador da paginação não ganhou o terceiro termo** (`2 movimentos`, como
+>    no print). Ficou de fora por não carregar informação: o número de movimentos
+>    é sempre 2 nessa visão. Registrado aqui para a próxima leitura do print não
+>    achar que faltou algo.
 
-### O que prova este lote
+### As três decisões abertas, resolvidas pelo lado conservador
 
-Ao contrário do V3.7.1, **o aceite é aritmético e cabe na suíte**: para cada
-(unidade, cliente, mês), a linha do pai tem que ser **exatamente** a soma das duas
-filhas, e cada filha tem que ser **idêntica** ao que a visão de um movimento só
-devolve no mesmo recorte. Se qualquer uma das duas igualdades falhar, uma das três
-telas está mentindo. Mais o navegador, pelas razões de sempre.
+A Maria autorizou o lote dizendo *"se precisar de alguma decisão deixe pra
+depois"*. As três foram então resolvidas pela opção que **não deixa número errado
+na tela**, e as três são reversíveis sem retrabalho — o caminho oposto de cada
+uma é uma decisão de produto, não uma reescrita.
+
+| ponto | o que ficou | o que a alternativa exigiria |
+|---|---|---|
+| **Pallets** | Em Entrada + saída, Pallets **recusa** com aviso próprio ("o total seria apenas a entrada com o nome de movimentação"), e o botão fica desabilitado na tela | Mostrar a entrada sozinha rotulada "movimentação" — número certo com nome errado |
+| **Filtro de operação** | **Recusado com 400** na conjunta, e o filtro é limpo e desabilitado na tela ao entrar nela | Virar dois filtros (um por movimento), que é decisão de produto |
+| **Os dois vieses** | Entram como **aviso na tela**, dizendo que a soma acumula os dois e que eles apontam para lados opostos | Nada — este era o único dos três que já tinha resposta |
+
+O motivo de a operação recusar em vez de simplesmente filtrar: as duas listas de
+`descr_oper_wms` não coincidem, então filtrar por uma operação que só existe na
+entrada **zeraria a linha de Expedição em silêncio**, com o total da
+"movimentação" virando só a entrada. Recusar alto é a única saída honesta.
+
+### O que a execução provou (27/ago/2026)
+
+**O aceite é aritmético, e ele fecha em duas igualdades.**
+`test_conjunta_soma_os_dois_e_cada_filha_bate_com_a_visao_de_um_movimento_so`:
+para cada (unidade, cliente, mês), o nó pai é **exatamente** a soma das duas
+filhas — no cliente, na unidade e no total do recorte — e cada filha é
+**idêntica** ao que a visão de um movimento só devolve no mesmo recorte. Se a
+primeira falhar, o total mente; se a segunda falhar, a conjunta e a visão simples
+discordam sobre o mesmo dado e as duas ficam sem credibilidade.
+
+Os valores do teste são **assimétricos de propósito** (140 na entrada, 100 na
+saída): com 100 e 100 uma troca de lado passaria batido. E fevereiro tem só
+entrada, porque o mês em que um dos dois lados não existe é onde a soma erra com
+mais facilidade.
+
+Os outros sete testes novos: a faixa trocando quem entra na soma (240 / 220 /
+210, sem virar nível), a recusa do filtro de operação, a recusa do Pallets, a
+trava estrutural do `de_para_where` (que é o que protege planilha e download), o
+terceiro movimento **não** estando em `contrato.MOVIMENTOS`, a recusa 400 dos
+dois endpoints — incluindo **não deixar registro de auditoria de um download que
+não saiu** — e as opções da API declarando os três movimentos.
+
+**Suíte da V3: 285 testes, verdes, 5min23.**
+
+**Um teste existente cobrou uma dívida, e essa é a melhor parte.**
+`test_hierarquia_e_configuravel` afirmava que todo nível de `HIERARQUIA` é
+`FAIXA` ou está em `NIVEL`. Com o `movimento`, a exceção solta virou **duas** —
+então ela deixou de ser exceção e passou a ser lista: `matriz.FORA_DO_SQL`. O
+defeito que isso evita é dos piores: nível novo que escape dos dois desalinha os
+índices de `chave_0..n` na leitura do resultado, o que **não levanta erro** — só
+troca rótulo de lugar.
+
+**A tela foi provada fora do navegador**, com o mesmo harness descartável em node
+do V3.7.1: 30 asserções nos limites da visão conjunta — a operação sendo
+**limpa** (e não só desabilitada, senão o primeiro pedido sairia com um filtro
+que o servidor recusa), a saída forçada da Planilha, os dois botões de download
+desabilitados com a nota trocada, o Pallets desabilitado, o rótulo da faixa
+mudando de "Faixa da expedição" para "A expedição entra como", e tudo voltando ao
+normal ao escolher Entrada de novo.
+
+**O que NÃO foi validado: o navegador.** Vale aqui a mesma ressalva do V3.7.1, e
+com um item a mais que é próprio deste lote: nenhum dos números da conjunta foi
+conferido contra dado real de operação. O aceite aritmético roda sobre semeadura
+sintética, e o print do artefato (SAPORE jan/26 = 3.907,7 + 3.934,4 = 7.842,0) é
+a **referência que falta bater** — ela exige os CSVs recarregados no banco local,
+ou a tela em produção.
 
 ### O que este lote NÃO faz
 
 Não mexe no recorte (período, dia do mês, `WHERE`, auditoria), não tem migration,
-não abre operação nem tipo de estoque na visão conjunta, e **não inclui saldo
+não abre operação nem tipo de estoque na visão conjunta, não a leva para a
+planilha nem para o download (ver a correção acima), e **não inclui saldo
 (`Entrada − Saída`) nem estoque**. Saldo ficou fora **por decisão**: o resultado
-não é estoque — falta o saldo inicial, e a subtração herda os dois vieses do
-ponto 3 em direções opostas, então ela parece um saldo e não é. Estoque é a
+não é estoque — falta o saldo inicial, e a subtração herda os dois vieses em
+direções opostas, então ela parece um saldo e não é. Estoque é a
 `FATO_VOL_EST_CAT_V01`, que pelo A-8 é lote próprio.
 
 ## Lote V3.8 — Histórico completo do DW (executado em 27/ago/2026 — metade entrou)

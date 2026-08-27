@@ -53,6 +53,22 @@ from catering import contrato
 
 TABELA = {"rec": "cat_fato_recebimento", "exp": "cat_fato_expedicao"}
 
+# O terceiro movimento da TELA (V3.7.2). Ele NAO entra em `contrato.MOVIMENTOS`,
+# e a separacao e o ponto: aquele e o conjunto do DADO -- o CHECK da migration
+# 0019, o contrato de colunas, o nome da tabela de origem da carga. "Entrada +
+# saida" nao e uma terceira tabela nem um terceiro tipo de linha: e um jeito de
+# LER as duas que existem. Misturar os dois conjuntos faria a carga passar a
+# aceitar um movimento que nao tem tabela.
+CONJUNTA = "amb"
+MOVIMENTOS_DA_TELA = ("rec", "exp", CONJUNTA)
+
+
+def movimentos_do_recorte(movimento):
+    """As tabelas que o recorte precisa ler. Uma, ou as duas."""
+    if movimento == CONJUNTA:
+        return ("rec", "exp")
+    return (movimento,)
+
 # As tres dimensoes de decisao, juntadas na leitura. Ver docstring.
 JUNCOES = (
     "LEFT JOIN cat_unidades u ON u.sigla_fonte = f.nk_wms_filial\n"
@@ -92,7 +108,7 @@ class Filtros:
     pagina: int = 1
 
     def validar(self):
-        if self.movimento not in contrato.MOVIMENTOS:
+        if self.movimento not in MOVIMENTOS_DA_TELA:
             raise FiltroInvalido(f"movimento: {self.movimento!r}")
         if self.lente not in contrato.LENTES:
             raise FiltroInvalido(f"lente: {self.lente!r}")
@@ -110,6 +126,19 @@ class Filtros:
         self.dias = dias_do_filtro(self.dias)
         if self.pagina < 1:
             raise FiltroInvalido(f"pagina: {self.pagina}")
+        # Operacao (`descr_oper_wms`) e uma lista POR MOVIMENTO, e as duas nao
+        # coincidem. Na visao conjunta, filtrar por uma operacao que so existe
+        # na entrada ZERARIA a linha de Expedicao -- sem erro, sem aviso, com o
+        # total da "movimentacao" virando so a entrada. Recusar alto e a unica
+        # saida honesta enquanto nao houver decisao de produto sobre o que esse
+        # filtro deve significar quando ele fala de duas listas diferentes.
+        if self.movimento == CONJUNTA and self.operacoes:
+            raise FiltroInvalido(
+                "filtro de operacao nao vale em Entrada + saida: as duas "
+                "tabelas tem listas de operacao diferentes, e filtrar por uma "
+                "delas zeraria o outro movimento em silencio. Escolha Entrada "
+                "ou Saida para filtrar por operacao."
+            )
         return self
 
     def como_dict(self):
@@ -285,11 +314,25 @@ def onde(filtros: Filtros):
     return clausulas, params
 
 
-def de_para_where(filtros: Filtros):
-    """`(sql_from_where, params)` -- o pedaco comum das tres consultas."""
+def de_para_where(filtros: Filtros, movimento=None):
+    """`(sql_from_where, params)` -- o pedaco comum das tres consultas.
+
+    O `movimento` explicito existe para a visao conjunta (V3.7.2), que roda UMA
+    consulta por tabela e soma depois, em Python.
+
+    Sem ele, `movimento=amb` **levanta** em vez de escolher uma tabela por conta
+    propria, e isso e deliberado: escolher em silencio daria um numero que parece
+    certo e e a metade. A planilha e o download chamam esta funcao SEM o
+    argumento -- entao a trava aqui e o que garante que eles nunca passem a
+    responder so pelo recebimento sem ninguem notar."""
+    escolhido = movimento or filtros.movimento
+    if escolhido == CONJUNTA:
+        raise FiltroInvalido(
+            "recorte de dois movimentos: esta consulta le uma tabela por vez"
+        )
     clausulas, params = onde(filtros)
     sql = (
-        f"FROM {TABELA[filtros.movimento]} f\n"
+        f"FROM {TABELA[escolhido]} f\n"
         f"{JUNCOES}\n"
         f"WHERE {' AND '.join(clausulas)}"
     )
