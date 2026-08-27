@@ -48,14 +48,19 @@ from tests.conftest import consultar
 # --------------------------------------------------------------- medido
 # Numeros das extracoes de 21/ago/2026, medidos antes de escrever o codigo.
 DIRETORIO_DW = Path(__file__).resolve().parent.parent / "docs" / "Analise"
-# O que a fonte ENTREGA com o piso de periodo de 2026 (contrato.piso_do_periodo).
-# Os arquivos tem 36.300 e 42.468 linhas; as 150 linhas de diferenca na
-# expedicao sao **dez/2025** (128,7 t solicitadas), que saem da janela pela
-# decisao da Maria de 25/ago/2026 -- a V3 le de 2026 para frente. O recebimento
-# nao tem linha anterior a 2026, entao ele nao muda.
+# O que a fonte ENTREGA com o piso padrao (contrato.piso_do_periodo).
+#
+# **Estes numeros mudaram no V3.8 (27/ago/2026), de proposito.** Com o piso em
+# 2026 a expedicao entregava 42.318 -- as 150 linhas de dez/2025 (128,7 t
+# solicitadas) ficavam de fora. O padrao virou 2023 (o historico inteiro do DW),
+# entao a fonte entrega o arquivo INTEIRO e `FORA_DA_JANELA` e zero nos dois.
+#
+# As 150 linhas continuam sendo o numero-sentinela que denuncia piso mexido sem
+# querer -- elas so trocaram de lugar: agora aparecem em
+# `test_piso_estreita_quando_pedido`, com `DW_ANO_MINIMO=2026` explicito.
 NO_ARQUIVO = {"rec": 36_300, "exp": 42_468}
-LINHAS = {"rec": 36_300, "exp": 42_318}
-FORA_DA_JANELA = {"rec": 0, "exp": 150}
+LINHAS = {"rec": 36_300, "exp": 42_468}
+FORA_DA_JANELA = {"rec": 0, "exp": 0}
 UNIDADES = 6
 NOMES_ESTOQUE = 40
 RAIZES_CLIENTE = 14
@@ -602,25 +607,35 @@ def test_dimensoes_guardam_as_nossas_decisoes(banco_migrado):
 
 
 @tem_extracao
-def test_piso_de_periodo_corta_2025_e_e_configuravel(monkeypatch):
-    """O recorte da Maria (25/ago/2026): a V3 le de 2026 para frente.
+def test_piso_estreita_quando_pedido(monkeypatch):
+    """O padrao le o historico inteiro; a variavel serve para ESTREITAR.
 
-    Fixado contra o arquivo de verdade porque o numero importa: sao **150**
-    linhas de dez/2025 na expedicao, e o recebimento nao tem nenhuma. Se um dia
-    o piso mudar sem querer, e aqui que aparece.
+    **Este teste mudou de sentido no V3.8**, e o numero que ele guarda e o
+    mesmo: sao **150** linhas de dez/2025 na expedicao (128,7 t solicitadas), e
+    o recebimento nao tem nenhuma linha anterior a 2026. Antes ele provava que o
+    piso de 2026 CORTAVA essas linhas por padrao; agora prova que o padrao as
+    TRAZ, e que pedir 2026 explicitamente volta a cortar.
 
-    O piso vive em configuracao porque a Maria nomeou o caso de uso -- comparar
-    2025 com 2026 -- e a segunda metade do teste e essa promessa: baixar o piso
-    devolve as linhas, sem tocar em codigo."""
+    Se um dia o piso mudar sem querer, e aqui que aparece -- nas duas direcoes.
+    """
     fonte = FonteCSV(DIRETORIO_DW)
+
+    # padrao (2023): o arquivo inteiro
     for movimento in ("rec", "exp"):
         entregues = sum(1 for _ in fonte.extrair(movimento))
-        assert entregues == LINHAS[movimento], f"{movimento}: janela de 2026"
-        assert NO_ARQUIVO[movimento] - entregues == FORA_DA_JANELA[movimento],             f"{movimento}: o arquivo tem mais linha do que a janela devolve"
+        assert entregues == NO_ARQUIVO[movimento], \
+            f"{movimento}: o padrao tem que entregar o arquivo inteiro"
+        assert NO_ARQUIVO[movimento] - entregues == FORA_DA_JANELA[movimento], \
+            f"{movimento}: alguma linha ficou fora da janela padrao"
 
-    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2025")
-    assert sum(1 for _ in fonte.extrair("exp")) == NO_ARQUIVO["exp"],         "baixar o piso tem que devolver dez/2025 sem mexer em codigo"
+    # estreitado em 2026: saem as 150 de dez/2025, e so elas
+    monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2026")
+    assert sum(1 for _ in fonte.extrair("exp")) == NO_ARQUIVO["exp"] - 150, \
+        "estreitar para 2026 tem que cortar exatamente as 150 linhas de dez/2025"
+    assert sum(1 for _ in fonte.extrair("rec")) == NO_ARQUIVO["rec"], \
+        "o recebimento nao tem linha anterior a 2026 -- estreitar nao pode mexer nele"
 
+    # o piso vale nas duas direcoes: 2027 nao tem nada nos arquivos de 2026
     monkeypatch.setenv(contrato.ENV_ANO_MINIMO, "2027")
     assert sum(1 for _ in fonte.extrair("exp")) == 0
 

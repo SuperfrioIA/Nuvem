@@ -4,9 +4,10 @@
 decisão de migrar o artefato de análise para aplicação lendo o DW.
 
 **Autorizados e feitos até agora: V3.0, V3.1, V3.2 e V3.3** (24/ago/2026), **V3.4
-e V3.5** (25/ago/2026) **e V3.5.1, V3.6 e V3.7** (26/ago/2026). Do V3.8 em diante
-a divisão em lotes na seção final é proposta, não plano em execução — autorização
-é por lote, como na V1 e na V2.
+e V3.5** (25/ago/2026), **V3.5.1, V3.6 e V3.7** (26/ago/2026) **e V3.8**
+(27/ago/2026 — código pronto, execução na VM pendente). Do V3.9 em diante a
+divisão em lotes na seção final é proposta, não plano em execução — autorização é
+por lote, como na V1 e na V2.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -255,7 +256,7 @@ transformar() + carregar()  <- idêntico nos dois casos
 | **V3.6** | Deploy na VM; a V2 sai do ar inteira — **EXECUTADO em 26/ago/2026**, a V3 está em produção na porta 8003 | **sim** |
 | **V3.7** | Recorte por dia, filtro de dia do mês e abertura da tela — **feito em 26/ago/2026**, ver seção abaixo | não |
 | **V3.7.1** | Filtros com caixas de seleção e "Selecionar tudo" — **mapeado em 27/ago/2026, NÃO autorizado**, ver seção abaixo | não |
-| **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia | não autorizado |
+| **V3.8** | Histórico completo do DW (piso 2023) + recarga cheia — **código feito em 27/ago/2026, execução na VM pendente** | não |
 | **V3.9** | Conciliação contra `FATO_VOLUMETRIA`, com as duas limitações declaradas | não |
 | **V3.10** | Laboratório novo, sobre o dado do DW | não autorizado |
 
@@ -2272,6 +2273,122 @@ Um detalhe de execução que já se sabe: validar na tela exige subir o caminho 
 Não toca no recorte (período, dia do mês, `WHERE`, auditoria), não mexe em
 backend, não tem migration e não substitui o botão Limpar. Não inclui busca no
 painel (gatilho acima) nem "Selecionar tudo" com estado intermediário por grupo.
+
+## Lote V3.8 — Histórico completo do DW (código feito, execução pendente, 27/ago/2026)
+
+Autorizado em 27/ago/2026: *"agora quero trazer os dados full da tabela do dw"*.
+**O código está pronto; a execução na VM é da Maria** — procedimento numerado em
+`docs/DEPLOY.md`, seção "V3.7 + V3.8".
+
+### A decisão que inverte a de 25/ago, e por que não é contradição
+
+Em 25/ago a Maria recortou o escopo em 2026, com o DW recém-reconstruído: *"o
+certo é a gente só pegar de 2026 pra frente"*. Dois dias depois pediu o oposto. O
+que mudou entre as duas decisões **não foi opinião, foi a tela**: o V3.7 fez ela
+abrir em janeiro do ano corrente. Sem isso, guardar 2023 significaria abrir a
+Matriz com **44 colunas** para responder uma pergunta que ninguém fez — e era
+exatamente esse o custo que a decisão de 25/ago estava evitando.
+
+Guardar histórico e escolher onde começar a olhar passaram a ser decisões
+separadas, e é por isso que são **duas variáveis**: `DW_ANO_MINIMO` (o piso da
+carga) e `CAT_ABERTURA_DE` (a abertura da tela). A confusão entre as duas é o
+erro mais provável de quem mexer nisso depois, e está escrita nos dois lugares.
+
+### A ordem que não pode inverter
+
+**O V3.7 tem que estar na VM antes de o histórico entrar.** Como os dois vão na
+mesma imagem, um deploy resolve — o piso só age no momento da carga, então a
+sequência é build → `up -d` → sondagem → carga cheia. Se o histórico entrasse
+antes, a tela abriria em 01/2023 até alguém perceber.
+
+### A trava: a chave natural sobre 434 mil linhas
+
+O passo que autoriza a carga não é a carga, é a **sondagem com o piso novo**:
+
+```
+docker compose run --rm nuvem-cat python -m catering.carga --fonte oracle --sondar
+```
+
+`chave de hoje` tem que sair **UNICA** nas duas tabelas. Se repetir, **para** — o
+upsert funde medidas em silêncio quando duas linhas da fonte escrevem na mesma
+linha nossa, e o assunto passa a ser identidade, não período.
+
+Há base para esperar que passe: a chave de sete colunas (migration 0023, com
+`ano_solic`) foi medida única sobre **201.848 e 231.886** linhas em 25/ago. Mas a
+sondagem mede identidade **dentro da janela**, e a janela era 2026 — então a
+medição de hoje é 2026, não o histórico. Este lote está literalmente executando a
+instrução que o V3.5 deixou escrita: *"quem quiser saber se a chave aguenta um
+período maior baixa o `DW_ANO_MINIMO` e roda o sondar de novo, que é o fluxo
+certo antes de ampliar a janela"*.
+
+### O que mudou no código (pouco, e um teste inverteu de sentido)
+
+| arquivo | mudança |
+|---|---|
+| `catering/contrato.py` | `ANO_MINIMO_PADRAO` 2026 → **2023**, com as duas decisões e o motivo da virada |
+| `catering/carga/fonte_oracle.py` | docstring do `WHERE` (o piso vale em toda rodada, e por que isso importa) |
+| `docker-compose.yml`, `.env.example` | padrão 2023, e a distinção contra `CAT_ABERTURA_DE` |
+| `tests/test_catering_carga.py` | `LINHAS["exp"]` 42.318 → **42.468**, `FORA_DA_JANELA` zerado, e o teste do piso reescrito |
+| `tests/test_catering_oracle.py` | binds do piso (2026 → 2023) e três docstrings |
+
+**Sem migration.** O schema não muda: o piso é `WHERE`, não coluna.
+
+**O teste que inverteu, e por que ele continua sendo o mesmo teste.** As **150
+linhas de dez/2025** da expedição eram o número-sentinela que denunciava piso
+mexido sem querer. Com o padrão em 2023 elas passam a **entrar**, então o teste
+deixou de provar "o piso corta" e passa a provar duas coisas: que o padrão traz o
+arquivo inteiro, **e** que `DW_ANO_MINIMO=2026` volta a cortar exatamente aquelas
+150. O número continua guardado, agora nas duas direções — número medido que sai
+de um teste sem substituto é como uma regressão fica invisível.
+
+A `FonteCSV` aplica o mesmo piso da `FonteOracle`, de propósito (V3.5): se as
+duas recortassem diferente, comparar uma com a outra deixaria de provar qualquer
+coisa. É por isso que uma decisão sobre o DW mexe num teste de CSV.
+
+### O que este lote NÃO faz
+
+Não roda a carga (é da Maria), não instala o cron de backup (está no
+procedimento como recomendação, e continua sendo decisão dela), não mexe na tela
+e não tem migration. E **não** constrói a varredura de PKs para linha removida na
+fonte: o time do DW confirmou em 25/ago que o processo só insere e atualiza, só
+guia confirmada entra e não existe desconfirmar (ver "Incremento" no contrato
+fechado). O gatilho que traria isso de volta é o WMS passar a permitir cancelar
+guia já confirmada.
+
+### Consequências declaradas — nenhuma é defeito
+
+1. **Rótulo de cliente pode mudar.** `cat_clientes` escolhe a razão social pela
+   grafia de **maior peso**, recalculada sobre 3,6 anos em vez de 8 meses.
+2. **Filtros ganham entradas antigas** — unidade, cliente e operação que
+   existiram em 2023–2025, e possivelmente nomes de estoque novos em
+   `NAO_CLASSIFICADO` (a pendência 2 do V3.6 cresce).
+3. **As 16 linhas com `data_solic` impossível** (2105, 2002, 2005) voltam para o
+   banco: o movimento delas é 2024/2025. A Matriz não muda (agrega por
+   `nk_calendario`); elas aparecem na planilha e no download. **Decisão em
+   aberto** desde o V3.5: se a planilha deve declará-las.
+4. **O xlsx recusa o período inteiro** (434 mil > teto de 150 mil) e o CSV passa
+   a **pedir confirmação de verdade**. As duas guardas do V3.7 estreiam com
+   volume real — até aqui foram exercitadas com o teto baixado na página.
+5. **2023–2025 entra sem aceite célula por célula.** Não existe CSV de referência
+   para o histórico; a conferência possível é contagem e total por ano. O aceite
+   do V3.2 e o do V3.7 cobriram 2026, e continuam valendo para 2026.
+6. **Rebuild da tabela no DW passa a custar mais.** Quando o DW reconstrói, todo
+   `dw_data_alteracao` sobe e o "incremental" vira carga cheia sozinho: ~3 min em
+   vez de ~30s, numa rodada que ninguém está olhando. É seguro (o upsert não
+   apaga, a chave natural sobrevive), só não é incremental.
+7. **O banco de produção continua sem backup automático.** É a única pendência
+   com risco real do V3.6, e este lote multiplica por 5,5 o que está em risco. O
+   passo 1 do procedimento é o backup, e a linha do cron está lá para ser
+   instalada na mesma janela.
+
+### Suíte
+
+```
+python -m pytest tests/test_catering_*.py tests/test_migracao.py
+```
+
+**270 testes, ~6min20, verde** (27/ago/2026) — mesmo número do V3.7: este lote
+mudou o valor de constantes medidas e o sentido de um teste, não a quantidade.
 
 ## Regras de trabalho
 
