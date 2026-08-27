@@ -64,6 +64,40 @@ select[multiple]{min-width:150px;height:64px}
 .grupo button[aria-pressed=true]{background:var(--brand-amarelo);
   color:var(--brand-azul-institucional);font-weight:700}
 .grupo button:disabled{opacity:.4;cursor:not-allowed}
+
+/* ---------- filtros com caixas de selecao (V3.7.1) ----------
+   A barra ENCURTA: cinco selects de 64px de altura viram cinco botoes de uma
+   linha (decisao da Maria, 27/ago/2026). As regras de `select[multiple]` acima
+   ficam de proposito -- o select continua no DOM como fonte da verdade e so
+   recebe `.escondido` DEPOIS de o painel existir, entao se a montagem falhasse
+   a pessoa ficaria com o campo nativo em vez de nada. */
+select.escondido{display:none}
+.caixas{position:relative}
+.abre-filtro{font-family:var(--font-primary);font-size:12px;
+  padding:6px 26px 6px 8px;border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);background:var(--brand-branco);
+  color:var(--brand-azul-institucional);cursor:pointer;text-align:left;
+  min-width:150px;max-width:210px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background-image:linear-gradient(45deg,transparent 50%,var(--brand-azul-corporativo) 50%),
+                   linear-gradient(135deg,var(--brand-azul-corporativo) 50%,transparent 50%);
+  background-position:right 12px center, right 7px center;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+/* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
+.abre-filtro.curta{min-width:86px}
+.abre-filtro[aria-expanded=true]{border-color:var(--brand-azul-principal)}
+.abre-filtro:disabled{opacity:.45;cursor:not-allowed}
+.painel{position:absolute;top:calc(100% + 3px);left:0;z-index:30;
+  background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);box-shadow:var(--shadow-md);
+  min-width:160px;max-width:330px;max-height:264px;overflow-y:auto;padding:6px}
+.painel[hidden]{display:none}
+.caixa{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+  cursor:pointer;white-space:nowrap;border-radius:4px}
+.caixa:hover{background:#EEF3FB}
+.caixa.tudo{font-weight:700;border-radius:0;padding-bottom:7px;margin-bottom:4px;
+  border-bottom:1px solid var(--brand-cinza-claro)}
+.caixa input{cursor:pointer;flex:0 0 auto}
 .acoes{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
 .primario{font-family:var(--font-primary);font-weight:700;font-size:12px;
   padding:8px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
@@ -325,9 +359,198 @@ function opcoesSelect(alvo, itens){
 
 function preencheOperacoes(){
   opcoesSelect('#operacao', OPCOES.operacoes[ESTADO.movimento] || []);
+  // A lista de operacao e POR MOVIMENTO: trocar Entrada/Saida troca as opcoes,
+  // e o painel de caixas tem que ser remontado sobre elas. Inerte na primeira
+  // chamada, que acontece antes de `criaCaixas()`.
+  atualizaCaixa('#operacao');
 }
 
 const selecionados = alvo => Array.from($(alvo).selectedOptions).map(o => o.value);
+
+/* ------------------------------------- filtros com caixas de selecao (V3.7.1)
+
+   O `<select multiple>` CONTINUA sendo a fonte da verdade: ele fica no DOM,
+   escondido, e o painel de caixas so o comanda. Por isso `parametros()`,
+   `opcoesSelect()` e o botao Limpar seguem lendo e escrevendo o mesmo lugar de
+   sempre -- isto e uma camada de interface sobre o recorte, e nao uma
+   reescrita dele. Nenhum arquivo de backend mudou neste lote.
+
+   Por que trocar o select nativo: a CAPACIDADE de escolher varios sempre
+   existiu, e a DESCOBERTA nao. No select nativo o clique simples SUBSTITUI a
+   selecao e so Ctrl acrescenta -- comportamento do navegador, que nao estava
+   escrito em lugar nenhum da tela.
+
+   A regra que o desenho fixa (V3_PLANO, lote V3.7.1, decisao 1): "tudo
+   marcado" e "sem filtro" sao o MESMO estado, e o que vai na URL e nada.
+   Marcar os 14 clientes de hoje nao e a mesma coisa que nao filtrar: se um
+   cliente novo entrar na carga amanha, "sem filtro" inclui ele e "os 14 que eu
+   marquei" nao. Entao `normaliza()` desfaz a selecao completa, e o estado
+   "todas as opcoes selecionadas" nunca chega a existir no select. Isso tambem
+   deixa a auditoria do download honesta ("sem filtro de cliente") e nao infla
+   a URL.
+
+   Consequencia visivel, e ela e deliberada: com nada selecionado o painel
+   mostra TUDO marcado e o botao diz "Todos". Desmarcar um item ali significa
+   "todos menos este" -- que e exatamente o que as caixas marcadas estavam
+   dizendo. E nao existe estado "nenhum item": desmarcar o ultimo selecionado
+   volta para "Todos", porque recorte sem nenhuma unidade nao e uma tela que
+   alguem pediu, e um rotulo dizendo "Todos" com as caixas vazias seria a tela
+   mentindo. */
+
+const CAIXAS = new Map();
+const COM_CAIXAS = ['#unidade', '#cliente', '#tipo', '#operacao', '#dia'];
+
+// Sem filtro = nenhuma opcao selecionada. E o que o select vazio ja significava
+// antes deste lote -- nada mudou no significado, so em como se chega nele.
+const semFiltro = el => !Array.from(el.options).some(o => o.selected);
+
+function normaliza(el){
+  const todas = Array.from(el.options);
+  if (todas.length && todas.every(o => o.selected))
+    todas.forEach(o => { o.selected = false; });
+}
+
+function rotuloFechado(el){
+  if (semFiltro(el)) return 'Todos';
+  const marcadas = Array.from(el.selectedOptions);
+  return marcadas.length === 1 ? marcadas[0].textContent
+                               : `${marcadas.length} selecionados`;
+}
+
+function montaPainel(sel){
+  const w = CAIXAS.get(sel), el = $(sel);
+  w.painel.innerHTML = '';
+  const nenhum = semFiltro(el);
+
+  const tudo = document.createElement('label');
+  tudo.className = 'caixa tudo';
+  const marca = document.createElement('input');
+  marca.type = 'checkbox';
+  marca.checked = nenhum;
+  // Marcado JA significa "sem filtro": nao existe acao para desmarcar, porque
+  // "nenhum item" nao e um estado. Desabilitar diz isso; deixar habilitado e
+  // nao fazer nada pareceria defeito.
+  marca.disabled = nenhum;
+  if (nenhum) tudo.title = 'Ja esta sem filtro: todos entram.';
+  marca.onchange = () => {
+    Array.from(el.options).forEach(o => { o.selected = false; });
+    atualizaCaixa(sel);
+  };
+  tudo.append(marca, document.createTextNode('Selecionar tudo'));
+  w.painel.appendChild(tudo);
+
+  Array.from(el.options).forEach(opcao => {
+    const linha = document.createElement('label');
+    linha.className = 'caixa';
+    linha.title = opcao.textContent;
+    const caixa = document.createElement('input');
+    caixa.type = 'checkbox';
+    caixa.checked = nenhum || opcao.selected;
+    caixa.onchange = () => {
+      if (semFiltro(el)){
+        // estava em "Todos": desmarcar um e pedir "todos menos este"
+        Array.from(el.options).forEach(o => { o.selected = o !== opcao; });
+      } else {
+        opcao.selected = !opcao.selected;
+      }
+      normaliza(el);
+      atualizaCaixa(sel);
+    };
+    linha.append(caixa, document.createTextNode(opcao.textContent));
+    w.painel.appendChild(linha);
+  });
+}
+
+function atualizaCaixa(sel){
+  const w = CAIXAS.get(sel);
+  if (!w) return;                       // chamado antes de `criaCaixas()`
+  const el = $(sel);
+  w.botao.textContent = rotuloFechado(el);
+  w.botao.title = w.titulo;
+  if (w.painel.hidden) return;
+  // Remontar o painel perde o foco, e sem isto as setas param de andar depois
+  // do primeiro clique. O indice e estavel: "Selecionar tudo" e sempre o 0.
+  const antes = Array.from(w.painel.querySelectorAll('input'))
+    .indexOf(document.activeElement);
+  montaPainel(sel);
+  const agora = w.painel.querySelectorAll('input');
+  const volta = antes >= 0 ? agora[antes] : null;
+  if (volta && !volta.disabled) volta.focus();
+  else if (antes >= 0) w.botao.focus();
+}
+
+const atualizaCaixas = () => COM_CAIXAS.forEach(atualizaCaixa);
+
+function fechaCaixas(menos){
+  CAIXAS.forEach((w, sel) => {
+    if (sel === menos || w.painel.hidden) return;
+    w.painel.hidden = true;
+    w.botao.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function abreCaixa(sel){
+  const w = CAIXAS.get(sel);
+  if (!w || w.botao.disabled) return;
+  fechaCaixas(sel);
+  w.painel.hidden = false;
+  w.botao.setAttribute('aria-expanded', 'true');
+  montaPainel(sel);
+  const primeira = w.painel.querySelector('input:not([disabled])');
+  if (primeira) primeira.focus();
+}
+
+function criaCaixas(){
+  COM_CAIXAS.forEach(sel => {
+    const el = $(sel);
+    if (!el || CAIXAS.has(sel)) return;
+    const caixa = document.createElement('div');
+    caixa.className = 'caixas';
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'abre-filtro' + (sel === '#dia' ? ' curta' : '');
+    botao.setAttribute('aria-expanded', 'false');
+    botao.setAttribute('aria-haspopup', 'true');
+    const painel = document.createElement('div');
+    painel.className = 'painel';
+    painel.hidden = true;
+    caixa.append(botao, painel);
+    el.parentNode.insertBefore(caixa, el.nextSibling);
+    // O select some SO DEPOIS de o substituto existir -- ver o comentario do CSS.
+    el.classList.add('escondido');
+    CAIXAS.set(sel, {botao, painel, titulo: el.title || ''});
+
+    botao.onclick = () => { painel.hidden ? abreCaixa(sel) : fechaCaixas(); };
+    painel.onkeydown = evento => {
+      if (evento.key === 'Escape'){ fechaCaixas(); botao.focus(); return; }
+      if (evento.key !== 'ArrowDown' && evento.key !== 'ArrowUp') return;
+      evento.preventDefault();
+      const foco = Array.from(painel.querySelectorAll('input:not([disabled])'));
+      const i = foco.indexOf(document.activeElement);
+      const proxima = foco[evento.key === 'ArrowDown' ? i + 1 : i - 1];
+      if (proxima) proxima.focus();
+    };
+    // O rotulo passa a apontar para o botao: clicar em "CLIENTE" tem que abrir
+    // o painel, e nao focar um select que ninguem ve mais.
+    const rotulo = el.parentNode.querySelector('label[for="' + el.id + '"]');
+    if (rotulo){
+      rotulo.removeAttribute('for');
+      rotulo.style.cursor = 'pointer';
+      rotulo.onclick = () => abreCaixa(sel);
+    }
+  });
+  atualizaCaixas();
+}
+
+// Clique fora fecha; clique DENTRO nao. Se clicar numa caixa fechasse o painel,
+// marcar tres itens exigiria abrir tres vezes -- que e o problema do
+// Ctrl+clique com outra roupa (V3_PLANO, lote V3.7.1, decisao 3).
+document.addEventListener('mousedown', evento => {
+  if (!evento.target.closest('.caixas')) fechaCaixas();
+});
+document.addEventListener('keydown', evento => {
+  if (evento.key === 'Escape') fechaCaixas();
+});
 
 function parametros(){
   const p = new URLSearchParams();
@@ -675,6 +898,9 @@ async function inicia(){
     (_, i) => ({chave: String(i + 1).padStart(2, '0'),
                 rotulo: String(i + 1).padStart(2, '0')})));
   preencheOperacoes();
+  // Depois de TODAS as listas estarem preenchidas: o painel se monta sobre as
+  // opcoes que existem, e e aqui que os selects saem da tela (V3.7.1).
+  criaCaixas();
   desenhaBotoes();
   $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
 
@@ -716,8 +942,12 @@ async function inicia(){
   $('#baixar-csv').onclick = () => baixa('csv');
   $('#baixar-xlsx').onclick = () => baixa('xlsx');
   $('#limpar').onclick = () => {
-    ['#unidade','#cliente','#tipo','#operacao','#dia'].forEach(s =>
+    // A lista dos cinco vive em `COM_CAIXAS`, e nao repetida aqui: com duas
+    // copias, o sexto filtro entraria numa e nao na outra, e o Limpar deixaria
+    // um filtro em pe sem dizer.
+    COM_CAIXAS.forEach(s =>
       Array.from($(s).options).forEach(o => o.selected = false));
+    atualizaCaixas();
     abreNoPadrao();
     ESTADO.pagina = 1; ESTADO.abertos = new Set(); carrega();
   };
