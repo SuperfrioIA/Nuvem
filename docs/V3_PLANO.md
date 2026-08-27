@@ -13,8 +13,8 @@ V2.
 
 **V3.7.1** (filtros com caixas de seleção) **e V3.7.2** (os dois movimentos na
 mesma matriz, com o pai somando "movimentação") **foram feitos em 27/ago/2026**,
-na ordem que a Maria decidiu. Os dois estão **construídos e testados, e nenhum
-foi validado no navegador** — a validação visual é dela.
+na ordem que a Maria decidiu, e **validados no navegador pela Maria no mesmo
+dia** — as duas telas, sem defeito reportado.
 
 > **O V3.5 está construído e testado, e a leitura real do DW é a evidência que
 > falta.** A IA não conecta no DW; o aceite é a rodada da Maria
@@ -2416,13 +2416,18 @@ como select nativo entre os botões, **e o Limpar deixa de zerá-lo** — o reco
 sai com um filtro em pé que a tela não mostra. Nada disso levanta erro; só sai
 número de menos.
 
-**O que NÃO foi validado: o navegador.** Marcar, desmarcar, Esc, clique fora,
-foco pelas setas, a barra encurtada e o console limpo continuam pendentes, e a
-aprovação estética é humana por regra (`memory/validar-tela-no-navegador.md`).
-O harness em node prova a *lógica*; ele não prova que o painel abre no lugar
-certo, que ele não fica atrás de outro elemento, nem que a barra ficou boa de
-olhar. Para validar: caminho C do `docs/EXECUCAO_LOCAL.md`, e **recarregar os
-CSVs** — o pytest zera o banco local.
+**O navegador — validado pela Maria em 27/ago/2026** ("validado"), no caminho C
+com os CSVs de 21/ago recarregados (36.300 + 42.468 linhas). Isso fecha o que o
+harness em node **não** podia provar: que o painel abre no lugar certo, que ele
+não fica atrás de outro elemento, e que a barra de uma linha ficou boa de olhar —
+aprovação estética é humana por regra
+(`memory/validar-tela-no-navegador.md`). Nenhum defeito reportado.
+
+Como a tela foi levantada, porque isso se repete: caminho C do
+`docs/EXECUCAO_LOCAL.md`, e **recarregar os CSVs** — o pytest zera o banco local,
+e sem isso a tela sobe vazia. O `cat_usuarios` também é zerado, então o primeiro
+admin precisa ser recriado pelo bootstrap (`CAT_ADMIN_LOGIN`/`CAT_ADMIN_SENHA`) a
+cada rodada de suíte.
 
 ### O que o mapeamento previa como prova
 
@@ -2640,11 +2645,14 @@ forte do que "os números diferem" — prova que é o mesmo dado por baixo e que
 A decisão de somar em kg e deixar a tela arredondar uma vez não era estética:
 era a diferença entre reproduzir o artefato e divergir dele num dígito.
 
-**O que continua NÃO validado: o navegador.** Vale a mesma ressalva do V3.7.1 —
-marcar, desmarcar, o painel abrindo no lugar certo, a barra encurtada, o console
-limpo e a aprovação estética, que é humana por regra
-(`memory/validar-tela-no-navegador.md`). O que os dois harnesses em node provam é
-a lógica, não a tela.
+**O navegador — validado pela Maria em 27/ago/2026**, na mesma rodada do V3.7.1
+e sobre o mesmo dado. Os dois harnesses em node provam a lógica; a tela quem
+provou foi ela. Nenhum defeito reportado.
+
+**O que fica declarado mesmo com o aceite:** os números da conjunta na tela local
+são os do `nk_calendario`, então **não** conferem com o print do artefato — a
+diferença é a A-5, medida na tabela acima. Quem for comparar a tela com o print
+depois vai reencontrar essa divergência, e ela não é defeito.
 
 ### O que este lote NÃO faz
 
