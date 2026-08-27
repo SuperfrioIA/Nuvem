@@ -45,9 +45,11 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `docs/V3_PLANO.md`). O V3.8.1 saiu de a carga do histórico ter falhado numa
   linha só: soltou as duas colunas de cliente que não identificam a linha
   (migration 0024) e fez o `--sondar` medir **preenchimento**, não só identidade.
-  O **V3.7.1** (filtros com caixas de
-  seleção) está **mapeado e não autorizado**, e o V3.9 em diante também não;
-  status e aceite em `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
+  **V3.7.1** (filtros com caixas de seleção) e **V3.7.2** (os dois movimentos na
+  mesma matriz) foram **feitos em 27/ago/2026 e validados no navegador**, e ainda
+  **não subiram na VM** — procedimento em `docs/DEPLOY.md`, seção "V3.7.1 +
+  V3.7.2". Do **V3.9** em diante nada está autorizado; status e aceite em
+  `docs/V3_PLANO.md`). O código novo vive em `catering/`; a fonte é o DW, **não**
   o SharePoint DataHub. Não construir código sem pedido explícito da Maria, e a
   autorização é **por lote**.
 - **A IA não conecta no DW.** Ele é produção. O V3.5 construiu a leitura inteira
@@ -61,6 +63,14 @@ Projeto interno SuperFrio (CSC). Leia antes de qualquer coisa:
   `identidade` e `preenchimento`. Coluna obrigatória é a que identifica a linha
   ou a coloca na tela; fora dessas, vazio na fonte é fato, não defeito nosso
   (a regra está escrita no `catering/contrato.py`).
+- **O terceiro movimento da tela não é um movimento do dado** (V3.7.2,
+  27/ago/2026). `Entrada + saída` vive em `recorte.MOVIMENTOS_DA_TELA` e **não**
+  em `contrato.MOVIMENTOS`, que é o conjunto do DADO — o CHECK da migration 0019,
+  o contrato de colunas e o nome da tabela de origem da carga. Juntar os dois
+  faria a carga aceitar um movimento que não tem tabela. E a visão conjunta é
+  **só da Matriz**: ela agrega, então pode somar; a planilha mostra linha crua e
+  o download leva a linha inteira, e as duas tabelas têm 36 e 46 colunas — os
+  dois recusam com 400, de propósito.
 - **`DW_ANO_MINIMO` é o piso da CARGA (padrão 2023 desde o V3.8) e
   `CAT_ABERTURA_DE` é onde a TELA abre (padrão janeiro do ano corrente).** Não
   confundir. O piso está no `WHERE` de **toda** rodada, não só da primeira: subi-lo

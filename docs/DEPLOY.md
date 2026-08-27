@@ -1069,6 +1069,95 @@ deste lote a expedição vinha zerada em 2023–2025.
 | `alembic upgrade head` falha | não carregue; a 0024 é pré-requisito da carga |
 | carga falha no meio | nada foi perdido: o upsert não apaga. `cat_cargas.erro` nomeia linha e coluna |
 
+## V3.7.1 + V3.7.2 — Subir as duas telas novas (procedimento)
+
+**Código pronto e validado no navegador; a execução é da Maria.** Dois lotes numa
+janela só, e aqui a ordem **não importa** — os dois vão na mesma imagem e nenhum
+depende do outro em produção.
+
+### O deploy de menor risco da V3 até agora, e vale dizer por quê
+
+| |  |
+|---|---|
+| migration | **nenhuma** — não encosta em schema |
+| variável nova no `.env` | **nenhuma** |
+| recarga de dado | **nenhuma** — não toca no que está gravado, só em como é lido |
+| trava de sondagem | **não se aplica** — não há carga envolvida |
+| rollback | a **imagem anterior**, e nada de dado para desfazer |
+
+Isso muda o cálculo de risco em relação ao V3.7+V3.8: lá o rollback exigia pensar
+no dado (434 mil linhas recém-carregadas); aqui ele é `git checkout` do commit
+anterior e `build`. Se a tela nova incomodar, volta em dois minutos sem
+consequência.
+
+**E é por isso que esta é a janela para fechar a pendência do backup** (ver
+"Backup e restauração"): é a primeira janela de deploy da V3 em que nada de dado
+muda, então instalar o cron do `scripts/backup.sh` aqui não compete com nenhuma
+outra preocupação. Hoje o único dump é o avulso de 26/ago 16h30, com 434 mil
+linhas atrás dele.
+
+### O que muda, em uma frase
+
+Os cinco filtros de múltipla escolha viram **caixas de seleção** (clique simples
+em mais de um, sem Ctrl), e o botão Movimento ganha um terceiro estado —
+**Entrada + saída**, com o total da linha sendo a movimentação, os dois somados.
+
+### Pré-requisitos
+
+- PR do V3.7.1 e do V3.7.2 mergeado na `main`.
+- **Suíte completa verde** (não só a da V3): o `EXECUCAO_LOCAL.md` exige isso
+  antes de deploy, porque aí a fronteira deixa de ser só o schema. Os dois
+  `xfail` da V2 são esperados.
+- Nada mais. Sem janela especial, sem olhar carga agendada — nenhum dos dois
+  lotes participa da carga.
+
+### O procedimento
+
+**1. Deploy:**
+
+```
+cd /home/ubuntu/nuvemIA
+git pull
+docker compose build nuvem-cat
+docker compose up -d nuvem-cat
+docker compose run --rm nuvem-cat alembic upgrade head   # nenhuma migration nova; confirma que a cadeia está em head
+curl -s localhost:8003/health
+```
+
+O `alembic upgrade head` está aí **de propósito, mesmo sem migration nova**: ele
+custa segundos e é o que prova que a cadeia não ficou atrás por causa de outro
+deploy. Sem ele, uma cadeia divergente só apareceria no próximo lote que tivesse
+migration — longe da causa.
+
+**2. Conferir na tela** (é onde estes dois lotes vivem — não há carga nem número
+novo para validar por comando):
+
+- os cinco filtros aparecem como **botões de uma linha**, e a barra encurtou;
+- abrir Cliente, desmarcar um, remarcar: o rótulo vai de "Todos" para
+  "N selecionados" e volta para "Todos";
+- **Entrada + saída** no botão Movimento: o `+` no cliente abre Expedição e
+  Recebimento, o pai é a soma, e o rótulo da faixa vira "A expedição entra como";
+- ainda em Entrada + saída: Operação, Planilha, Pallets e os dois downloads
+  ficam **desabilitados** — isso é desenho, não defeito (a Matriz agrega, linha
+  crua não soma);
+- console do navegador limpo.
+
+**3. O que NÃO conferir contra o BI nem contra o artefato.** Os números da visão
+conjunta agregam por **`nk_calendario`**, e o artefato agregava por
+**`data_solic`** (decisão A-5). A diferença está medida no `V3_PLANO`, seção
+"O aceite contra dado real": SAPORE em jan/26 dá 7.931,1 t por calendário contra
+7.842,0 t por solicitação. **Não é defeito**, e é a divergência mais provável de
+alguém reportar como se fosse.
+
+### Se der errado
+
+| sintoma | o que fazer |
+|---|---|
+| tela sobe com os filtros como `select` nativo, altos | o JS do painel falhou; é degradação por construção (o select só some depois de o painel existir). Console do navegador diz o quê |
+| "Entrada + saída" devolve 400 | recorte com filtro de operação em pé; a tela deveria limpá-lo. Trocar para Entrada e voltar resolve, e o defeito é da tela, não do dado |
+| Matriz vazia em Entrada + saída | conferir a medida: **Pallets não existe na expedição** e a conjunta recusa de propósito, com aviso |
+| qualquer coisa | `git checkout <commit anterior> && docker compose build nuvem-cat && docker compose up -d nuvem-cat`. **Nenhum dado precisa ser desfeito** |
+
 ## Comandos úteis / rollback
 
 ```bash
