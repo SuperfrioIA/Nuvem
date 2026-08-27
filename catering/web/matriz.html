@@ -64,6 +64,40 @@ select[multiple]{min-width:150px;height:64px}
 .grupo button[aria-pressed=true]{background:var(--brand-amarelo);
   color:var(--brand-azul-institucional);font-weight:700}
 .grupo button:disabled{opacity:.4;cursor:not-allowed}
+
+/* ---------- filtros com caixas de selecao (V3.7.1) ----------
+   A barra ENCURTA: cinco selects de 64px de altura viram cinco botoes de uma
+   linha (decisao da Maria, 27/ago/2026). As regras de `select[multiple]` acima
+   ficam de proposito -- o select continua no DOM como fonte da verdade e so
+   recebe `.escondido` DEPOIS de o painel existir, entao se a montagem falhasse
+   a pessoa ficaria com o campo nativo em vez de nada. */
+select.escondido{display:none}
+.caixas{position:relative}
+.abre-filtro{font-family:var(--font-primary);font-size:12px;
+  padding:6px 26px 6px 8px;border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);background:var(--brand-branco);
+  color:var(--brand-azul-institucional);cursor:pointer;text-align:left;
+  min-width:150px;max-width:210px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  background-image:linear-gradient(45deg,transparent 50%,var(--brand-azul-corporativo) 50%),
+                   linear-gradient(135deg,var(--brand-azul-corporativo) 50%,transparent 50%);
+  background-position:right 12px center, right 7px center;
+  background-size:5px 5px,5px 5px;background-repeat:no-repeat}
+/* 31 opcoes de dois digitos nao precisam dos 150px dos nomes de cliente */
+.abre-filtro.curta{min-width:86px}
+.abre-filtro[aria-expanded=true]{border-color:var(--brand-azul-principal)}
+.abre-filtro:disabled{opacity:.45;cursor:not-allowed}
+.painel{position:absolute;top:calc(100% + 3px);left:0;z-index:30;
+  background:var(--brand-branco);border:1px solid var(--brand-cinza-claro);
+  border-radius:var(--radius-sm);box-shadow:var(--shadow-md);
+  min-width:160px;max-width:330px;max-height:264px;overflow-y:auto;padding:6px}
+.painel[hidden]{display:none}
+.caixa{display:flex;align-items:center;gap:8px;padding:4px 6px;font-size:12px;
+  cursor:pointer;white-space:nowrap;border-radius:4px}
+.caixa:hover{background:#EEF3FB}
+.caixa.tudo{font-weight:700;border-radius:0;padding-bottom:7px;margin-bottom:4px;
+  border-bottom:1px solid var(--brand-cinza-claro)}
+.caixa input{cursor:pointer;flex:0 0 auto}
 .acoes{margin-left:auto;display:flex;gap:8px;align-items:flex-end}
 .primario{font-family:var(--font-primary);font-weight:700;font-size:12px;
   padding:8px 16px;border:0;border-radius:var(--radius-sm);cursor:pointer;
@@ -72,6 +106,7 @@ select[multiple]{min-width:150px;height:64px}
   padding:8px 14px;border:1px solid var(--brand-azul-conexao);
   border-radius:var(--radius-sm);cursor:pointer;background:transparent;
   color:var(--brand-azul-principal)}
+.secundario:disabled{opacity:.45;cursor:not-allowed}
 
 /* ---------- conteudo ---------- */
 main{padding:18px 22px 40px}
@@ -196,7 +231,7 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
     <div class="grupo" id="lente"></div>
   </div>
   <div class="campo" id="campo-faixa">
-    <label>Faixa da expedição</label>
+    <label id="rotulo-faixa">Faixa da expedição</label>
     <div class="grupo" id="faixa"></div>
   </div>
   <div class="campo">
@@ -250,8 +285,24 @@ details.metodo ul{margin:6px 0 0;padding-left:18px}
 // do backend (lição do V2.1). Aqui só há formatação e navegação.
 const $ = s => document.querySelector(s);
 const ROTULO_NIVEL = {unidade:'Unidade', cliente:'Cliente', faixa:'Faixa',
-                     operacao:'Operação', tipo_estoque:'Tipo de estoque'};
+                     operacao:'Operação', tipo_estoque:'Tipo de estoque',
+                     movimento:'Movimento'};
+// O terceiro movimento e "as duas juntas" (V3.7.2). O rotulo e a regra de "so
+// na Matriz" vem do backend (`/api/opcoes`), para nao existirem em duas copias.
+const CONJUNTA = 'amb';
 const trilha = niveis => niveis.map(n => ROTULO_NIVEL[n] || n).join(' › ');
+
+/* O aviso do zero a esquerda fica no controle do CSV, nao numa parede de texto:
+   e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela e lida. O
+   xlsx nao tem o problema, e a nota diz por que. */
+const NOTA_DOWNLOAD =
+  'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
+  + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
+  + 'identificador, baixe em Excel (xlsx), que preserva.';
+const NOTA_DOWNLOAD_CONJUNTA =
+  'O download responde por um movimento por vez: as duas tabelas do DW têm 36 e '
+  + '46 colunas, então não existe linha crua "entrada + saída". Escolha Entrada '
+  + 'ou Saída para baixar. A soma dos dois é uma leitura da Matriz, que agrega.';
 
 let OPCOES = null, ESTADO = {
   visao:'matriz', movimento:'rec', lente:'liq', faixa:'solicitado',
@@ -290,27 +341,79 @@ function botoes(alvo, itens, chaveEstado, aoTrocar){
   });
 }
 
+// O rotulo do movimento escolhido, vindo das opcoes do servidor.
+const rotuloMovimento = () => {
+  const m = (OPCOES.movimentos || []).find(x => x.chave === ESTADO.movimento);
+  return m ? m.rotulo : ESTADO.movimento;
+};
+
+/* Entrada + saida e visao de MATRIZ, e nao do recorte inteiro (V3.7.2).
+
+   A Matriz agrega, e por isso pode somar os dois movimentos. A planilha mostra
+   linha crua e o download leva a linha inteira -- e as duas tabelas do DW tem 36
+   e 46 colunas. Nao existe "linha crua entrada + saida", entao os dois saem de
+   cena aqui em vez de o servidor recusar depois de a pessoa clicar. O servidor
+   recusa igual (400), e essa recusa continua sendo a trava de verdade.
+
+   O filtro de operacao tambem sai: as duas listas de `descr_oper_wms` sao
+   diferentes, e filtrar por uma delas zeraria o outro movimento em silencio. */
+function limitesDoMovimento(){
+  const conjunta = ESTADO.movimento === CONJUNTA;
+
+  const operacao = CAIXAS.get('#operacao');
+  if (operacao){
+    if (conjunta) Array.from($('#operacao').options).forEach(o => { o.selected = false; });
+    operacao.botao.disabled = conjunta;
+    operacao.titulo = conjunta
+      ? 'Não vale em Entrada + saída: as duas tabelas têm listas de operação '
+        + 'diferentes. Escolha Entrada ou Saída para filtrar por operação.'
+      : '';
+    atualizaCaixa('#operacao');
+  }
+
+  ['#baixar-csv', '#baixar-xlsx'].forEach(alvo => { $(alvo).disabled = conjunta; });
+  $('#nota-download').textContent = conjunta ? NOTA_DOWNLOAD_CONJUNTA : NOTA_DOWNLOAD;
+}
+
 function desenhaBotoes(){
-  botoes('#movimento', [
-    {chave:'rec', rotulo:'Entrada'}, {chave:'exp', rotulo:'Saída'}
-  ], 'movimento', () => { ESTADO.abertos = new Set(); preencheOperacoes(); });
+  botoes('#movimento', (OPCOES.movimentos || []).map(m => ({
+    chave: m.chave, rotulo: m.rotulo
+  })), 'movimento', () => {
+    ESTADO.abertos = new Set();
+    // A planilha nao existe na conjunta: sair para a Matriz ANTES de carregar,
+    // senao o primeiro pedido sai para um endpoint que vai recusar.
+    if (ESTADO.movimento === CONJUNTA && ESTADO.visao === 'planilha')
+      ESTADO.visao = 'matriz';
+    preencheOperacoes();
+  });
 
   botoes('#lente', OPCOES.lentes.map(l => ({
     chave:l.chave, rotulo:l.nome,
-    // Pallet na saída fica visível mas desabilitado: esconder faria parecer
-    // que a medida não existe; desabilitado diz que ela não existe ALI.
-    desabilitado: ESTADO.movimento === 'exp' && l.so_entrada
+    // Pallet fica visível mas desabilitado onde não existe: esconder faria
+    // parecer que a medida não existe; desabilitado diz que ela não existe ALI.
+    // Na conjunta ele também sai — a soma seria só a entrada com o nome de
+    // "movimentação", que é número certo com nome errado.
+    desabilitado: ESTADO.movimento !== 'rec' && l.so_entrada
   })), 'lente');
 
   botoes('#faixa', OPCOES.faixas.map(f => ({chave:f.chave, rotulo:f.rotulo})), 'faixa');
-  $('#campo-faixa').style.display = ESTADO.movimento === 'exp' ? '' : 'none';
+  // A faixa responde uma pergunta DIFERENTE nas duas visões, então o rótulo
+  // muda: na saída ela é um nível da árvore ("Faixa da expedição"); na conjunta
+  // ela escolhe qual das três colunas da expedição entra na soma.
+  $('#campo-faixa').style.display = ESTADO.movimento === 'rec' ? 'none' : '';
+  $('#rotulo-faixa').textContent = ESTADO.movimento === CONJUNTA
+    ? 'A expedição entra como' : 'Faixa da expedição';
 
   // Trocar de visao reseta a pagina: a Matriz pagina UNIDADE (12) e a planilha
   // pagina LINHA (100) -- carregar a pagina 7 da planilha na Matriz mostraria
   // vazio e pareceria defeito.
   botoes('#visao', [
-    {chave:'matriz', rotulo:'Matriz'}, {chave:'planilha', rotulo:'Planilha'}
+    {chave:'matriz', rotulo:'Matriz'},
+    {chave:'planilha', rotulo:'Planilha',
+     desabilitado: ESTADO.movimento === CONJUNTA}
   ], 'visao', () => { ESTADO.pagina = 1; });
+
+  limitesDoMovimento();
 }
 
 function opcoesSelect(alvo, itens){
@@ -325,9 +428,198 @@ function opcoesSelect(alvo, itens){
 
 function preencheOperacoes(){
   opcoesSelect('#operacao', OPCOES.operacoes[ESTADO.movimento] || []);
+  // A lista de operacao e POR MOVIMENTO: trocar Entrada/Saida troca as opcoes,
+  // e o painel de caixas tem que ser remontado sobre elas. Inerte na primeira
+  // chamada, que acontece antes de `criaCaixas()`.
+  atualizaCaixa('#operacao');
 }
 
 const selecionados = alvo => Array.from($(alvo).selectedOptions).map(o => o.value);
+
+/* ------------------------------------- filtros com caixas de selecao (V3.7.1)
+
+   O `<select multiple>` CONTINUA sendo a fonte da verdade: ele fica no DOM,
+   escondido, e o painel de caixas so o comanda. Por isso `parametros()`,
+   `opcoesSelect()` e o botao Limpar seguem lendo e escrevendo o mesmo lugar de
+   sempre -- isto e uma camada de interface sobre o recorte, e nao uma
+   reescrita dele. Nenhum arquivo de backend mudou neste lote.
+
+   Por que trocar o select nativo: a CAPACIDADE de escolher varios sempre
+   existiu, e a DESCOBERTA nao. No select nativo o clique simples SUBSTITUI a
+   selecao e so Ctrl acrescenta -- comportamento do navegador, que nao estava
+   escrito em lugar nenhum da tela.
+
+   A regra que o desenho fixa (V3_PLANO, lote V3.7.1, decisao 1): "tudo
+   marcado" e "sem filtro" sao o MESMO estado, e o que vai na URL e nada.
+   Marcar os 14 clientes de hoje nao e a mesma coisa que nao filtrar: se um
+   cliente novo entrar na carga amanha, "sem filtro" inclui ele e "os 14 que eu
+   marquei" nao. Entao `normaliza()` desfaz a selecao completa, e o estado
+   "todas as opcoes selecionadas" nunca chega a existir no select. Isso tambem
+   deixa a auditoria do download honesta ("sem filtro de cliente") e nao infla
+   a URL.
+
+   Consequencia visivel, e ela e deliberada: com nada selecionado o painel
+   mostra TUDO marcado e o botao diz "Todos". Desmarcar um item ali significa
+   "todos menos este" -- que e exatamente o que as caixas marcadas estavam
+   dizendo. E nao existe estado "nenhum item": desmarcar o ultimo selecionado
+   volta para "Todos", porque recorte sem nenhuma unidade nao e uma tela que
+   alguem pediu, e um rotulo dizendo "Todos" com as caixas vazias seria a tela
+   mentindo. */
+
+const CAIXAS = new Map();
+const COM_CAIXAS = ['#unidade', '#cliente', '#tipo', '#operacao', '#dia'];
+
+// Sem filtro = nenhuma opcao selecionada. E o que o select vazio ja significava
+// antes deste lote -- nada mudou no significado, so em como se chega nele.
+const semFiltro = el => !Array.from(el.options).some(o => o.selected);
+
+function normaliza(el){
+  const todas = Array.from(el.options);
+  if (todas.length && todas.every(o => o.selected))
+    todas.forEach(o => { o.selected = false; });
+}
+
+function rotuloFechado(el){
+  if (semFiltro(el)) return 'Todos';
+  const marcadas = Array.from(el.selectedOptions);
+  return marcadas.length === 1 ? marcadas[0].textContent
+                               : `${marcadas.length} selecionados`;
+}
+
+function montaPainel(sel){
+  const w = CAIXAS.get(sel), el = $(sel);
+  w.painel.innerHTML = '';
+  const nenhum = semFiltro(el);
+
+  const tudo = document.createElement('label');
+  tudo.className = 'caixa tudo';
+  const marca = document.createElement('input');
+  marca.type = 'checkbox';
+  marca.checked = nenhum;
+  // Marcado JA significa "sem filtro": nao existe acao para desmarcar, porque
+  // "nenhum item" nao e um estado. Desabilitar diz isso; deixar habilitado e
+  // nao fazer nada pareceria defeito.
+  marca.disabled = nenhum;
+  if (nenhum) tudo.title = 'Ja esta sem filtro: todos entram.';
+  marca.onchange = () => {
+    Array.from(el.options).forEach(o => { o.selected = false; });
+    atualizaCaixa(sel);
+  };
+  tudo.append(marca, document.createTextNode('Selecionar tudo'));
+  w.painel.appendChild(tudo);
+
+  Array.from(el.options).forEach(opcao => {
+    const linha = document.createElement('label');
+    linha.className = 'caixa';
+    linha.title = opcao.textContent;
+    const caixa = document.createElement('input');
+    caixa.type = 'checkbox';
+    caixa.checked = nenhum || opcao.selected;
+    caixa.onchange = () => {
+      if (semFiltro(el)){
+        // estava em "Todos": desmarcar um e pedir "todos menos este"
+        Array.from(el.options).forEach(o => { o.selected = o !== opcao; });
+      } else {
+        opcao.selected = !opcao.selected;
+      }
+      normaliza(el);
+      atualizaCaixa(sel);
+    };
+    linha.append(caixa, document.createTextNode(opcao.textContent));
+    w.painel.appendChild(linha);
+  });
+}
+
+function atualizaCaixa(sel){
+  const w = CAIXAS.get(sel);
+  if (!w) return;                       // chamado antes de `criaCaixas()`
+  const el = $(sel);
+  w.botao.textContent = rotuloFechado(el);
+  w.botao.title = w.titulo;
+  if (w.painel.hidden) return;
+  // Remontar o painel perde o foco, e sem isto as setas param de andar depois
+  // do primeiro clique. O indice e estavel: "Selecionar tudo" e sempre o 0.
+  const antes = Array.from(w.painel.querySelectorAll('input'))
+    .indexOf(document.activeElement);
+  montaPainel(sel);
+  const agora = w.painel.querySelectorAll('input');
+  const volta = antes >= 0 ? agora[antes] : null;
+  if (volta && !volta.disabled) volta.focus();
+  else if (antes >= 0) w.botao.focus();
+}
+
+const atualizaCaixas = () => COM_CAIXAS.forEach(atualizaCaixa);
+
+function fechaCaixas(menos){
+  CAIXAS.forEach((w, sel) => {
+    if (sel === menos || w.painel.hidden) return;
+    w.painel.hidden = true;
+    w.botao.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function abreCaixa(sel){
+  const w = CAIXAS.get(sel);
+  if (!w || w.botao.disabled) return;
+  fechaCaixas(sel);
+  w.painel.hidden = false;
+  w.botao.setAttribute('aria-expanded', 'true');
+  montaPainel(sel);
+  const primeira = w.painel.querySelector('input:not([disabled])');
+  if (primeira) primeira.focus();
+}
+
+function criaCaixas(){
+  COM_CAIXAS.forEach(sel => {
+    const el = $(sel);
+    if (!el || CAIXAS.has(sel)) return;
+    const caixa = document.createElement('div');
+    caixa.className = 'caixas';
+    const botao = document.createElement('button');
+    botao.type = 'button';
+    botao.className = 'abre-filtro' + (sel === '#dia' ? ' curta' : '');
+    botao.setAttribute('aria-expanded', 'false');
+    botao.setAttribute('aria-haspopup', 'true');
+    const painel = document.createElement('div');
+    painel.className = 'painel';
+    painel.hidden = true;
+    caixa.append(botao, painel);
+    el.parentNode.insertBefore(caixa, el.nextSibling);
+    // O select some SO DEPOIS de o substituto existir -- ver o comentario do CSS.
+    el.classList.add('escondido');
+    CAIXAS.set(sel, {botao, painel, titulo: el.title || ''});
+
+    botao.onclick = () => { painel.hidden ? abreCaixa(sel) : fechaCaixas(); };
+    painel.onkeydown = evento => {
+      if (evento.key === 'Escape'){ fechaCaixas(); botao.focus(); return; }
+      if (evento.key !== 'ArrowDown' && evento.key !== 'ArrowUp') return;
+      evento.preventDefault();
+      const foco = Array.from(painel.querySelectorAll('input:not([disabled])'));
+      const i = foco.indexOf(document.activeElement);
+      const proxima = foco[evento.key === 'ArrowDown' ? i + 1 : i - 1];
+      if (proxima) proxima.focus();
+    };
+    // O rotulo passa a apontar para o botao: clicar em "CLIENTE" tem que abrir
+    // o painel, e nao focar um select que ninguem ve mais.
+    const rotulo = el.parentNode.querySelector('label[for="' + el.id + '"]');
+    if (rotulo){
+      rotulo.removeAttribute('for');
+      rotulo.style.cursor = 'pointer';
+      rotulo.onclick = () => abreCaixa(sel);
+    }
+  });
+  atualizaCaixas();
+}
+
+// Clique fora fecha; clique DENTRO nao. Se clicar numa caixa fechasse o painel,
+// marcar tres itens exigiria abrir tres vezes -- que e o problema do
+// Ctrl+clique com outra roupa (V3_PLANO, lote V3.7.1, decisao 3).
+document.addEventListener('mousedown', evento => {
+  if (!evento.target.closest('.caixas')) fechaCaixas();
+});
+document.addEventListener('keydown', evento => {
+  if (evento.key === 'Escape') fechaCaixas();
+});
 
 function parametros(){
   const p = new URLSearchParams();
@@ -542,11 +834,15 @@ async function carrega(){
   const d = await resposta.json();
   ULTIMO = d;
   TOTAL = {assinatura: assinatura(), linhas: d.total_linhas};
-  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
-  $('#titulo').textContent = `Matriz — ${mov}, ${d.lente.nome}`;
-  $('#desc').textContent =
-    `${d.lente.nome} em ${d.lente.unidade}, por mês. ` +
-    (ESTADO.movimento === 'exp' ? `Faixa: ${OPCOES.faixas.find(f => f.chave === d.filtros.faixa).rotulo}.` : '');
+  const faixa = () => OPCOES.faixas.find(f => f.chave === d.filtros.faixa).rotulo;
+  $('#titulo').textContent = `Matriz — ${rotuloMovimento()}, ${d.lente.nome}`;
+  $('#desc').textContent = ESTADO.movimento === CONJUNTA
+    ? `O + abre unidade › cliente › expedição e recebimento. O total da linha é `
+      + `a movimentação — os dois somados —, que é como o BI lê a matriz. A `
+      + `expedição entra pela faixa ${faixa()}. Tipo de operação não abre aqui: `
+      + `veja num movimento só. ${d.lente.nome} em ${d.lente.unidade}, por mês.`
+    : `${d.lente.nome} em ${d.lente.unidade}, por mês. `
+      + (ESTADO.movimento === 'exp' ? `Faixa: ${faixa()}.` : '');
   $('#avisos').innerHTML = (d.avisos || [])
     .map(a => `<p class="aviso">${a}</p>`).join('');
   redesenha(); paginacao(d.paginacao); metodo(d);
@@ -641,8 +937,7 @@ async function carregaPlanilha(){
   }
   const d = await resposta.json();
   TOTAL = {assinatura: assinatura(), linhas: d.paginacao.total_linhas};
-  const mov = ESTADO.movimento === 'rec' ? 'Entrada' : 'Saída';
-  $('#titulo').textContent = `Planilha — ${mov}, ${d.lente.nome}`;
+  $('#titulo').textContent = `Planilha — ${rotuloMovimento()}, ${d.lente.nome}`;
   $('#desc').textContent =
     `Uma linha por registro do DW, no mesmo recorte da Matriz. ${d.lente.nome} em ${d.lente.unidade}.`;
   $('#avisos').innerHTML = (d.avisos || []).map(a => `<p class="aviso">${a}</p>`).join('');
@@ -675,16 +970,14 @@ async function inicia(){
     (_, i) => ({chave: String(i + 1).padStart(2, '0'),
                 rotulo: String(i + 1).padStart(2, '0')})));
   preencheOperacoes();
+  // Depois de TODAS as listas estarem preenchidas: o painel se monta sobre as
+  // opcoes que existem, e e aqui que os selects saem da tela (V3.7.1).
+  criaCaixas();
   desenhaBotoes();
   $('#aplicar').onclick = () => { ESTADO.pagina = 1; carrega(); };
 
-  // O aviso do zero a esquerda fica no controle do CSV, nao numa parede de
-  // texto: e uma ressalva que muda como o arquivo e LIDO, entao vive onde ela
-  // e lida. O xlsx nao tem o problema, e a nota diz por que.
-  $('#nota-download').textContent =
-    'O CSV sai no recorte inteiro, em streaming. Atenção: o Excel corta o zero à '
-    + 'esquerda de guia e CNPJ ao abrir CSV por duplo clique — para conferir '
-    + 'identificador, baixe em Excel (xlsx), que preserva.';
+  // A nota do download vive em `limitesDoMovimento()`, que a troca conforme o
+  // movimento -- ver as duas constantes no topo do script.
   // O download navega (nao e fetch), entao um 401 apareceria como JSON cru na
   // tela. Confere a sessao antes de navegar -- `busca` redireciona se caiu.
   //
@@ -716,8 +1009,12 @@ async function inicia(){
   $('#baixar-csv').onclick = () => baixa('csv');
   $('#baixar-xlsx').onclick = () => baixa('xlsx');
   $('#limpar').onclick = () => {
-    ['#unidade','#cliente','#tipo','#operacao','#dia'].forEach(s =>
+    // A lista dos cinco vive em `COM_CAIXAS`, e nao repetida aqui: com duas
+    // copias, o sexto filtro entraria numa e nao na outra, e o Limpar deixaria
+    // um filtro em pe sem dizer.
+    COM_CAIXAS.forEach(s =>
       Array.from($(s).options).forEach(o => o.selected = false));
+    atualizaCaixas();
     abreNoPadrao();
     ESTADO.pagina = 1; ESTADO.abertos = new Set(); carrega();
   };

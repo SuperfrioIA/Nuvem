@@ -123,6 +123,31 @@ def _filtros(de, ate, movimento, lente, faixa, pagina,
         raise HTTPException(status_code=400, detail=str(erro)) from None
 
 
+def _um_movimento_por_vez(filtros, o_que):
+    """Recusa `Entrada + saida` onde a visao conjunta nao se aplica (V3.7.2).
+
+    A Matriz AGREGA, e por isso pode somar os dois movimentos. A planilha mostra
+    **linha crua** e o download leva a **linha inteira** -- e as duas tabelas tem
+    36 e 46 colunas, com contratos proprios. Unir linha crua de uma com linha
+    crua da outra nao encurta nada: e a uniao incoerente, e ela continua fora.
+
+    **400 e nao 500**, e a mensagem diz o que fazer. Sem esta recusa o pedido
+    chegaria em `recorte.de_para_where`, que levanta -- e viraria erro de
+    servidor num caso em que o chamador esta simplesmente pedindo algo que nao
+    existe."""
+    if filtros.movimento != recorte.CONJUNTA:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"{o_que} responde por um movimento por vez: as duas tabelas do DW "
+            "tem colunas diferentes (36 e 46), entao nao existe linha crua "
+            "'entrada + saida'. Escolha Entrada ou Saida. A visao conjunta "
+            "existe na Matriz, que agrega."
+        ),
+    )
+
+
 def _json(valor):
     """Decimal -> string; o resto passa. A tela formata."""
     if isinstance(valor, Decimal):
@@ -350,6 +375,16 @@ def opcoes(usuario=Depends(sessao.exigir_login)):
         "faixas": [
             {"chave": f, "rotulo": matriz._rotulo_faixa(f)} for f in contrato.FAIXAS
         ],
+        # Os movimentos da TELA, e nao os do dado (`contrato.MOVIMENTOS`): o
+        # terceiro e "as duas juntas", que nao e tabela nem tipo de linha.
+        # Vem do Python para o rotulo e a regra de "so na Matriz" nao existirem
+        # em duas copias -- ver `recorte.MOVIMENTOS_DA_TELA`.
+        "movimentos": [
+            {"chave": "rec", "rotulo": "Entrada", "so_matriz": False},
+            {"chave": "exp", "rotulo": "Saída", "so_matriz": False},
+            {"chave": recorte.CONJUNTA, "rotulo": "Entrada + saída",
+             "so_matriz": True},
+        ],
         "cargas": cargas,
     }
 
@@ -399,6 +434,7 @@ def api_planilha(
     """Linhas cruas do recorte, 100 por pagina, paginadas no servidor."""
     filtros = _filtros(de, ate, movimento, lente, faixa, pagina,
                        unidade, cliente, tipo_estoque, operacao, dia)
+    _um_movimento_por_vez(filtros, "A planilha")
     conn = _conexao()
     try:
         with conn.cursor() as cur:
@@ -434,6 +470,9 @@ def api_download(
         raise HTTPException(status_code=400, detail=f"formato: {formato!r}")
     filtros = _filtros(de, ate, movimento, lente, faixa, 1,
                        unidade, cliente, tipo_estoque, operacao, dia)
+    # ANTES de abrir a auditoria: registro de download que nao saiu e ruido na
+    # trilha, e ela e usada para responder quem baixou o que.
+    _um_movimento_por_vez(filtros, "O download")
 
     # V3.4: `usuario` deixa de ser nulo. O resto do registro nao mudou de forma,
     # como o V3.3 previu -- e uma linha, e nao um retrabalho.

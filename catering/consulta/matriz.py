@@ -47,14 +47,43 @@ o cabecalho traz a faixa de dias da ponta (`rotulos_meses`, montado em
 `recorte.py`), e o filtro de dia do mes -- que corta em TODAS as colunas e por
 isso nao cabe num cabecalho -- entra como aviso.
 
-## Duas matrizes, nao uma
+## Tres matrizes: entrada, saida, e as duas juntas
 
-Entrada e saida sao consultas separadas, como eram os dois payloads do artefato
-(`dados_radar.json` e `dados_saida.json`). O `V3_PLANO` deixou o formato da
-visao conjunta para este lote, e a resposta e: nao existe visao conjunta, porque
-a hierarquia das duas e diferente (a saida tem o nivel `faixa`) e as medidas nao
-sao comparaveis linha a linha. Unir viraria uma tabela que nao responde nenhuma
+Entrada e saida continuam sendo consultas separadas, como eram os dois payloads
+do artefato (`dados_radar.json` e `dados_saida.json`). A visao CONJUNTA entrou no
+V3.7.2 e roda as duas, somando em Python.
+
+**O que o V3.2 concluiu aqui, e por que a conclusao mudou.** Este trecho dizia
+"nao existe visao conjunta, porque a hierarquia das duas e diferente (a saida tem
+o nivel `faixa`) e as medidas nao sao comparaveis linha a linha". Isso nao estava
+errado -- estava **incompleto**. Ele mediu o custo de unir as duas arvores
+*preservando os dois desenhos inteiros*, e nessa forma a conclusao continua
+valendo: uniao com quatro niveis de um lado e tres do outro nao responde nenhuma
 das duas perguntas.
+
+O que faltava era a saida que o artefato de 21/ago ja tinha achado: na visao
+conjunta a arvore fica **MAIS CURTA**, e nao mais longa.
+
+    entrada:  unidade -> cliente -> operacao
+    saida:    unidade -> cliente -> faixa -> operacao
+    conjunta: unidade -> cliente -> movimento          <- tres niveis, como as outras
+
+A operacao **sai** (as duas tabelas tem listas de `descr_oper_wms` diferentes, e
+filtrar por uma delas zeraria o outro movimento em silencio) e a faixa deixa de
+ser nivel para virar botao: "a expedicao entra como solicitado / atendido /
+separado" -- isto e, qual coluna da expedicao participa da soma. Sem nivel
+desigual, nao ha nada para reconciliar.
+
+O pai soma os dois filhos e se chama **movimentacao**, que e como o BI le a
+matriz. A soma e feita em Python, sobre as duas consultas, e nao num `UNION`: as
+tabelas tem 36 e 46 colunas e contratos proprios.
+
+**O que a conjunta NAO faz, e nao e esquecimento.** A planilha e o download
+continuam pedindo um movimento por vez, e `recorte.de_para_where` levanta se
+receber `amb` sem tabela explicita. O motivo e que a Matriz **agrega** -- e por
+isso pode somar -- enquanto a planilha mostra linha crua e o download leva a
+linha inteira. Unir linha crua de 36 colunas com linha crua de 46 nao encurta
+nada: e a uniao incoerente que o V3.2 recusou, e ela continua recusada.
 
 ## Agrega ao vivo, sem cubo
 
@@ -118,10 +147,31 @@ NIVEL = {
 
 # Trocar o terceiro nivel e mudar aqui, e so aqui. Ver docstring.
 FAIXA = "faixa"
+
+# O nivel `movimento` da visao conjunta (V3.7.2). Como o `faixa`, ele NAO e uma
+# coluna do fato -- ele diz de qual das duas consultas a linha veio. A diferenca
+# entre os dois: o `faixa` e um leque sobre as MEDIDAS da mesma linha, e o
+# `movimento` e a origem dela.
+MOVIMENTO = "movimento"
+ROTULO_MOVIMENTO = {"rec": "Recebimento", "exp": "Expedicao"}
+# Ordem FIXA, e nao ranking -- pelo mesmo motivo das faixas: ali e leitura, e
+# duas linhas que trocam de lugar conforme o mes tornam a coluna ilegivel.
+ORDEM_MOVIMENTO = ("exp", "rec")
+
 HIERARQUIA = {
     "rec": ("unidade", "cliente", "operacao"),
     "exp": ("unidade", "cliente", FAIXA, "operacao"),
+    # A conjunta e a arvore MAIS CURTA das tres, e e isso que a torna possivel:
+    # a operacao sai (as duas tabelas tem listas diferentes) e a faixa deixa de
+    # ser nivel para virar botao ("a expedicao entra como"). Sobram os mesmos
+    # tres niveis das outras duas, sem nivel desigual para reconciliar.
+    recorte.CONJUNTA: ("unidade", "cliente", MOVIMENTO),
 }
+
+# Os dois niveis que nao saem do SQL. Ficam juntos porque todo lugar que pergunta
+# "quais niveis vem da consulta" precisa excluir os dois, e esquecer um deles
+# desalinha os indices de `chave_0..n` em silencio.
+FORA_DO_SQL = (FAIXA, MOVIMENTO)
 
 # 12 unidades por pagina -- contrato do V3_PLANO, igual ao artefato. Hoje
 # existem 6, entao a paginacao nao corta nada; existe para nao ser uma surpresa
@@ -141,8 +191,8 @@ def _sql(movimento, niveis, medidas, filtros):
     O `FROM`/`WHERE` sai de `recorte.de_para_where()` -- e o mesmo pedaco que a
     planilha e o download usam, para as tres nao poderem discordar sobre quais
     linhas estao no recorte."""
-    grupos = [NIVEL[n]["chave"] for n in niveis if n != FAIXA]
-    rotulos = [NIVEL[n]["rotulo"] for n in niveis if n != FAIXA]
+    grupos = [NIVEL[n]["chave"] for n in niveis if n not in FORA_DO_SQL]
+    rotulos = [NIVEL[n]["rotulo"] for n in niveis if n not in FORA_DO_SQL]
 
     selecoes = []
     for i, (chave, rotulo) in enumerate(zip(grupos, rotulos)):
@@ -166,13 +216,78 @@ def _sql(movimento, niveis, medidas, filtros):
     # que conta o MESMO recorte por outro caminho.
     selecoes.append("count(*) AS linhas")
 
-    de_para_where, params = recorte.de_para_where(filtros)
+    # O movimento vai EXPLICITO: na visao conjunta, `filtros.movimento` e `amb`
+    # e nao nomeia tabela nenhuma. Ver `recorte.de_para_where`.
+    de_para_where, params = recorte.de_para_where(filtros, movimento)
     sql = "\n".join((
         f"SELECT {', '.join(selecoes)}",
         de_para_where,
         f"GROUP BY {agrupamento}",
     ))
     return sql, params
+
+
+def _consultar(cur, filtros, movimento, niveis, medidas):
+    """Roda a consulta de UM movimento e devolve `(linhas, total_de_linhas)`.
+
+    Extraido do `matriz()` para a visao conjunta poder rodar isto duas vezes, uma
+    por tabela, e somar depois. A soma acontece em **Python** e nao num `UNION`:
+    as duas tabelas tem 36 e 46 colunas e contratos proprios, e uni-las no SQL
+    traria de volta exatamente o problema que a arvore curta remove."""
+    sql, params = _sql(movimento, niveis, medidas, filtros)
+    cur.execute(sql, params)
+    colunas = [d[0] for d in cur.description]
+    concretos = [n for n in niveis if n not in FORA_DO_SQL]
+
+    linhas = []
+    total_linhas = 0
+    for bruta in cur.fetchall():
+        registro = dict(zip(colunas, bruta))
+        total_linhas += registro["linhas"]
+        chaves = [registro[f"chave_{i}"] for i in range(len(concretos))]
+        rotulos = [
+            registro.get(f"rotulo_{i}", registro[f"chave_{i}"]) or registro[f"chave_{i}"]
+            for i in range(len(concretos))
+        ]
+        if MOVIMENTO in niveis:
+            # Entra no FIM, depois dos niveis que vieram do SQL, para `_inserir`
+            # poder trata-lo como qualquer outro nivel concreto -- ele consome
+            # um indice de `chaves` como os outros, e a aritmetica de indice
+            # continua sendo uma so.
+            chaves.append(movimento)
+            rotulos.append(ROTULO_MOVIMENTO[movimento])
+        linhas.append({
+            "chaves": chaves,
+            "rotulos": rotulos,
+            "mes": registro["mes"],
+            "medidas": {
+                apelido: registro[f"medida_{apelido or 'unica'}"]
+                for apelido in medidas
+            },
+        })
+    return linhas, total_linhas
+
+
+def _medidas_da_conjunta(lente, faixa):
+    """`{movimento: {"": coluna}}` para a visao conjunta, ou `{}`.
+
+    As duas medidas saem com a MESMA chave (`""`), e nao com a do movimento: e
+    isso que faz a arvore somar entrada e saida no no pai sem `_arvore` precisar
+    saber que existem dois lados. A expedicao entra pela **faixa escolhida no
+    botao** -- na conjunta a faixa nao e nivel, e escolher uma das tres e
+    escolher qual coluna da expedicao participa da soma.
+
+    Vazio quando a medida nao existe nos dois lados: o caso do pallet, que a
+    expedicao nao tem. Ali a soma seria so a entrada com o nome de
+    "movimentacao" -- numero certo com nome errado, que e pior que erro visivel.
+    """
+    saida = {}
+    for movimento in recorte.movimentos_do_recorte(recorte.CONJUNTA):
+        coluna = _medida(movimento, lente, faixa)
+        if coluna is None:
+            return {}
+        saida[movimento] = {"": coluna}
+    return saida
 
 
 def _nova(chave, rotulo, nivel):
@@ -247,8 +362,10 @@ def matriz(cur, filtros: Filtros) -> dict:
     download do V3.3 quer o numero cru."""
     filtros.validar()
     movimento = filtros.movimento
+    conjunta = movimento == recorte.CONJUNTA
     niveis = HIERARQUIA[movimento]
-    medidas = _medidas_da_consulta(movimento, filtros.lente)
+    medidas = (_medidas_da_conjunta(filtros.lente, filtros.faixa) if conjunta
+               else _medidas_da_consulta(movimento, filtros.lente))
     meses = meses_do_periodo(filtros.de, filtros.ate)
     rotulos_meses = rotulos_dos_meses(filtros.de, filtros.ate)
     lente = contrato.LENTES[filtros.lente]
@@ -263,36 +380,26 @@ def matriz(cur, filtros: Filtros) -> dict:
         # Pallet na saida. So aparece quando o caso ocorre -- disciplina do
         # `memory/pagina-mostra-numero-nao-texto.md`.
         avisos.append(
+            f"{lente['nome']} só existe na entrada. Em Entrada + saída o total "
+            "seria apenas a entrada com o nome de movimentação — número certo "
+            "com nome errado. Escolha Entrada para ver esta medida."
+            if conjunta else
             f"{lente['nome']} só existe na entrada. Nenhuma das três faixas da "
             "expedição tem essa medida na fonte — a coluna fica vazia de "
             "propósito, não é falha de carga."
         )
         return _vazia(filtros, meses, rotulos_meses, lente, avisos)
 
-    sql, params = _sql(movimento, niveis, medidas, filtros)
-    cur.execute(sql, params)
-    colunas = [d[0] for d in cur.description]
-    concretos = [n for n in niveis if n != FAIXA]
-
-    linhas = []
-    total_linhas = 0
-    for bruta in cur.fetchall():
-        registro = dict(zip(colunas, bruta))
-        total_linhas += registro["linhas"]
-        chaves = [registro[f"chave_{i}"] for i in range(len(concretos))]
-        rotulos = [
-            registro.get(f"rotulo_{i}", registro[f"chave_{i}"]) or registro[f"chave_{i}"]
-            for i in range(len(concretos))
-        ]
-        linhas.append({
-            "chaves": chaves,
-            "rotulos": rotulos,
-            "mes": registro["mes"],
-            "medidas": {
-                apelido: registro[f"medida_{apelido or 'unica'}"]
-                for apelido in medidas
-            },
-        })
+    if conjunta:
+        linhas, total_linhas = [], 0
+        for concreto in recorte.movimentos_do_recorte(movimento):
+            parte, quantas = _consultar(
+                cur, filtros, concreto, niveis, medidas[concreto])
+            linhas.extend(parte)
+            total_linhas += quantas
+    else:
+        linhas, total_linhas = _consultar(
+            cur, filtros, movimento, niveis, medidas)
 
     raiz = _arvore(linhas, niveis, medidas, filtros.faixa if FAIXA in niveis else "")
 
@@ -307,6 +414,25 @@ def matriz(cur, filtros: Filtros) -> dict:
         avisos.append(
             "As três faixas não somam entre si: são três leituras do mesmo "
             "pedido em momentos diferentes."
+        )
+    if conjunta:
+        # O total somado herda os dois vieses, e eles apontam para lados
+        # OPOSTOS. Cada um ja esta declarado em "Fontes & método"; o que precisa
+        # ser dito aqui e que a soma acumula os dois -- quem le "movimentacao"
+        # sem isso lê um número mais limpo do que ele é.
+        avisos.append(
+            "O total de cada linha é a movimentação: entrada e saída somadas, "
+            "com a expedição entrando pela faixa escolhida no botão. Ele carrega "
+            "as duas limitações declaradas em Fontes &amp; método, e elas apontam "
+            "para lados opostos — a entrada não traz guia cancelada (a fonte só "
+            "carrega guia confirmada) e a expedição traz, com peso apenas na "
+            "faixa solicitado."
+        )
+        avisos.append(
+            "Tipo de operação não abre nesta visão, e o filtro de operação não "
+            "vale nela: as duas tabelas têm listas de operação diferentes, e "
+            "filtrar por uma delas zeraria o outro movimento. Para abrir ou "
+            "filtrar por operação, escolha Entrada ou Saída."
         )
 
     return {
@@ -338,6 +464,13 @@ def _ordenar(nos, meses):
     for no in nos:
         if no["filhos"] and no["filhos"][0]["nivel"] == FAIXA:
             ordem = {f: i for i, f in enumerate(contrato.FAIXAS)}
+            no["filhos"].sort(key=lambda n: ordem.get(n["chave"], 99))
+        elif no["filhos"] and no["filhos"][0]["nivel"] == MOVIMENTO:
+            # Mesmo motivo das faixas: sao duas linhas de leitura, nao um
+            # ranking. Ordenar por peso faria Expedicao e Recebimento trocarem
+            # de lugar de cliente para cliente, e a coluna deixaria de ser
+            # comparavel de bater o olho.
+            ordem = {m: i for i, m in enumerate(ORDEM_MOVIMENTO)}
             no["filhos"].sort(key=lambda n: ordem.get(n["chave"], 99))
         else:
             no["filhos"].sort(

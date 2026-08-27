@@ -21,6 +21,7 @@ o sinal tem que aparecer como falha de seguranca, e nao como catorze falhas de
 Matriz apontando para o lugar errado.
 """
 
+import re
 from datetime import date
 from decimal import Decimal
 
@@ -217,6 +218,43 @@ def test_pagina_e_o_logo_sao_servidos(cliente_v3):
     logo = cliente_v3.get("/logo.png")
     assert logo.status_code == 200
     assert logo.headers["content-type"] == "image/png"
+
+
+def test_todo_filtro_de_multipla_escolha_tem_painel_de_caixas(cliente_v3):
+    """V3.7.1 -- os cinco `<select multiple>` e a lista `COM_CAIXAS` tem que ser
+    o MESMO conjunto.
+
+    O painel de caixas de selecao e uma camada sobre o select, que continua no
+    DOM como fonte da verdade. Quem entrar depois e acrescentar um sexto filtro
+    de multipla escolha sem por ele em `COM_CAIXAS` produz um defeito silencioso
+    e feio: o select fica visivel entre botoes (a barra volta a ter duas
+    alturas), o `Limpar` deixa de zerar aquele filtro -- porque o Limpar tambem
+    itera `COM_CAIXAS` -- e o recorte sai com um filtro em pe que a tela nao
+    mostra. Nada disso levanta erro; so sai numero de menos.
+
+    Este teste e estrutural de proposito: le o HTML servido, nao executa JS. O
+    projeto nao tem suite de JavaScript, e o comportamento do painel (marcar,
+    "Selecionar tudo", Esc, clique fora) se prova no navegador."""
+    pagina = cliente_v3.get("/")
+    assert pagina.status_code == 200
+    html = pagina.text
+
+    ids_no_html = set(re.findall(r'<select id="([^"]+)" multiple', html))
+
+    declarada = re.search(r"const COM_CAIXAS = \[([^\]]+)\];", html)
+    assert declarada, "COM_CAIXAS desapareceu do script da tela"
+    ids_com_painel = {
+        alvo.strip().strip("'\"").lstrip("#")
+        for alvo in declarada.group(1).split(",")
+    }
+
+    assert ids_no_html == ids_com_painel, (
+        "filtro de multipla escolha sem painel de caixas (ou o contrario): "
+        f"no HTML {sorted(ids_no_html)}, em COM_CAIXAS {sorted(ids_com_painel)}"
+    )
+    # A lista de hoje, escrita para o teste falar do numero e nao so da relacao:
+    # unidade, cliente, tipo de estoque, operacao e dia do mes.
+    assert len(ids_no_html) == 5
 
 
 def test_app_da_v3_nao_depende_do_app_da_v2():
@@ -527,3 +565,60 @@ def test_o_fuso_entra_por_bind_e_nao_por_concatenacao():
                 if isinstance(n, ast.Constant) and isinstance(n.value, str)]
     assert not [l for l in literais if "America/" in l], \
         "nome de fuso escrito no app -- ele pertence a contrato.fuso_exibicao()"
+
+
+def test_conjunta_e_visao_de_matriz_e_a_planilha_e_o_download_recusam_com_400(
+        cliente_v3, cursor):
+    """V3.7.2 -- "Entrada + saida" existe na Matriz e NAO existe na linha crua.
+
+    A Matriz agrega, e por isso pode somar os dois movimentos. A planilha mostra
+    linha crua e o download leva a linha inteira -- e as duas tabelas do DW tem
+    36 e 46 colunas, com contratos proprios. Nao existe "linha crua entrada +
+    saida", entao os dois recusam.
+
+    **400 e nao 500**, e a mensagem diz o que fazer: e pedido que nao existe, e
+    nao servidor quebrado. Sem esta recusa o pedido chegaria em
+    `recorte.de_para_where`, que levanta -- e viraria erro de servidor.
+
+    E o download recusa ANTES de abrir a auditoria: registro de download que nao
+    saiu e ruido numa trilha usada para responder quem baixou o que."""
+    semear(cursor, _semear_entrada, peso="140.000")
+    semear(cursor, _semear_saida)
+    base = {"de": "2026-01-01", "ate": "2026-01-31", "movimento": "amb"}
+
+    da_matriz = cliente_v3.get("/api/matriz", params=base)
+    assert da_matriz.status_code == 200
+    corpo = da_matriz.json()
+    assert corpo["niveis"] == ["unidade", "cliente", "movimento"]
+    assert Decimal(corpo["total"]["2026-01"]) == Decimal("240.000"), \
+        "140 da entrada + 100 do solicitado da saida"
+
+    recusas = (
+        ("A planilha", cliente_v3.get("/api/planilha", params=base)),
+        ("O download csv", cliente_v3.get(
+            "/api/download", params={**base, "formato": "csv"})),
+        ("O download xlsx", cliente_v3.get(
+            "/api/download", params={**base, "formato": "xlsx"})),
+    )
+    for quem, resposta in recusas:
+        assert resposta.status_code == 400, \
+            f"{quem} devolveu {resposta.status_code}, e nao 400"
+        assert "um movimento por vez" in resposta.json()["detail"], \
+            f"{quem} recusou sem dizer o que fazer"
+
+    assert consultar(
+        "SELECT count(*) FROM cat_auditoria WHERE evento = 'download'"
+    )[0][0] == 0, "download recusado nao pode virar registro de download"
+
+
+def test_as_opcoes_dizem_os_tres_movimentos_da_tela(cliente_v3):
+    """O rotulo e a regra "so na Matriz" vem do Python, e nao de uma copia no
+    JavaScript. Com duas copias, acrescentar um movimento (estoque e transporte
+    existem no DW, ver A-8) exigiria lembrar de dois lugares."""
+    opcoes = cliente_v3.get("/api/opcoes").json()
+    movimentos = {m["chave"]: m for m in opcoes["movimentos"]}
+    assert list(movimentos) == ["rec", "exp", "amb"]
+    assert movimentos["amb"]["rotulo"] == "Entrada + saída"
+    assert movimentos["amb"]["so_matriz"] is True
+    assert not movimentos["rec"]["so_matriz"]
+    assert not movimentos["exp"]["so_matriz"]
